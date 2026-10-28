@@ -12,7 +12,11 @@
 #include <string>
 
 #include "hsbie.hpp"
+#include "interior.hpp"
+#include "model.hpp"
 #include "neumann_model.hpp"
+#include "probes.hpp"
+#include "vtk.hpp"
 #include "problems/cube_cavity.hpp"
 #include "problems/plate_hole.hpp"
 #include "sbie.hpp"
@@ -144,6 +148,60 @@ int main(int argc, char** argv) {
     }
     check("plate p2 r1 Kirsch SCF, cached = fresh", scf[1], scf[0], 0.0);
     std::filesystem::remove_all(cache);
+  }
+
+  // Mixed problem (end face x = -1/2 clamped to the exact field or to zero), interior
+  // evaluation, probes and VTK output, on the same p = 2, 64-element plate.
+  for (int clamp = 0; clamp < 2; ++clamp) {
+    const PlateHole ph;
+    SolverOptions o;
+    o.n_gauss = 12;
+    o.far_tol = 1e-10;
+    Model m;
+    Model::Selector sel;
+    if (clamp) sel = [&](int, const Vec3& c, const Vec3&) { return ph.clampedEnd(c); };
+    m.setup(geo + "plate_hole_p2_t0.2_r1.dat", ph.mat, o, sel, "");
+    auto tr = [&](const Vec3& y, const Vec3& n) {
+      TractionBlock T(3, 3);
+      T.col(0) = ph.traction(PlateHole::Patch, y, n);
+      T.col(1) = ph.traction(PlateHole::Kirsch, y, n);
+      T.col(2) = ph.traction(PlateHole::Tension, y, n);
+      return T;
+    };
+    auto ud = [&](const Vec3& x) {
+      TractionBlock U(3, 3);
+      U.col(0) = ph.displacement(PlateHole::Patch, x);
+      U.col(1) = ph.displacement(PlateHole::Kirsch, x);
+      U.col(2).setZero();
+      return U;
+    };
+    const auto S = m.solutions(tr, ud, 3);
+    const auto hole = PlateHole::holePatches(m.mesh());
+    auto onHole = [&](int p) { return bool(hole[p]); };
+    const std::string tag = clamp ? "plate p2 r1 clamped" : "plate p2 r1 free";
+    auto uerr = [&](int k, PlateHole::Case c) {
+      return displacementL2Error(m.mesh(), S[k].u, [&](const Vec3& x) { return ph.displacement(c, x); }, 10, !clamp);
+    };
+    if (clamp) {
+      check((tag + " patch test, u error").c_str(), uerr(0, PlateHole::Patch), 0.0, 1e-8);
+      check((tag + " Kirsch, u error").c_str(), uerr(1, PlateHole::Kirsch), 7.4291109835e-02, 1e-6);
+      check((tag + " tension, sigma_xx mid-plane").c_str(),
+            S[2].stress(locate(m.mesh(), Vec3(0.0, ph.a, 0.0), onHole))(0, 0), 3.7008899893, 1e-6);
+    }
+    InteriorEvaluator e0(S[0], o), e1(S[1], o);
+    check((tag + " interior patch test, |sigma - sigma_ex|").c_str(),
+          (e0.eval(Vec3(0.1, 0.3, 0.05)).stress - ph.stress(PlateHole::Patch, Vec3::Zero())).norm(), 0.0, 1e-8);
+    check((tag + " interior Kirsch sigma_xx(0, 1.25a, 0)").c_str(), e1.eval(Vec3(0.0, 0.25, 0.0)).stress(0, 0),
+          clamp ? 2.0112161021 : 2.0251376592, 1e-6);
+    check((tag + " inside test, point in the hole").c_str(), e1.eval(Vec3::Zero()).winding, 0.0, 1e-10);
+    const double sb = S[1].stress(locate(m.mesh(), Vec3(0.0, ph.a, 0.0), onHole))(0, 0);
+    const std::function<Vec3(double)> arc = [&](double s) {
+      return Vec3(ph.a * std::cos(M_PI * s), ph.a * std::sin(M_PI * s), 0.0);
+    };
+    check((tag + " hole probe at 90 deg = boundary stress").c_str(),
+          boundaryProbe(S[1], arc, 2, onHole).f[1].stress(0, 0), sb, 1e-12);
+    const VtuData v = surfaceVtu(S[1], 2, ph.exactField(PlateHole::Kirsch));
+    check((tag + " surface VTU points").c_str(), double(v.points.size()), 9.0 * m.mesh().elements.size(), 0.0);
   }
 
   std::printf("%d failure(s)\n", failures);

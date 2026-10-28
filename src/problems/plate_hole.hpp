@@ -20,6 +20,7 @@
 #include "../kirsch_exact_gen.hpp"
 #include "../mesh.hpp"
 #include "../recovery.hpp"
+#include "../solution.hpp"
 
 namespace igabem {
 
@@ -73,6 +74,23 @@ struct PlateHole {
       hole[p] = std::abs(std::hypot(E.x(0), E.x(1)) - a) < tol;
     }
     return hole;
+  }
+
+  // Exact field for the probes and VTK output (empty when there is none).
+  ExactField exactField(Case c) const {
+    if (!exact(c)) return nullptr;
+    return [this, c](const Vec3& x, Vec3& u, Eigen::Matrix3d& s) { u = displacement(c, x); s = stress(c, x); };
+  }
+
+  // Dirichlet patches of the clamped plate: the end face x = -L/2.
+  bool clampedEnd(const Vec3& centre) const { return centre(0) < -halfL + tol; }
+
+  // Point on the outer boundary of the mid-plane section in direction theta.
+  Vec3 outer(double theta) const {
+    const double c = std::cos(theta), s = std::sin(theta);
+    const double r = std::min(std::abs(c) > 1e-14 ? halfL / std::abs(c) : 1e300,
+                              std::abs(s) > 1e-14 ? half / std::abs(s) : 1e300);
+    return Vec3(r * c, r * s, 0.0);
   }
 
   // sigma_xx at the hole edge (0, a, z) from the solution coefficients c.

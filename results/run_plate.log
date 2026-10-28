@@ -1,122 +1,196 @@
-# plate_p2_t0.2_r0 (patch,kirsch,kirsch_free,tension): 16 patches, 16 elements, 64 dofs (192 unknowns), 432 traction dofs, t = 0.2
-# volume 0.174867258771271 (exact 0.174867258771282); operators assembled in 0.08 s, LU 0.00 s, 4 case(s) 0.001 s
-# n = 12, far_tol = 1e-10, data interpolated, rotation residual 2.257e-10
+# plate_p2_t0.2_r0 (patch,kirsch,kirsch_free,tension, bc free): 16 patches, 16 elements, 64 dofs (192 unknowns), 432 traction dofs, t = 0.2
+# volume 0.174867258771271 (exact 0.174867258771282); operators assembled in 0.06 s (loaded from cache in 0.066239 s), LU 0.00 s, 4 case(s) 0.001 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 2.246e-10
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          6.8492e-09   0.00000001   0.00000001   0.00000000
+  patch          6.9319e-09   0.00000001   0.00000001   0.00000000
   kirsch         4.4637e-01   2.64912667   2.62218697   3.00000000
   kirsch_free           nan   2.72498276   2.63497958          nan
   tension               nan   5.73717641   5.49849187          nan
-# plate_p2_t0.2_r1 (patch,kirsch,kirsch_free,tension): 16 patches, 64 elements, 144 dofs (432 unknowns), 768 traction dofs, t = 0.2
-# volume 0.174867258771273 (exact 0.174867258771282); operators assembled in 0.12 s, LU 0.01 s, 4 case(s) 0.002 s
-# n = 12, far_tol = 1e-10, data interpolated, rotation residual 1.786e-11
+# plate_p2_t0.2_r1 (patch,kirsch,kirsch_free,tension, bc free): 16 patches, 64 elements, 144 dofs (432 unknowns), 768 traction dofs, t = 0.2
+# volume 0.174867258771273 (exact 0.174867258771282); operators assembled in 0.10 s (loaded from cache in 0.234302 s), LU 0.01 s, 4 case(s) 0.002 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 1.518e-11
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          9.4292e-10   0.00000000   0.00000000   0.00000000
+  patch          9.6303e-10   0.00000000   0.00000000   0.00000000
   kirsch         5.5945e-02   3.16824897   3.11455028   3.00000000
   kirsch_free           nan   3.23644467   2.98251083          nan
   tension               nan   4.02348774   3.68328520          nan
-# plate_p2_t0.2_r2 (patch,kirsch,kirsch_free,tension): 16 patches, 256 elements, 400 dofs (1200 unknowns), 1728 traction dofs, t = 0.2
-# volume 0.174867258771278 (exact 0.174867258771282); operators assembled in 0.32 s, LU 0.06 s, 4 case(s) 0.009 s
+# plate_p2_t0.2_r2 (patch,kirsch,kirsch_free,tension, bc free): 16 patches, 256 elements, 400 dofs (1200 unknowns), 1728 traction dofs, t = 0.2
+# volume 0.174867258771278 (exact 0.174867258771282); operators assembled in 0.28 s (loaded from cache in 2.847263 s), LU 0.13 s, 4 case(s) 0.009 s
 # n = 12, far_tol = 1e-10, data interpolated, rotation residual 2.164e-08
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          2.9483e-07  -0.00000007  -0.00000006   0.00000000
+  patch          2.9512e-07  -0.00000007  -0.00000006   0.00000000
   kirsch         1.0052e-02   3.00712550   3.01330593   3.00000000
   kirsch_free           nan   3.07325734   2.88003860          nan
   tension               nan   4.75461417   4.41488253          nan
-# plate_p2_t0.2_r3 (patch,kirsch,kirsch_free,tension): 16 patches, 1024 elements, 1296 dofs (3888 unknowns), 4800 traction dofs, t = 0.2
-# volume 0.174867258771350 (exact 0.174867258771282); operators assembled in 1.95 s, LU 0.74 s, 4 case(s) 0.136 s
-# n = 12, far_tol = 1e-10, data interpolated, rotation residual 1.053e-08
+# plate_p2_t0.2_r3 (patch,kirsch,kirsch_free,tension, bc free): 16 patches, 1024 elements, 1296 dofs (3888 unknowns), 4800 traction dofs, t = 0.2
+# volume 0.174867258771350 (exact 0.174867258771282); operators assembled in 1.56 s (loaded from cache in 24.115743 s), LU 2.32 s, 4 case(s) 0.067 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 1.046e-08
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          1.2275e-07   0.00000002  -0.00000001   0.00000000
+  patch          1.2256e-07   0.00000002  -0.00000001   0.00000000
   kirsch         4.5604e-04   2.99940903   3.00260283   3.00000000
   kirsch_free           nan   3.06331205   2.87726771          nan
   tension               nan   4.88241376   4.54462316          nan
-# plate_p4_t0.2_r0 (patch,kirsch,kirsch_free,tension): 16 patches, 16 elements, 256 dofs (768 unknowns), 1200 traction dofs, t = 0.2
-# volume 0.174867258771271 (exact 0.174867258771282); operators assembled in 0.60 s, LU 0.03 s, 4 case(s) 0.004 s
-# n = 12, far_tol = 1e-10, data interpolated, rotation residual 7.015e-10
+# plate_p4_t0.2_r0 (patch,kirsch,kirsch_free,tension, bc free): 16 patches, 16 elements, 256 dofs (768 unknowns), 1200 traction dofs, t = 0.2
+# volume 0.174867258771271 (exact 0.174867258771282); operators assembled in 0.50 s (loaded from cache in 1.011832 s), LU 0.07 s, 4 case(s) 0.004 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 1.055e-10
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          3.0974e-08  -0.00000003  -0.00000004   0.00000000
-  kirsch         1.6531e-01   3.18806321   3.17333869   3.00000000
-  kirsch_free           nan   3.24882424   3.05867002          nan
-  tension               nan   5.05357701   4.72828546          nan
-# plate_p4_t0.2_r1 (patch,kirsch,kirsch_free,tension): 16 patches, 64 elements, 400 dofs (1200 unknowns), 1728 traction dofs, t = 0.2
-# volume 0.174867258771273 (exact 0.174867258771282); operators assembled in 0.66 s, LU 0.08 s, 4 case(s) 0.013 s
-# n = 12, far_tol = 1e-10, data interpolated, rotation residual 2.849e-08
+  patch          5.3136e-09   0.00000001   0.00000001   0.00000000
+  kirsch         1.6531e-01   3.18806319   3.17333866   3.00000000
+  kirsch_free           nan   3.24882421   3.05866999          nan
+  tension               nan   5.05357688   4.72828534          nan
+# plate_p4_t0.2_r1 (patch,kirsch,kirsch_free,tension, bc free): 16 patches, 64 elements, 400 dofs (1200 unknowns), 1728 traction dofs, t = 0.2
+# volume 0.174867258771273 (exact 0.174867258771282); operators assembled in 0.56 s (loaded from cache in 2.057207 s), LU 0.04 s, 4 case(s) 0.009 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 2.848e-08
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          3.2172e-07  -0.00000013   0.00000013   0.00000000
-  kirsch         6.5964e-03   2.99675784   3.00321103   3.00000000
-  kirsch_free           nan   3.05655413   2.88150607          nan
-  tension               nan   4.86447717   4.55057903          nan
-# plate_p4_t0.2_r2 (patch,kirsch,kirsch_free,tension): 16 patches, 256 elements, 784 dofs (2352 unknowns), 3072 traction dofs, t = 0.2
-# volume 0.174867258771278 (exact 0.174867258771282); operators assembled in 1.30 s, LU 0.22 s, 4 case(s) 0.029 s
-# n = 12, far_tol = 1e-10, data interpolated, rotation residual 1.947e-07
+  patch          3.2218e-07  -0.00000011   0.00000016   0.00000000
+  kirsch         6.5964e-03   2.99675785   3.00321104   3.00000000
+  kirsch_free           nan   3.05655414   2.88150608          nan
+  tension               nan   4.86447710   4.55057896          nan
+# plate_p4_t0.2_r2 (patch,kirsch,kirsch_free,tension, bc free): 16 patches, 256 elements, 784 dofs (2352 unknowns), 3072 traction dofs, t = 0.2
+# volume 0.174867258771278 (exact 0.174867258771282); operators assembled in 1.19 s (loaded from cache in 7.199991 s), LU 0.39 s, 4 case(s) 0.033 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 7.381e-08
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          1.2944e-06   0.00000001   0.00000467   0.00000000
-  kirsch         4.9631e-03   3.01226146   3.01247620   3.00000000
-  kirsch_free           nan   3.07354821   2.89046407          nan
-  tension               nan   4.83904795   4.51395187          nan
-# plate_p4_t0.2_r3 (patch,kirsch,kirsch_free,tension): 16 patches, 1024 elements, 1936 dofs (5808 unknowns), 6912 traction dofs, t = 0.2
-# volume 0.174867258771350 (exact 0.174867258771282); operators assembled in 7.57 s, LU 2.13 s, 4 case(s) 0.178 s
-# n = 12, far_tol = 1e-10, data interpolated, rotation residual 3.685e-08
+  patch          8.5715e-07  -0.00000001   0.00000232   0.00000000
+  kirsch         4.9631e-03   3.01226148   3.01247784   3.00000000
+  kirsch_free           nan   3.07354804   2.89046553          nan
+  tension               nan   4.83904785   4.51395394          nan
+# plate_p4_t0.2_r3 (patch,kirsch,kirsch_free,tension, bc free): 16 patches, 1024 elements, 1936 dofs (5808 unknowns), 6912 traction dofs, t = 0.2
+# volume 0.174867258771350 (exact 0.174867258771282); operators assembled in 6.43 s (loaded from cache in 44.395949 s), LU 5.54 s, 4 case(s) 0.207 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 2.322e-08
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          9.8165e-07   0.00000009  -0.00000107   0.00000000
-  kirsch         3.8484e-05   2.99996285   3.00007165   3.00000000
-  kirsch_free           nan   3.06226583   2.87947926          nan
-  tension               nan   4.89354375   4.56196714          nan
-# plate_p2_t0.2_r3 (patch,kirsch,kirsch_free,tension): 16 patches, 1024 elements, 1296 dofs (3888 unknowns), 4800 traction dofs, t = 0.2
-# volume 0.174867258771350 (exact 0.174867258771282); operators assembled in 1.95 s (loaded from cache in 0.158639 s), LU 0.70 s, 4 case(s) 1.929 s
-# n = 12, far_tol = 1e-10, data exact, rotation residual 1.053e-08
+  patch          3.0741e-07   0.00000011   0.00000289   0.00000000
+  kirsch         3.8462e-05   2.99996328   3.00006597   3.00000000
+  kirsch_free           nan   3.06226608   2.87947338          nan
+  tension               nan   4.89354402   4.56195830          nan
+# plate_p2_t0.2_r3 (patch,kirsch,kirsch_free,tension, bc free): 16 patches, 1024 elements, 1296 dofs (3888 unknowns), 4800 traction dofs, t = 0.2
+# volume 0.174867258771350 (exact 0.174867258771282); operators assembled in 1.56 s (loaded from cache in 0.203629 s), LU 0.79 s, 4 case(s) 1.996 s
+# n = 12, far_tol = 1e-10, data exact, rotation residual 1.046e-08
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          1.2275e-07   0.00000002  -0.00000001   0.00000000
+  patch          1.2256e-07   0.00000002  -0.00000001   0.00000000
   kirsch         8.2586e-04   2.99788211   3.00166278   3.00000000
   kirsch_free           nan   3.06184103   2.87592962          nan
   tension               nan   4.88241376   4.54462316          nan
-# plate_p4_t0.1_r2 (patch,kirsch,kirsch_free,tension): 16 patches, 256 elements, 784 dofs (2352 unknowns), 3072 traction dofs, t = 0.1
-# volume 0.087433629385645 (exact 0.087433629385641); operators assembled in 1.52 s, LU 0.22 s, 4 case(s) 0.031 s
-# n = 12, far_tol = 1e-10, data interpolated, rotation residual 1.954e-07
+# plate_p4_t0.1_r2 (patch,kirsch,kirsch_free,tension, bc free): 16 patches, 256 elements, 784 dofs (2352 unknowns), 3072 traction dofs, t = 0.1
+# volume 0.087433629385645 (exact 0.087433629385641); operators assembled in 1.49 s (loaded from cache in 7.802934 s), LU 0.21 s, 4 case(s) 0.031 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 7.410e-08
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          1.5879e-06   0.00000284   0.00000784   0.00000000
-  kirsch         3.8783e-03   3.00795250   3.00856941   3.00000000
-  kirsch_free           nan   3.03249710   2.96362983          nan
-  tension               nan   4.76468727   4.63971381          nan
-# plate_p4_t0.1_r3 (patch,kirsch,kirsch_free,tension): 16 patches, 1024 elements, 1936 dofs (5808 unknowns), 6912 traction dofs, t = 0.1
-# volume 0.087433629385657 (exact 0.087433629385641); operators assembled in 7.77 s, LU 2.35 s, 4 case(s) 0.198 s
-# n = 12, far_tol = 1e-10, data interpolated, rotation residual 3.723e-08
+  patch          1.0180e-06   0.00000016   0.00000275   0.00000000
+  kirsch         3.8783e-03   3.00794922   3.00856923   3.00000000
+  kirsch_free           nan   3.03249401   2.96363014          nan
+  tension               nan   4.76468310   4.63971466          nan
+# plate_p4_t0.1_r3 (patch,kirsch,kirsch_free,tension, bc free): 16 patches, 1024 elements, 1936 dofs (5808 unknowns), 6912 traction dofs, t = 0.1
+# volume 0.087433629385657 (exact 0.087433629385641); operators assembled in 6.86 s (loaded from cache in 46.099724 s), LU 5.46 s, 4 case(s) 0.254 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 2.346e-08
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          1.1662e-06   0.00000090  -0.00000096   0.00000000
-  kirsch         4.1738e-05   2.99993151   2.99999665   3.00000000
-  kirsch_free           nan   3.02562966   2.95661889          nan
-  tension               nan   4.83009088   4.70107308          nan
-# plate_p4_t0.4_r2 (patch,kirsch,kirsch_free,tension): 16 patches, 256 elements, 784 dofs (2352 unknowns), 3072 traction dofs, t = 0.4
-# volume 0.349734517542531 (exact 0.349734517542563); operators assembled in 1.26 s, LU 0.23 s, 4 case(s) 0.028 s
-# n = 12, far_tol = 1e-10, data interpolated, rotation residual 1.858e-07
+  patch          3.6380e-07   0.00000012   0.00000332   0.00000000
+  kirsch         4.1706e-05   2.99993228   2.99998974   3.00000000
+  kirsch_free           nan   3.02563040   2.95661111          nan
+  tension               nan   4.83009195   4.70106123          nan
+# plate_p4_t0.4_r2 (patch,kirsch,kirsch_free,tension, bc free): 16 patches, 256 elements, 784 dofs (2352 unknowns), 3072 traction dofs, t = 0.4
+# volume 0.349734517542531 (exact 0.349734517542563); operators assembled in 1.10 s (loaded from cache in 7.876021 s), LU 0.22 s, 4 case(s) 0.031 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 6.837e-08
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          3.3649e-06  -0.00000457  -0.00000418   0.00000000
-  kirsch         5.7561e-03   3.01574209   3.01428462   3.00000000
-  kirsch_free           nan   3.10460919   2.76355932          nan
-  tension               nan   4.87646200   4.31376010          nan
-# plate_p4_t0.4_r3 (patch,kirsch,kirsch_free,tension): 16 patches, 1024 elements, 1936 dofs (5808 unknowns), 6912 traction dofs, t = 0.4
-# volume 0.349734517542535 (exact 0.349734517542563); operators assembled in 6.95 s, LU 2.40 s, 4 case(s) 0.233 s
-# n = 12, far_tol = 1e-10, data interpolated, rotation residual 3.538e-08
+  patch          8.4442e-07  -0.00000117   0.00000068   0.00000000
+  kirsch         5.7557e-03   3.01574053   3.01428784   3.00000000
+  kirsch_free           nan   3.10460735   2.76356162          nan
+  tension               nan   4.87645535   4.31375982          nan
+# plate_p4_t0.4_r3 (patch,kirsch,kirsch_free,tension, bc free): 16 patches, 1024 elements, 1936 dofs (5808 unknowns), 6912 traction dofs, t = 0.4
+# volume 0.349734517542535 (exact 0.349734517542563); operators assembled in 6.31 s (loaded from cache in 44.652058 s), LU 5.50 s, 4 case(s) 0.223 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 2.129e-08
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          1.0201e-06  -0.00000045  -0.00000103   0.00000000
-  kirsch         3.8709e-05   2.99997423   3.00009653   3.00000000
-  kirsch_free           nan   3.08873214   2.75156891          nan
-  tension               nan   4.91911388   4.35465276          nan
-# plate_L3_p4_t0.2_r1 (patch,tension): 24 patches, 96 elements, 600 dofs (1800 unknowns), 2592 traction dofs, t = 0.2
-# volume 0.574867258771321 (exact 0.574867258771282); operators assembled in 0.86 s, LU 0.13 s, 2 case(s) 0.022 s
-# n = 12, far_tol = 1e-10, data interpolated, rotation residual 2.248e-08
+  patch          2.7699e-07  -0.00000004   0.00000199   0.00000000
+  kirsch         3.8747e-05   2.99997397   3.00009334   3.00000000
+  kirsch_free           nan   3.08873175   2.75156651          nan
+  tension               nan   4.91911282   4.35464898          nan
+# plate_L3_p4_t0.2_r1 (patch,tension, bc free): 24 patches, 96 elements, 600 dofs (1800 unknowns), 2592 traction dofs, t = 0.2
+# volume 0.574867258771321 (exact 0.574867258771282); operators assembled in 0.80 s (loaded from cache in 5.031159 s), LU 0.14 s, 2 case(s) 0.017 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 1.280e-08
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          1.3505e-07  -0.00000015   0.00000012   0.00000000
-  tension               nan   3.79435496   3.55693976          nan
-# plate_L3_p4_t0.2_r2 (patch,tension): 24 patches, 384 elements, 1176 dofs (3528 unknowns), 4608 traction dofs, t = 0.2
-# volume 0.574867258771344 (exact 0.574867258771282); operators assembled in 2.32 s, LU 0.57 s, 2 case(s) 0.069 s
-# n = 12, far_tol = 1e-10, data interpolated, rotation residual 8.868e-08
+  patch          1.0842e-07  -0.00000013   0.00000014   0.00000000
+  tension               nan   3.79435497   3.55693977          nan
+# plate_L3_p4_t0.2_r2 (patch,tension, bc free): 24 patches, 384 elements, 1176 dofs (3528 unknowns), 4608 traction dofs, t = 0.2
+# volume 0.574867258771344 (exact 0.574867258771282); operators assembled in 2.19 s (loaded from cache in 16.176713 s), LU 1.28 s, 2 case(s) 0.065 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 3.745e-08
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          5.0025e-07  -0.00000009   0.00000460   0.00000000
-  tension               nan   3.81029851   3.55996501          nan
-# plate_L3_p4_t0.2_r3 (patch,tension): 24 patches, 1536 elements, 2904 dofs (8712 unknowns), 10368 traction dofs, t = 0.2
-# volume 0.574867258770952 (exact 0.574867258771282); operators assembled in 15.27 s, LU 6.39 s, 2 case(s) 0.398 s
-# n = 12, far_tol = 1e-10, data interpolated, rotation residual 1.704e-08
+  patch          5.7655e-07  -0.00000011   0.00000228   0.00000000
+  tension               nan   3.81029836   3.55996660          nan
+# plate_L3_p4_t0.2_r3 (patch,tension, bc free): 24 patches, 1536 elements, 2904 dofs (8712 unknowns), 10368 traction dofs, t = 0.2
+# volume 0.574867258770952 (exact 0.574867258771282); operators assembled in 13.34 s (loaded from cache in 98.659769 s), LU 13.83 s, 2 case(s) 0.502 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 1.210e-08
 # case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
-  patch          3.3967e-07   0.00000008  -0.00000106   0.00000000
-  tension               nan   3.83244199   3.57823745          nan
+  patch          2.7057e-07   0.00000014   0.00000295   0.00000000
+  tension               nan   3.83244230   3.57823034          nan
+# plate_clamp_p2_t0.2_r0 (patch,kirsch,tension, bc clamp): 16 patches, 16 elements, 64 dofs (192 unknowns), 432 traction dofs, t = 0.2
+# volume 0.174867258771271 (exact 0.174867258771282); operators assembled in 0.07 s (loaded from cache in 0.001519 s), LU 0.00 s, 3 case(s) 0.000 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual nan
+# case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
+  patch          8.5111e-09   0.00000001   0.00000001   0.00000000
+  kirsch         3.6416e-01   3.23290514   3.17787133   3.00000000
+  tension               nan   4.33136730   4.19016584          nan
+# plate_clamp_p2_t0.2_r1 (patch,kirsch,tension, bc clamp): 16 patches, 64 elements, 144 dofs (432 unknowns), 768 traction dofs, t = 0.2
+# volume 0.174867258771273 (exact 0.174867258771282); operators assembled in 0.12 s (loaded from cache in 0.005393 s), LU 0.01 s, 3 case(s) 0.002 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual nan
+# case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
+  patch          7.6533e-10   0.00000000   0.00000000   0.00000000
+  kirsch         7.4291e-02   3.13842298   3.08947572   3.00000000
+  tension               nan   3.70088999   3.40624385          nan
+# plate_clamp_p2_t0.2_r2 (patch,kirsch,tension, bc clamp): 16 patches, 256 elements, 400 dofs (1200 unknowns), 1728 traction dofs, t = 0.2
+# volume 0.174867258771278 (exact 0.174867258771282); operators assembled in 0.32 s (loaded from cache in 0.127418 s), LU 0.04 s, 3 case(s) 0.012 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual nan
+# case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
+  patch          2.9268e-07  -0.00000008  -0.00000007   0.00000000
+  kirsch         7.6085e-03   2.99753603   3.00461552   3.00000000
+  tension               nan   4.09375442   3.80873098          nan
+# plate_clamp_p2_t0.2_r3 (patch,kirsch,tension, bc clamp): 16 patches, 1024 elements, 1296 dofs (3888 unknowns), 4800 traction dofs, t = 0.2
+# volume 0.174867258771350 (exact 0.174867258771282); operators assembled in 1.76 s (loaded from cache in 1.538844 s), LU 0.96 s, 3 case(s) 0.147 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual nan
+# case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
+  patch          1.1996e-07   0.00000002  -0.00000001   0.00000000
+  kirsch         4.4279e-04   2.99939612   3.00259453   3.00000000
+  tension               nan   4.14880146   3.86745770          nan
+# plate_clamp_p4_t0.2_r0 (patch,kirsch,tension, bc clamp): 16 patches, 16 elements, 256 dofs (768 unknowns), 1200 traction dofs, t = 0.2
+# volume 0.174867258771271 (exact 0.174867258771282); operators assembled in 0.54 s (loaded from cache in 0.079653 s), LU 0.02 s, 3 case(s) 0.005 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual nan
+# case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
+  patch          5.8206e-07  -0.00000065  -0.00000059   0.00000000
+  kirsch         1.1791e-01   3.01983076   3.01776529   3.00000000
+  tension               nan   4.21078964   3.94839120          nan
+# plate_clamp_p4_t0.2_r1 (patch,kirsch,tension, bc clamp): 16 patches, 64 elements, 400 dofs (1200 unknowns), 1728 traction dofs, t = 0.2
+# volume 0.174867258771273 (exact 0.174867258771282); operators assembled in 0.62 s (loaded from cache in 0.125355 s), LU 0.07 s, 3 case(s) 0.023 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual nan
+# case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
+  patch          7.5327e-07  -0.00000098  -0.00000063   0.00000000
+  kirsch         6.5422e-03   2.99368919   3.00032772   3.00000000
+  tension               nan   4.12625772   3.86707607          nan
+# plate_clamp_p4_t0.2_r2 (patch,kirsch,tension, bc clamp): 16 patches, 256 elements, 784 dofs (2352 unknowns), 3072 traction dofs, t = 0.2
+# volume 0.174867258771278 (exact 0.174867258771282); operators assembled in 1.34 s (loaded from cache in 0.685917 s), LU 0.22 s, 3 case(s) 0.052 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual nan
+# case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
+  patch          8.1640e-07  -0.00000009   0.00000224   0.00000000
+  kirsch         4.6612e-03   3.00877744   3.00926027   3.00000000
+  tension               nan   4.11738386   3.84676075          nan
+# plate_clamp_p4_t0.2_r3 (patch,kirsch,tension, bc clamp): 16 patches, 1024 elements, 1936 dofs (5808 unknowns), 6912 traction dofs, t = 0.2
+# volume 0.174867258771350 (exact 0.174867258771282); operators assembled in 7.10 s (loaded from cache in 3.528692 s), LU 5.21 s, 3 case(s) 0.313 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual nan
+# case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
+  patch          2.9619e-07   0.00000009   0.00000287   0.00000000
+  kirsch         3.6934e-05   2.99997137   3.00007344   3.00000000
+  tension               nan   4.14744022   3.87237285          nan
+# plate_clamp_L3_p4_t0.2_r1 (patch,tension, bc clamp): 24 patches, 96 elements, 600 dofs (1800 unknowns), 2592 traction dofs, t = 0.2
+# volume 0.574867258771321 (exact 0.574867258771282); operators assembled in 0.86 s (loaded from cache in 0.184092 s), LU 0.10 s, 2 case(s) 0.024 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual nan
+# case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
+  patch          3.9543e-07  -0.00000028   0.00000000   0.00000000
+  tension               nan   3.79743275   3.55978210          nan
+# plate_clamp_L3_p4_t0.2_r2 (patch,tension, bc clamp): 24 patches, 384 elements, 1176 dofs (3528 unknowns), 4608 traction dofs, t = 0.2
+# volume 0.574867258771344 (exact 0.574867258771282); operators assembled in 2.40 s (loaded from cache in 0.992406 s), LU 0.51 s, 2 case(s) 0.098 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual nan
+# case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
+  patch          6.7501e-07  -0.00000013   0.00000226   0.00000000
+  tension               nan   3.81213859   3.56165129          nan
+# plate_clamp_L3_p4_t0.2_r3 (patch,tension, bc clamp): 24 patches, 1536 elements, 2904 dofs (8712 unknowns), 10368 traction dofs, t = 0.2
+# volume 0.574867258770952 (exact 0.574867258771282); operators assembled in 15.96 s, LU 12.64 s, 2 case(s) 0.618 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual nan
+# case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
+  patch          2.7368e-07   0.00000014   0.00000295   0.00000000
+  tension               nan   3.83374516   3.57941326          nan

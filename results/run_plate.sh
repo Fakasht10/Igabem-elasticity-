@@ -28,3 +28,14 @@ for r in 1 2 3; do
   $B geo/plate_hole_L3_p4_t0.2_r$r.dat plate_L3_p4_t0.2_r$r patch,tension 0.2 --length 3 --csv $C \
      --profile results/plate_profile_L3_p4_t0.2_r$r
 done
+# Mixed boundary conditions: end face x = -L/2 clamped (exact displacement for patch
+# and kirsch, zero for tension), traction elsewhere. Same cached operator rows.
+for p in 2 4; do
+  for r in 0 1 2 3; do
+    $B geo/plate_hole_p${p}_t0.2_r$r.dat plate_clamp_p${p}_t0.2_r$r patch,kirsch,tension 0.2 --bc clamp --csv $C
+  done
+done
+for r in 1 2 3; do
+  $B geo/plate_hole_L3_p4_t0.2_r$r.dat plate_clamp_L3_p4_t0.2_r$r patch,tension 0.2 --length 3 --bc clamp \
+     --csv $C --profile results/plate_profile_clamp_L3_p4_t0.2_r$r
+done

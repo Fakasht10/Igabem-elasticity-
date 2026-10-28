@@ -5,7 +5,10 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <algorithm>
 #include <cmath>
+#include <utility>
+#include <vector>
 
 #include "kelvin.hpp"
 #include "mesh.hpp"
@@ -47,12 +50,25 @@ struct SurfacePoint {
 };
 
 // Closest boundary point to x among the patches accepted by use(patch).
+// Elements are visited by increasing lower bound |x - centre| - h (h: element
+// diameter estimate) and the search stops once the bound exceeds the best
+// distance, so only the few nearby elements are projected.
 template <class Pred>
 inline SurfacePoint locate(const Mesh& m, const Vec3& x, Pred&& use) {
   SurfacePoint s{};
-  double best = 1e300;
-  for (const auto& e : m.elements) {
+  std::vector<std::pair<double, int>> order;
+  PatchEval C;
+  for (size_t i = 0; i < m.elements.size(); ++i) {
+    const Element& e = m.elements[i];
     if (!use(e.patch)) continue;
+    m.patches[e.patch].evalSpan(e.su, e.sv, 0.5 * (e.rect.u0 + e.rect.u1), 0.5 * (e.rect.v0 + e.rect.v1), C);
+    order.push_back({(C.x - x).norm() - e.h, int(i)});
+  }
+  std::sort(order.begin(), order.end());
+  double best = 1e300;
+  for (const auto& [bound, i] : order) {
+    if (bound > best) break;
+    const Element& e = m.elements[i];
     double d;
     const Vec2 xi = m.closestPoint(e, x, d);
     if (d < best) { best = d; s.patch = e.patch; s.su = e.su; s.sv = e.sv; s.xi = xi; }

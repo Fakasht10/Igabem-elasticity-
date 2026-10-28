@@ -17,6 +17,10 @@ with a thickness-robust solver for thin curved plates.
   rational sphere of radius 0.2 with inward-facing patches). The patch test converges to 1.6e-13; exact
   pressurized-cavity and Goodier fields converge under refinement; the stress concentration factor
   matches Goodier's 93/46 = 2.0217 to 1.1e-4. The finite cube in tension gives SCF 2.268.
+- **Milestone 5 (mixed boundary conditions, interior fields, canned plots):** displacement on chosen
+  patches and traction elsewhere from the same cached operators, interior stress and strain
+  accurate to the boundary, line and boundary probes, and VTK output for ParaView, each with
+  regression tests. See [Mixed boundary conditions](#mixed-boundary-conditions-interior-fields-probes-and-3d-output).
 - **Milestone 4 (plate with a circular through-hole, traction-only), on a reusable library:** exact
   rational geometry (volume exact to 1e-13). The 3D Kirsch field converges at O(h³) for p = 2 and
   O(h⁵) for p = 4; SCF error 1.2e-5 at 5,808 unknowns in 10 s from scratch. Thickness effect and a
@@ -39,11 +43,15 @@ ctest --test-dir build                   # Kelvin kernels (finite differences) +
 ./results/run_all.sh                     # Neumann runs -> results/patch_tests.csv (~10 min on 4 cores)
 ./results/run_dirichlet.sh               # Dirichlet runs -> results/dirichlet_tests.csv (~20 min)
 ./results/run_cavity.sh                  # cavity runs -> results/cavity_tests.csv, cavity_profile_*.csv (~35 min)
-./results/run_plate.sh                   # plate runs -> results/plate_tests.csv, plate_profile_*.csv (~100 s; ~30 s with cache/)
+./build/plate_test geo/plate_hole_p4_t0.2_r3.dat p4r3 kirsch,tension 0.2 --bc clamp --fields out/p4r3   # mixed BCs, probes, .vtu
+./results/run_plate.sh                   # plate runs (traction-only and clamped) -> results/plate_tests.csv, plate_profile_*.csv
+./results/run_fields.sh                  # probes, .vtu, field figures -> results/fields/, results/fig_probes_*, fig_fields_*
 python3 python/plot_patch_tests.py       # -> results/fig_patch_tests.{pdf,png}
 python3 python/plot_dirichlet_tests.py   # -> results/fig_dirichlet_tests.{pdf,png}
 python3 python/plot_cavity_tests.py      # -> results/fig_cavity_tests.{pdf,png}
 python3 python/plot_plate_tests.py       # -> results/fig_plate_tests.{pdf,png}
+python3 python/plot_probes.py line results/fields/p4_r3_kirsch_bisector.csv --comp s_rr,s_tt --frame cyl --x r --out fig.png
+python3 python/render_vtu.py results/fields/p4_r3_kirsch --out fig.png
 python3 python/gen_cavity_exact.py       # (needs SymPy) re-derives src/cavity_exact_gen.hpp
 python3 python/gen_kirsch_exact.py       # (needs SymPy) re-derives src/kirsch_exact_gen.hpp
 ```
@@ -59,13 +67,14 @@ values, not new numerics.
 | Quadrature | `quadrature.hpp`, `integrator.hpp` | Cell partition, Duffy singular rule, near-singular quadtree, adaptive far field with cached element rules |
 | Kernels | `kelvin.hpp` | Kelvin U, T and traction kernels (finite-difference tested) |
 | Operators | `sbie.hpp`, `hsbie.hpp`, `traction_space.hpp` | SBIE matrices H, G (H u = G t), HSBIE assembly, discontinuous traction space |
-| Model | `neumann_model.hpp`, `cache.hpp` | `NeumannModel`: H and G assembled once and cached on disk (key: geometry bytes, material, quadrature options), bordered LU factored once, any number of load cases per solve |
-| Post-processing | `recovery.hpp` | Boundary stress from u_h and t, point location on the surface |
+| Model | `operators.hpp`, `cache.hpp`, `neumann_model.hpp`, `mixed_model.hpp`, `model.hpp` | SBIE rows at any collocation set, cached on disk (key: geometry bytes, material, quadrature options, code version). `NeumannModel`: traction everywhere, bordered LU. `MixedModel`: displacement on chosen patches, traction elsewhere, from the same cached rows plus cached rows per Dirichlet patch. `Model`: either, chosen at run time. Any number of load cases per solve |
+| Solution | `solution.hpp` | `BoundarySolution`: u and t coefficients of one case, whatever was prescribed or solved; boundary gradient, strain, stress, von Mises |
+| Post-processing | `recovery.hpp`, `interior.hpp`, `probes.hpp`, `vtk.hpp` | Boundary stress recovery; u, ∇u, ε, σ at interior points (near-boundary safe) with an inside test; line probes through the solid and curve probes on the boundary to CSV; surface and section `.vtu` for ParaView |
+| Plots | `python/plot_probes.py`, `python/render_vtu.py` | Canned probe figures (any component, Cartesian or cylindrical, exact overlay) and a rendered 3D field figure |
 | Problems | `problems/cube_cavity.hpp`, `problems/plate_hole.hpp`, `*_exact_gen.hpp` | Load cases, exact fields, quantities of interest, shared by drivers and tests |
 | Tests | `tests/test_kernels.cpp`, `tests/test_regression.cpp` | Kernels; every validated result reproduced on a small mesh, including cache hit = fresh |
 
-Not yet in the library: geometry refinement (still `python/make_geometries.py`), and mixed boundary
-conditions (the next step reuses the same H and G columns). `patch_test` and `dirichlet_test` still
+Not yet in the library: geometry refinement (still `python/make_geometries.py`). `patch_test` and `dirichlet_test` still
 reassemble per n on purpose, because they are quadrature-convergence studies.
 
 ## Plan check
@@ -103,6 +112,21 @@ translation identity behind the regularization holds over the full boundary, and
 still six because the solid is connected. Boundary stresses come from the solution without domain
 evaluation: tangential gradient from u_h, normal derivative from the prescribed t via Hooke's law
 (`src/recovery.hpp`, shared with the HSBIE).
+
+**Mixed boundary conditions** (`MixedModel`). With u prescribed on Γ_u (whole patches) and t on Γ_t,
+the unknowns are the displacement dofs not touched by Γ_u and the traction dofs on Γ_u (the traction
+space is discontinuous across patches, so the traction may jump at the edge of Γ_u). The SBIE
+H u = G t is collocated at the Greville points of the free displacement dofs (rows already in the
+Neumann cache) and at the traction collocation points of the Γ_u patches, which are interior to those
+patches. That gives as many equations as unknowns; the Dirichlet data fix the rigid modes, so there is
+no bordering. The displacement data are Greville-interpolated patch by patch.
+
+**Interior fields** (`InteriorEvaluator`). Somigliana's identity and its gradient,
+u(x) = ∫U t − ∫T u and ∂u/∂x = ∫∂ₓU t − ∫∂ₓT u (`KelvinTraction::gradients`, finite-difference
+tested), with the linear field u_L(y) = u(x̄) + ∇u(x̄)(y − x̄) at the closest boundary point x̄
+subtracted. That is exact for any interior x because u_L satisfies both identities, and it removes the
+near-singularity, so points 10⁻⁶ from the hole are as accurate as points far away. The inside test is
+the solid-angle integral (1 inside, 0 outside), computed in the same loop.
 
 **Physics.** λ = μ = 1 (ν = 1/4). Exact field u = αx, α = diag(−¼, −¼, 1), so σ = diag(0, 0, 5/2) and
 t = σn. Pure Neumann data leaves the six rigid-body modes undetermined; they are removed (see Numerics).
@@ -151,12 +175,16 @@ pulled at its ends (finite width, d/W = 0.4).
 | Cavity solver | Same bordered SBIE system; general traction data t(y, n); SVD rank check every run | `app/cavity_test.cpp` |
 | Stress recovery | σ on Γ from tangential gradient of u_h plus t, at the equator point c + a e_x and along the meridian in the x–z plane | `src/recovery.hpp` |
 | Plate geometry | 16 biquadratic rational patches (each face quadrant blends the hole arc to the square edge; straight radial lines), exact degree elevation to p = 4, then k-refinement (16 → 1,024 elements); optional end blocks for a longer strip. Geometry error is zero: volume (L − πa²)t to 1e-13 | `make_geometries.py` |
+| Singular cell (adaptive mode) | Duffy on a block around the source point of half-width equal to its distance to the nearest cell edge (aspect ≤ 2), adaptive quadtree on the rest of the cell. Plain Duffy over the whole cell converged algebraically for points close to, but not on, a cell edge (traction collocation points: 6.5e-5 at n = 12 → 2.5e-10) | `ElementIntegrator::singularRect` |
+| Interior quadrature | Same adaptive quadtree with the field point off the surface (split while the cell's bounding sphere is within 1.5 radii or the Bernstein-ellipse order exceeds n) | `InteriorEvaluator` |
 | Plate data | Traction data interpolated in the traction space (t ≈ Σ N_j t_j), so the right-hand side is G t for any load; integrating the data exactly is kept as a check (`--exact-data`) | `NeumannModel::solve` |
 
 **Visualization.** Semilog plots of error against integration points per direction, matching the
 paper's Figs. 2, 3, 6 and 7, plus a CSV of every run (`results/*_tests.csv`). The plate figure adds
 log-log error against unknowns and against wall time with h^(p+1) reference slopes, SCF error, and
-the through-thickness stress profile.
+the through-thickness stress profile. Field figures (`results/fig_probes_*`, `results/fig_fields_*`):
+BEM as solid lines with markers, the exact field as thin dashed lines; one-hue sequential colour scale
+for magnitudes (von Mises, error), blue–red diverging scale centred on zero for signed components.
 
 ## Assumptions and deviations (please read)
 
@@ -325,11 +353,61 @@ operators in `cache/` skips assembly.
 
 ![Plate tests](results/fig_plate_tests.png)
 
+### Mixed boundary conditions, interior fields, probes and 3D output
+
+**Mixed problem** (end face x = −L/2 clamped, traction elsewhere, `--bc clamp`; same cached rows):
+
+| Case | Mesh | Unknowns | Result | Reference |
+| --- | --- | --- | --- | --- |
+| Patch test u = αx | every mesh | 192 → 5,808 | u error 8e-9 → 3e-7 | 0 (quadrature floor of `far_tol`) |
+| Kirsch, end clamped to the exact u | p = 4, 1,024 el. | 5,808 | u error 3.7e-5, SCF 2.999971 | free: 3.8e-5, 2.999963 |
+| Kirsch, end clamped | p = 2, 1,024 el. | 3,888 | u error 4.4e-4 | free: 4.6e-4 |
+| Strip L = 3 in tension, clamped at x = −3/2 | p = 4, r1 → r3 | 1,800 → 8,712 | SCF 3.797, 3.812, 3.834 | free strip 3.794, 3.810, 3.832 |
+| Square plate in tension, clamped | p = 4, r3 | 5,808 | SCF 4.147 | free 4.89 (end only 1.5a from the hole) |
+
+The clamped Kirsch runs converge exactly like the traction-only ones (panel a of the plate figure,
+open markers), and in the long strip the clamp changes the SCF by 0.03%, as Saint-Venant's principle
+says it should 6.5a from the hole. On the square plate the clamp sits 1.5a from the hole edge and
+lowers the SCF by 15%, a real effect of the restrained Poisson contraction, not an error.
+
+**Interior fields** (p = 4, 1,024 elements, Kirsch): the stress error along the ligament is
+1.5e-5 relative from y = a + 10⁻⁶ to y = 1.5a and 2e-4 at y = 0.49, next to the loaded outer face;
+over the whole mid-plane section it stays below 1e-4 of max |σ| (`fig_fields_kirsch`, panel c). The
+interior patch test reproduces σ to 6e-10. One point costs about 13 ms on one core
+(1,024 elements); the section (2,425 points), five probes and the surface file together take 11 s on 4
+cores.
+
+**Canned output** (`plate_test --fields`, `results/run_fields.sh`, about 75 s for the three cases
+below):
+
+- `*_ligament.csv`, `*_bisector.csv`: lines through the solid at z = 0 (60 segments).
+- `*_hole_mid.csv`, `*_hole_face.csv`, `*_hole_z.csv`: on the hole wall around θ at z = 0 and on the
+  face, and up the wall at θ = 90°.
+- `*_surface.vtu`, `*_section.vtu`: whole surface and the mid-plane section, with displacement,
+  traction, the stress and strain tensors, von Mises, and the exact stress and error where known.
+  Open them in ParaView.
+
+Every CSV has all 6 stress and 6 strain components, the displacement and von Mises, plus the exact
+values where there is an exact field. `plot_probes.py line` plots any of them in Cartesian or
+cylindrical components.
+
+![Kirsch probes](results/fig_probes_kirsch.png)
+![Kirsch fields](results/fig_fields_kirsch.png)
+
+Thick plate (t/a = 2, Kirsch load on the sides, free faces). The hoop stress at the face drops to 2.75
+while the mid-plane rises to 3.09, and σ_zz peaks at 0.27 S inside the wall and vanishes on the
+faces:
+
+![Thick plate probes](results/fig_probes_thick.png)
+
+Long strip clamped at one end and pulled at the other:
+
+![Clamped strip fields](results/fig_fields_strip_clamped.png)
+
 ## Next steps
 
-1. Mixed Dirichlet–Neumann problems on `NeumannModel`'s H and G (e.g. the plate gripped at one end, the
-   cavity cube clamped on z = 0); exterior Neumann (Eshelby) patch test; FEM cross-check of the
-   finite-cube SCF. Move geometry refinement into C++.
+1. Exterior Neumann (Eshelby) patch test; FEM cross-check of the finite-cube SCF; move geometry
+   refinement into C++; partial-patch Dirichlet regions (today Γ_u is a union of whole patches).
 2. Thin curved plate (cylindrical panel built as exact NURBS): Neumann patch test for t/R = 10⁻¹…10⁻³,
    then Scordelis–Lo as a 3D solid.
 3. Iterative solver, preconditioner and H² compression.

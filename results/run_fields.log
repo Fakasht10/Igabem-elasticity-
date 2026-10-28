@@ -1,0 +1,22 @@
+# fields (kirsch, bc free): 16 patches, 1024 elements, 1936 dofs (5808 unknowns), 6912 traction dofs, t = 0.2
+# volume 0.174867258771350 (exact 0.174867258771282); operators assembled in 6.43 s (loaded from cache in 0.460422 s), LU 2.26 s, 1 case(s) 0.087 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 2.322e-08
+# case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
+  kirsch         3.8462e-05   2.99996328   3.00006597   3.00000000
+#   fields -> results/fields/p4_r3_kirsch_* in 11.50 s
+# fields (kirsch_free, bc free): 16 patches, 1024 elements, 1936 dofs (5808 unknowns), 6912 traction dofs, t = 0.4
+# volume 0.349734517542535 (exact 0.349734517542563); operators assembled in 6.31 s (loaded from cache in 0.386905 s), LU 2.31 s, 1 case(s) 0.081 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual 2.129e-08
+# case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
+  kirsch_free           nan   3.08873175   2.75156651          nan
+#   fields -> results/fields/p4_t0.4_r3_kirsch_free_* in 10.91 s
+# fields (tension, bc clamp): 24 patches, 1536 elements, 2904 dofs (8712 unknowns), 10368 traction dofs, t = 0.2
+# volume 0.574867258770952 (exact 0.574867258771282); operators assembled in 15.96 s (loaded from cache in 1.233360 s), LU 13.04 s, 1 case(s) 0.231 s
+# n = 12, far_tol = 1e-10, data interpolated, rotation residual nan
+# case           rel_L2_err      sxx_mid     sxx_face    sxx_exact
+  tension               nan   3.83374516   3.57941326          nan
+#   fields -> results/fields/clamp_L3_r3_tension_* in 15.62 s
+
+real	1m13.805s
+user	3m5.945s
+sys	0m12.454s

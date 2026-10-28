@@ -72,7 +72,7 @@ class ElementIntegrator {
     const double tol = 1e-12 * std::max(e.rect.du(), e.rect.dv());
     for (size_t k = 0; k < e.cells.size(); ++k) {
       const Rect& R = e.cells[k];
-      if (singular && R.contains(xs, tol)) duffyRect(e, R, R.clamp(xs), f);
+      if (singular && R.contains(xs, tol)) singularRect(c, e, R, R.clamp(xs), f);
       else adaptiveRect(c, e, R, 0, f);
     }
   }
@@ -231,6 +231,36 @@ class ElementIntegrator {
           point(e, xs + s * (a + g_.x[j] * d), g_.w[i] * g_.w[j] * s * det, f);
       }
     }
+  }
+
+  // Adaptive mode, cell containing the source point xs: Duffy on a block around
+  // xs whose sides are at most twice the distance from xs to the nearest cell
+  // edge (and of aspect <= 2 physically), adaptive quadtree on the rest. A plain
+  // Duffy split degrades when xs is close to, but not on, a cell edge (thin
+  // triangles): e.g. traction collocation points near patch edges.
+  template <class F>
+  void singularRect(const SourcePoint& c, const Element& e, const Rect& R, const Vec2& xs, F& f) const {
+    PatchEval E;
+    mesh_.patches[e.patch].evalSpan(e.su, e.sv, xs(0), xs(1), E);
+    const double su = E.xu.norm(), sv = E.xv.norm();  // physical length per unit parameter
+    const double tol = 1e-12 * std::max(R.du(), R.dv());
+    auto half = [&](double a0, double a1) {  // half-width: nearest edge not touching xs
+      if (a0 <= tol) return a1;
+      if (a1 <= tol) return a0;
+      return std::min(a0, a1);
+    };
+    double hu = half(xs(0) - R.u0, R.u1 - xs(0)), hv = half(xs(1) - R.v0, R.v1 - xs(1));
+    hu = std::min(hu, 2.0 * hv * sv / su);
+    hv = std::min(hv, 2.0 * hu * su / sv);
+    const double cu[4] = {R.u0, std::max(R.u0, xs(0) - hu), std::min(R.u1, xs(0) + hu), R.u1};
+    const double cv[4] = {R.v0, std::max(R.v0, xs(1) - hv), std::min(R.v1, xs(1) + hv), R.v1};
+    for (int i = 0; i < 3; ++i)
+      for (int j = 0; j < 3; ++j) {
+        const Rect S{cu[i], cu[i + 1], cv[j], cv[j + 1]};
+        if (S.du() <= tol || S.dv() <= tol) continue;
+        if (i == 1 && j == 1) duffyRect(e, S, S.clamp(xs), f);
+        else adaptiveRect(c, e, S, 0, f);
+      }
   }
 
   template <class F>
