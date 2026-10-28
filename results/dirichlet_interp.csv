@@ -1,0 +1,5 @@
+geometry,elements,u_interp_err,t_interp_err
+geo/sphere_r0.dat,6,6.956388e-04,1.289906e-02
+geo/sphere_r1.dat,24,2.678741e-04,3.682052e-03
+geo/sphere_r2.dat,96,5.100466e-05,8.474445e-04
+geo/sphere_r3.dat,384,7.930340e-07,1.742719e-05
