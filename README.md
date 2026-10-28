@@ -13,6 +13,10 @@ with a thickness-robust solver for thin curved plates.
 - **Milestone 2 (HSBIE, Dirichlet):** the traction equation is regularized by Taylor subtraction and
   solved for a discontinuous traction space. The linear Dirichlet patch test is exact; a Kelvin
   point-load solution checks quadrature and h-convergence. See [Results](#results).
+- **Milestone 3 (cube with a spherical cavity, traction-only):** a two-surface body (unit cube, exact
+  rational sphere of radius 0.2 with inward-facing patches). The patch test converges to 1.6e-13; exact
+  pressurized-cavity and Goodier fields converge under refinement; the stress concentration factor
+  matches Goodier's 93/46 = 2.0217 to 1.1e-4. The finite cube in tension gives SCF 2.268.
 
 ## Build and run
 
@@ -20,15 +24,19 @@ Requires a C++17 compiler, CMake ≥ 3.16, Eigen ≥ 3.3, optionally OpenMP; Pyt
 Matplotlib for geometry generation and plots.
 
 ```sh
-python3 python/make_geometries.py 3      # writes geo/*.dat (cube, imperfect cube, sphere family r0..r3)
+python3 python/make_geometries.py 3      # writes geo/*.dat (cube, imperfect cube, sphere family, cube with cavity; r0..r3)
 cmake -S . -B build && cmake --build build -j
 ./build/patch_test geo/cube_p2.dat cube --nmin 1 --nmax 24
 ./build/dirichlet_test geo/sphere_r0.dat sphere --nmin 1 --nmax 10 [--source 1.5 1.7 2.0]
+./build/cavity_test geo/cube_cavity_r2.dat cav goodier --nmin 12 --nmax 12   # patch|pressure|goodier|tension
 ctest --test-dir build                   # finite-difference check of all Kelvin kernels
 ./results/run_all.sh                     # Neumann runs -> results/patch_tests.csv (~10 min on 4 cores)
 ./results/run_dirichlet.sh               # Dirichlet runs -> results/dirichlet_tests.csv (~20 min)
+./results/run_cavity.sh                  # cavity runs -> results/cavity_tests.csv, cavity_profile_*.csv (~35 min)
 python3 python/plot_patch_tests.py       # -> results/fig_patch_tests.{pdf,png}
 python3 python/plot_dirichlet_tests.py   # -> results/fig_dirichlet_tests.{pdf,png}
+python3 python/plot_cavity_tests.py      # -> results/fig_cavity_tests.{pdf,png}
+python3 python/gen_cavity_exact.py       # (needs SymPy) re-derives src/cavity_exact_gen.hpp
 ```
 
 ## Plan check
@@ -60,11 +68,28 @@ data part of the right-hand side is subtracted point by point, which keeps round
 of growing like n⁴. The subtraction needs u ∈ C¹ and t continuous at x, so traction collocation points
 are kept strictly inside patches.
 
+The cube with a cavity is a doubly bounded solid. The regularized SBIE holds unchanged, with Γ the
+union of both surfaces and n outward from the solid, so into the cavity on the sphere. The rigid
+translation identity behind the regularization holds over the full boundary, and the rigid modes are
+still six because the solid is connected. Boundary stresses come from the solution without domain
+evaluation: tangential gradient from u_h, normal derivative from the prescribed t via Hooke's law
+(`src/recovery.hpp`, shared with the HSBIE).
+
 **Physics.** λ = μ = 1 (ν = 1/4). Exact field u = αx, α = diag(−¼, −¼, 1), so σ = diag(0, 0, 5/2) and
 t = σn. Pure Neumann data leaves the six rigid-body modes undetermined; they are removed (see Numerics).
 For the Dirichlet runs a second exact field is the Kelvin solution of a unit point load at
 (1.5, 1.7, 2.0), outside the unit sphere, in direction (1, 2, 3)/√14. It is smooth in the body but not
 polynomial, so it tests quadrature and approximation together.
+For the cavity (radius a = 0.2, centre c = (½, ½, ½)) three more exact fields are used, each with its
+traction σn prescribed on both surfaces:
+
+- the Lamé field u = p a³ (x − c) / (4μ|x − c|³), a pressure p = 1 in a cavity of an infinite medium;
+- the Goodier (1933) field for remote uniaxial tension S = 1 along z around a traction-free spherical
+  cavity. `python/gen_cavity_exact.py` derives it from three Papkovich–Neuber terms, checks Navier's
+  equation and the free cavity symbolically, and generates the C++. Its stress concentration factor is
+  σ_zz(equator)/S = (27 − 15ν)/(2(7 − 5ν)) = 93/46 ≈ 2.0217 at ν = ¼.
+- the engineering case, without exact solution: the finite cube pulled by t = S e_z on z = 0, 1, with
+  free lateral faces and a free cavity.
 
 **Numerics.**
 
@@ -85,6 +110,9 @@ polynomial, so it tests quadrature and approximation together.
 | Dirichlet data | Exact coefficients for u = αx; Greville interpolation for the point-load field | `interpolateDisplacement` |
 | Solver (HSBIE) | Dense partial-pivot LU; 2-norm condition number from a full SVD every run | `app/dirichlet_test.cpp` |
 | Shared quadrature | One driver for both equations: Duffy at the source point, App. B near-singular quadtree, Gauss elsewhere | `src/integrator.hpp` |
+| Cavity geometry | Quadratic cube (6 patches) plus Bembel's sphere scaled to a = 0.2 with u and v swapped so its normals point into the cavity; both refined together (12 → 768 elements). Orientation check: the computed volume is 1 − 4πa³/3 to 1e-13 | `make_geometries.py` |
+| Cavity solver | Same bordered SBIE system; general traction data t(y, n); SVD rank check every run | `app/cavity_test.cpp` |
+| Stress recovery | σ on Γ from tangential gradient of u_h plus t, at the equator point c + a e_x and along the meridian in the x–z plane | `src/recovery.hpp` |
 
 **Visualization.** Semilog plots of error against integration points per direction, matching the
 paper's Figs. 2, 3, 6 and 7, plus a CSV of every run (`results/patch_tests.csv`).
@@ -176,9 +204,40 @@ All results are relative L²(Γ) traction errors.
 
 ![Dirichlet tests](results/fig_dirichlet_tests.png)
 
+### Cube with a spherical cavity (SBIE, traction-only)
+
+| Case | Elements (dofs) | Displacement error | σ_zz at equator | Reference |
+| --- | --- | --- | --- | --- |
+| Patch test u = αx | 12 (124) | 1.6e-13 at n = 16 | 2.5000000 | 5/2 |
+| Pressurized cavity | 12 → 768 (124 → 1,216) | 7.1e-2 → 6.0e-4 | 0.50257 → 0.50004 | p/2 = 0.5 |
+| Goodier field | 12 → 768 | 1.4e-2 → 1.6e-4 | 2.0331 → 2.02152 | 93/46 = 2.02174 |
+| Finite cube in tension | 12 → 768 | — | 2.286 → 2.268 | none (Goodier 2.022 for an infinite body) |
+
+Displacement errors are relative L²(Γ) after rigid-motion removal; n = 12 unless noted.
+
+- **Patch test.** Exponential convergence in n, but slower than on the lone sphere (1e-12 at n = 14
+  rather than n = 8). The slowest integrals are the near-singular cube-face integrals seen from the
+  cavity, 0.3 away from faces of size 1. The quadrature is not the bottleneck for the load cases: σ_zz at
+  the equator changes by less than 1e-5 relative for n ≥ 7 and converges exponentially (panel a).
+- **h-refinement.** From 192 to 768 elements the Goodier displacement error drops by 13 and the SCF error
+  by 15 (rates 3.7 and 3.9), and the pressure case by 12 (rate 3.6). The coarser steps are pre-asymptotic.
+  The quadratic cube faces cap the asymptotic displacement rate at p + 1 = 3 there, below the quartic
+  sphere; degree-elevating the cube would lift it. The SCF matches Goodier to 1.1e-4 relative at 768
+  elements.
+- **Finite cube in tension.** SCF 2.268 at 768 elements, changing by 1e-2 from 192 elements, so about
+  2.27 to within ~1e-3 by analogy with the Goodier sequence. It is 12% above the infinite-medium value,
+  the finite-width effect of a cavity spanning 40% of the cube. The compressive pole stress also grows,
+  from −0.587 S to about −0.74 S. This number has no independent reference here; a FEM cross-check is
+  the obvious next validation.
+- **Rank.** σ₆/σ_max falls to 4e-13 with n (six rigid modes, exact null space); σ₇/σ_max rises from
+  1.4e-3 to 7.1e-3 under refinement, so the reduced system stays well conditioned.
+
+![Cavity tests](results/fig_cavity_tests.png)
+
 ## Next steps
 
-1. Exterior Neumann (Eshelby) patch test; mixed Dirichlet–Neumann problems.
+1. Mixed Dirichlet–Neumann problems (e.g. the cavity cube clamped on z = 0); exterior Neumann (Eshelby)
+   patch test; FEM cross-check of the finite-cube SCF.
 2. Thin curved plate (cylindrical panel built as exact NURBS): Neumann patch test for t/R = 10⁻¹…10⁻³,
    then Scordelis–Lo as a 3D solid.
 3. Iterative solver, preconditioner and H² compression.

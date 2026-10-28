@@ -6,6 +6,9 @@ Outputs (in geo/):
   sphere_r{k}.dat        exact unit sphere (Bembel's 6-patch rational quartic), k uniform refinements
   spheroid_k2_r{k}.dat   exact prolate spheroid x^2 + y^2 + (z/2)^2 = 1 (affine image of the sphere)
   sphere_perturbed_r{k}.dat  sphere with a smooth radial perturbation of its control points
+  cube_cavity_r{k}.dat   unit cube with a spherical cavity (radius 0.2, centre (0.5, 0.5, 0.5));
+                         the cavity's patches are transposed so their normals point into the
+                         cavity (outward from the solid); both surfaces refined k times
 
 Control points are stored homogeneously (x w, y w, z w, w), u index fastest.
 """
@@ -125,6 +128,20 @@ def cube_p2(imperfect=False):
     return out
 
 
+def reversed_patch(P):
+    """Swap u and v: same surface, opposite normal."""
+    return Patch(P.q, P.p, P.V, P.U, np.ascontiguousarray(P.Pw.transpose(1, 0, 2)))
+
+
+def cube_cavity(sphere, a=0.2, c=(0.5, 0.5, 0.5)):
+    out = cube_p2()
+    for P in sphere:
+        Q = Patch(P.p, P.q, P.U, P.V, P.Pw.copy())
+        Q.set_euclid(np.asarray(c) + a * Q.euclid())  # affine: weights unchanged
+        out.append(reversed_patch(Q))
+    return out
+
+
 def main():
     os.makedirs(ROOT, exist_ok=True)
     write_dat(os.path.join(ROOT, "cube_p2.dat"), cube_p2(), "cube_p2")
@@ -145,6 +162,11 @@ def main():
             f = 1.0 + 0.1 * np.sin(3 * X[..., 0]) * np.cos(2 * X[..., 1]) * np.cos(X[..., 2])
             P.set_euclid(X * f[..., None])  # same function of position: stays watertight
         write_dat(os.path.join(ROOT, "sphere_perturbed_r%d.dat" % r), per, "sphere_perturbed_r%d" % r)
+        cav = cube_cavity(S)
+        for P in cav[:6]:
+            for _ in range(r):
+                refine_uniform(P)
+        write_dat(os.path.join(ROOT, "cube_cavity_r%d.dat" % r), cav, "cube_cavity_r%d" % r)
 
 
 if __name__ == "__main__":
