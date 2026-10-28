@@ -10,7 +10,7 @@ endif()
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(OpenMP)
 
-foreach(app patch_test dirichlet_test interp_error)
+foreach(app patch_test dirichlet_test interp_error cavity_test)
   add_executable(${app} app/${app}.cpp)
   target_include_directories(${app} PRIVATE src)
   target_link_libraries(${app} PRIVATE Eigen3::Eigen)

@@ -25,6 +25,7 @@
 #include "integrator.hpp"
 #include "kelvin.hpp"
 #include "mesh.hpp"
+#include "recovery.hpp"
 
 namespace igabem {
 
@@ -79,20 +80,12 @@ class HsbieAssembler {
   HsbieAssembler(const Mesh& m, const TractionSpace& ts, const Material& mat, const SolverOptions& o)
       : mesh_(m), ts_(ts), mat_(mat), K_(mat), quad_(m, o) {}
 
-  // Full displacement gradient at a boundary point from the tangential
-  // gradient Gt of the data and the traction t there.
+  // Full displacement gradient at a boundary point (see recovery.hpp).
   Eigen::Matrix3d gradient(const Eigen::Matrix3d& Gt, const Vec3& t, const Vec3& N) const {
-    const double lam = mat_.lambda, mu = mat_.mu;
-    const Eigen::Matrix3d P = Eigen::Matrix3d::Identity() - N * N.transpose();
-    const Vec3 a = P * t / mu - P * (Gt.transpose() * N) +
-                   N * (t.dot(N) - lam * Gt.trace()) / (lam + 2.0 * mu);
-    return Gt + a * N.transpose();
+    return surfaceGradient(mat_, Gt, t, N);
   }
 
-  Eigen::Matrix3d stress(const Eigen::Matrix3d& G) const {
-    const Eigen::Matrix3d eps = 0.5 * (G + G.transpose());
-    return mat_.lambda * eps.trace() * Eigen::Matrix3d::Identity() + 2.0 * mat_.mu * eps;
-  }
+  Eigen::Matrix3d stress(const Eigen::Matrix3d& G) const { return mat_.stress(G); }
 
   // ucoef: Dirichlet data as coefficients of the conforming displacement space.
   void assemble(const Eigen::VectorXd& ucoef, Eigen::MatrixXd& A, Eigen::VectorXd& b) const {

@@ -28,6 +28,12 @@ class SbieAssembler {
       : mesh_(m), K_(mat), quad_(m, o) {}
 
   void assemble(const Eigen::Matrix3d& sigma, Eigen::MatrixXd& A, Eigen::VectorXd& b) const {
+    assemble([&](const Vec3&, const Vec3& n) { return Vec3(sigma * n); }, A, b);
+  }
+
+  // General traction data t(y, n(y)), n the unit normal outward from the solid.
+  template <class F>
+  void assemble(F&& traction, Eigen::MatrixXd& A, Eigen::VectorXd& b) const {
     const int M = mesh_.ndof;
     A.setZero(3 * M, 3 * M);
     b.setZero(3 * M);
@@ -49,7 +55,7 @@ class SbieAssembler {
           const Eigen::Matrix3d Tw = T * (w * J);
           for (int l = 0; l < E.n_loc; ++l) Arow.block<3, 3>(0, 3 * l2g[E.idx[l]]) += E.R[l] * Tw;
           Tsum += Tw;
-          brow += U * (sigma * n) * (w * J);
+          brow += U * traction(E.x, n) * (w * J);
         });
       }
       for (const auto& [B, NB] : c.basis) Arow.block<3, 3>(0, 3 * B) -= NB * Tsum;
@@ -76,10 +82,11 @@ inline Eigen::MatrixXd rigidModes(const Mesh& m) {
   return R;
 }
 
-// Relative L2(Gamma) error of u_h against u = alpha x, after removing the
-// L2-best rigid-body motion (undetermined by the pure Neumann problem).
-inline double relativeL2Error(const Mesh& m, const Eigen::VectorXd& c,
-                              const Eigen::Matrix3d& alpha, int ng = 10) {
+// Relative L2(Gamma) error of u_h against an exact field uexact(x), after
+// removing the L2-best rigid-body motion (undetermined by the pure Neumann
+// problem).
+template <class Fu>
+inline double displacementL2Error(const Mesh& m, const Eigen::VectorXd& c, Fu&& uexact, int ng = 10) {
   const GaussRule g = gaussLegendre(ng);
   struct QP { Vec3 x, e; double w; };
   std::vector<QP> qp;
@@ -93,7 +100,7 @@ inline double relativeL2Error(const Mesh& m, const Eigen::VectorXd& c,
           Vec3 uh = Vec3::Zero();
           for (int l = 0; l < E.n_loc; ++l)
             uh += E.R[l] * c.segment<3>(3 * m.l2g[el.patch][E.idx[l]]);
-          qp.push_back({E.x, uh - alpha * E.x, g.w[i] * g.w[j] * R.du() * R.dv() * E.normal().norm()});
+          qp.push_back({E.x, uh - uexact(E.x), g.w[i] * g.w[j] * R.du() * R.dv() * E.normal().norm()});
         }
   Eigen::Matrix<double, 6, 6> G = Eigen::Matrix<double, 6, 6>::Zero();
   Eigen::Matrix<double, 6, 1> r = Eigen::Matrix<double, 6, 1>::Zero();
@@ -112,9 +119,14 @@ inline double relativeL2Error(const Mesh& m, const Eigen::VectorXd& c,
   double num = 0.0, den = 0.0;
   for (const auto& q : qp) {
     num += q.w * (q.e - phi(q.x) * beta).squaredNorm();
-    den += q.w * (alpha * q.x).squaredNorm();
+    den += q.w * uexact(q.x).squaredNorm();
   }
   return std::sqrt(num / den);
+}
+
+inline double relativeL2Error(const Mesh& m, const Eigen::VectorXd& c,
+                              const Eigen::Matrix3d& alpha, int ng = 10) {
+  return displacementL2Error(m, c, [&](const Vec3& x) { return Vec3(alpha * x); }, ng);
 }
 
 }  // namespace igabem
