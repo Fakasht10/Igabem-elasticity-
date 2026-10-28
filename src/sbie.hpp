@@ -17,36 +17,61 @@
 #include "integrator.hpp"
 #include "kelvin.hpp"
 #include "mesh.hpp"
+#include "traction_space.hpp"
 
 namespace igabem {
 
 // Assembles A (3M x 3M) and b for the interior Neumann problem with
 // prescribed traction t(y) = sigma n(y).
+// Traction data of up to 8 load cases at one point, on the stack (no heap
+// allocation in the quadrature loop).
+using TractionBlock = Eigen::Matrix<double, 3, Eigen::Dynamic, Eigen::ColMajor, 3, 8>;
+
 class SbieAssembler {
  public:
   SbieAssembler(const Mesh& m, const Material& mat, const SolverOptions& o)
       : mesh_(m), K_(mat), quad_(m, o) {}
 
   void assemble(const Eigen::Matrix3d& sigma, Eigen::MatrixXd& A, Eigen::VectorXd& b) const {
-    assemble([&](const Vec3&, const Vec3& n) { return Vec3(sigma * n); }, A, b);
+    assembleTraction([&](const Vec3&, const Vec3& n) { return Vec3(sigma * n); }, A, b);
   }
 
   // General traction data t(y, n(y)), n the unit normal outward from the solid.
   template <class F>
-  void assemble(F&& traction, Eigen::MatrixXd& A, Eigen::VectorXd& b) const {
+  void assembleTraction(F&& traction, Eigen::MatrixXd& A, Eigen::VectorXd& b) const {
+    Eigen::MatrixXd B;
+    assembleTractions(
+        [&](const Vec3& y, const Vec3& n) { return TractionBlock(traction(y, n)); },
+        1, A, B);
+    b = B.col(0);
+  }
+
+  // Several load cases at once (K <= 8): traction(y, n) returns a 3 x K TractionBlock, one
+  // column per case; B gets one right-hand side per column. The matrix depends
+  // only on the mesh, so it is assembled once for all cases.
+  template <class F>
+  void assembleTractions(F&& traction, int K, Eigen::MatrixXd& A, Eigen::MatrixXd& B) const {
     const int M = mesh_.ndof;
+    if (K > 8) throw std::runtime_error("assembleTractions: at most 8 load cases");
     A.setZero(3 * M, 3 * M);
-    b.setZero(3 * M);
+    B.setZero(3 * M, K);
+    // Traction data at cached far-field points, evaluated once for all rows.
+    std::vector<TractionBlock> Tc(quad_.numCached());
+#pragma omp parallel for schedule(static)
+    for (long id = 0; id < quad_.numCached(); ++id) {
+      const Vec3 nJ = quad_.cachedNJ(id) * mesh_.normal_sign;
+      Tc[id] = traction(quad_.cachedX(id), Vec3(nJ / nJ.norm()));
+    }
 #pragma omp parallel for schedule(dynamic)
     for (int a = 0; a < int(mesh_.colloc.size()); ++a) {
       const Collocation& c = mesh_.colloc[a];
       const SourcePoint src{c.patch, c.xi, c.x};
       Eigen::MatrixXd Arow = Eigen::MatrixXd::Zero(3, 3 * M);
-      Eigen::Vector3d brow = Eigen::Vector3d::Zero();
+      TractionBlock brow = TractionBlock::Zero(3, K);
       Eigen::Matrix3d Tsum = Eigen::Matrix3d::Zero();  // times N_B(x) afterwards
       for (const auto& e : mesh_.elements) {
         const auto& l2g = mesh_.l2g[e.patch];
-        quad_.integrate(src, e, [&](const PatchEval& E, double w) {
+        quad_.integrate(src, e, [&](const QPoint& E, double w) {
           const Vec3 nJ = E.normal() * mesh_.normal_sign;
           const double J = nJ.norm();
           const Vec3 n = nJ / J;
@@ -55,12 +80,51 @@ class SbieAssembler {
           const Eigen::Matrix3d Tw = T * (w * J);
           for (int l = 0; l < E.n_loc; ++l) Arow.block<3, 3>(0, 3 * l2g[E.idx[l]]) += E.R[l] * Tw;
           Tsum += Tw;
-          brow += U * traction(E.x, n) * (w * J);
+          if (E.id >= 0) brow.noalias() += U * Tc[E.id] * (w * J);
+          else brow.noalias() += U * traction(E.x, n) * (w * J);
         });
       }
-      for (const auto& [B, NB] : c.basis) Arow.block<3, 3>(0, 3 * B) -= NB * Tsum;
+      for (const auto& [Bg, NB] : c.basis) Arow.block<3, 3>(0, 3 * Bg) -= NB * Tsum;
       A.middleRows(3 * a, 3) = Arow;
-      b.segment<3>(3 * a) = brow;
+      B.middleRows(3 * a, 3) = brow;
+    }
+  }
+
+  // Both SBIE operators for any boundary data: H (the matrix above, acting on
+  // displacement coefficients) and G (acting on coefficients of the traction
+  // space ts), so that H u = G t. Assembled once per mesh; every load case and,
+  // later, every mixed boundary condition is a choice of columns and a
+  // right-hand side.
+  void assembleHG(const TractionSpace& ts, Eigen::MatrixXd& H, Eigen::MatrixXd& G) const {
+    const int M = mesh_.ndof, Nt = ts.ndof;
+    H.setZero(3 * M, 3 * M);
+    G.setZero(3 * M, 3 * Nt);
+#pragma omp parallel for schedule(dynamic)
+    for (int a = 0; a < int(mesh_.colloc.size()); ++a) {
+      const Collocation& c = mesh_.colloc[a];
+      const SourcePoint src{c.patch, c.xi, c.x};
+      Eigen::MatrixXd Hrow = Eigen::MatrixXd::Zero(3, 3 * M);
+      Eigen::MatrixXd Grow = Eigen::MatrixXd::Zero(3, 3 * Nt);
+      Eigen::Matrix3d Tsum = Eigen::Matrix3d::Zero();
+      for (const auto& e : mesh_.elements) {
+        const auto& l2g = mesh_.l2g[e.patch];
+        const int off = ts.offset[e.patch];
+        quad_.integrate(src, e, [&](const QPoint& E, double w) {
+          const Vec3 nJ = E.normal() * mesh_.normal_sign;
+          const double J = nJ.norm();
+          Eigen::Matrix3d U, T;
+          K_.eval(E.x - c.x, Vec3(nJ / J), U, T);
+          const Eigen::Matrix3d Tw = T * (w * J), Uw = U * (w * J);
+          for (int l = 0; l < E.n_loc; ++l) {
+            Hrow.block<3, 3>(0, 3 * l2g[E.idx[l]]) += E.R[l] * Tw;
+            Grow.block<3, 3>(0, 3 * (off + E.idx[l])) += E.R[l] * Uw;
+          }
+          Tsum += Tw;
+        });
+      }
+      for (const auto& [Bg, NB] : c.basis) Hrow.block<3, 3>(0, 3 * Bg) -= NB * Tsum;
+      H.middleRows(3 * a, 3) = Hrow;
+      G.middleRows(3 * a, 3) = Grow;
     }
   }
 

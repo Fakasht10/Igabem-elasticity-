@@ -17,6 +17,11 @@ with a thickness-robust solver for thin curved plates.
   rational sphere of radius 0.2 with inward-facing patches). The patch test converges to 1.6e-13; exact
   pressurized-cavity and Goodier fields converge under refinement; the stress concentration factor
   matches Goodier's 93/46 = 2.0217 to 1.1e-4. The finite cube in tension gives SCF 2.268.
+- **Milestone 4 (plate with a circular through-hole, traction-only), on a reusable library:** exact
+  rational geometry (volume exact to 1e-13). The 3D Kirsch field converges at O(h³) for p = 2 and
+  O(h⁵) for p = 4; SCF error 1.2e-5 at 5,808 unknowns in 10 s from scratch. Thickness effect and a
+  finite-width strip agree with the literature. Operators are assembled once, cached on disk and
+  reused for every load case.
 
 ## Build and run
 
@@ -24,20 +29,44 @@ Requires a C++17 compiler, CMake ≥ 3.16, Eigen ≥ 3.3, optionally OpenMP; Pyt
 Matplotlib for geometry generation and plots.
 
 ```sh
-python3 python/make_geometries.py 3      # writes geo/*.dat (cube, imperfect cube, sphere family, cube with cavity; r0..r3)
+python3 python/make_geometries.py 3      # writes geo/*.dat (cube, imperfect cube, sphere family, cube with cavity, plate with hole; r0..r3)
 cmake -S . -B build && cmake --build build -j
 ./build/patch_test geo/cube_p2.dat cube --nmin 1 --nmax 24
 ./build/dirichlet_test geo/sphere_r0.dat sphere --nmin 1 --nmax 10 [--source 1.5 1.7 2.0]
 ./build/cavity_test geo/cube_cavity_r2.dat cav goodier --nmin 12 --nmax 12   # patch|pressure|goodier|tension
-ctest --test-dir build                   # finite-difference check of all Kelvin kernels
+./build/plate_test geo/plate_hole_p4_t0.2_r3.dat p4r3 patch,kirsch,kirsch_free,tension 0.2   # all cases, one assembly
+ctest --test-dir build                   # Kelvin kernels (finite differences) + regression of every validated case (~25 s)
 ./results/run_all.sh                     # Neumann runs -> results/patch_tests.csv (~10 min on 4 cores)
 ./results/run_dirichlet.sh               # Dirichlet runs -> results/dirichlet_tests.csv (~20 min)
 ./results/run_cavity.sh                  # cavity runs -> results/cavity_tests.csv, cavity_profile_*.csv (~35 min)
+./results/run_plate.sh                   # plate runs -> results/plate_tests.csv, plate_profile_*.csv (~100 s; ~30 s with cache/)
 python3 python/plot_patch_tests.py       # -> results/fig_patch_tests.{pdf,png}
 python3 python/plot_dirichlet_tests.py   # -> results/fig_dirichlet_tests.{pdf,png}
 python3 python/plot_cavity_tests.py      # -> results/fig_cavity_tests.{pdf,png}
+python3 python/plot_plate_tests.py       # -> results/fig_plate_tests.{pdf,png}
 python3 python/gen_cavity_exact.py       # (needs SymPy) re-derives src/cavity_exact_gen.hpp
+python3 python/gen_kirsch_exact.py       # (needs SymPy) re-derives src/kirsch_exact_gen.hpp
 ```
+
+## Library layout
+
+Header-only C++17 in `src/`; each new case is a problem header plus a thin driver plus regression
+values, not new numerics.
+
+| Layer | Files | Content |
+| --- | --- | --- |
+| Geometry | `nurbs.hpp`, `mesh.hpp` | Multipatch rational B-splines, conforming dofs, Greville collocation |
+| Quadrature | `quadrature.hpp`, `integrator.hpp` | Cell partition, Duffy singular rule, near-singular quadtree, adaptive far field with cached element rules |
+| Kernels | `kelvin.hpp` | Kelvin U, T and traction kernels (finite-difference tested) |
+| Operators | `sbie.hpp`, `hsbie.hpp`, `traction_space.hpp` | SBIE matrices H, G (H u = G t), HSBIE assembly, discontinuous traction space |
+| Model | `neumann_model.hpp`, `cache.hpp` | `NeumannModel`: H and G assembled once and cached on disk (key: geometry bytes, material, quadrature options), bordered LU factored once, any number of load cases per solve |
+| Post-processing | `recovery.hpp` | Boundary stress from u_h and t, point location on the surface |
+| Problems | `problems/cube_cavity.hpp`, `problems/plate_hole.hpp`, `*_exact_gen.hpp` | Load cases, exact fields, quantities of interest, shared by drivers and tests |
+| Tests | `tests/test_kernels.cpp`, `tests/test_regression.cpp` | Kernels; every validated result reproduced on a small mesh, including cache hit = fresh |
+
+Not yet in the library: geometry refinement (still `python/make_geometries.py`), and mixed boundary
+conditions (the next step reuses the same H and G columns). `patch_test` and `dirichlet_test` still
+reassemble per n on purpose, because they are quadrature-convergence studies.
 
 ## Plan check
 
@@ -91,6 +120,13 @@ traction σn prescribed on both surfaces:
 - the engineering case, without exact solution: the finite cube pulled by t = S e_z on z = 0, 1, with
   free lateral faces and a free cavity.
 
+For the plate with a hole (square plate W = 1, thickness t, hole radius a = 0.2 through the thickness,
+remote stress S = 1 along x) the plane-strain Kirsch field is an exact 3D solution when σ_zz = ν(σ_xx +
+σ_yy) is prescribed on the faces z = ±t/2 (`python/gen_kirsch_exact.py` checks equilibrium and the free
+hole symbolically). Its SCF is 3 at every z. Two cases without exact solution measure 3D effects: the
+Kirsch traction on the four sides with free faces (thickness effect), and a strip of length L = 3
+pulled at its ends (finite width, d/W = 0.4).
+
 **Numerics.**
 
 | Item | Choice | Where |
@@ -99,7 +135,8 @@ traction σn prescribed on both surfaces:
 | Displacement space | Isoparametric: the geometry's own rational basis. Control points that coincide across patches are merged into one conforming dof, so a gap (imperfect cube) leaves dofs unmerged | `Mesh::build` |
 | Collocation | Greville abscissae of each dof's first owning patch | `Mesh::build` |
 | Singular quadrature | Duffy split of the integration cell into up to 4 triangles at the collocation point, n×n Gauss–Legendre per triangle | `duffyRect` |
-| Curvature / aspect partitioning | App. B: split cells until the normal-angle change across a cell is ≤ 1/8 rad (κh ≤ 1/8) and the aspect ratio is ≤ 3 | `partitionElement` |
+| Curvature / aspect partitioning | App. B: split cells until the normal-angle change across a cell is ≤ 1/8 rad (κh ≤ 1/8); aspect ratio ≤ 2 (App. B: 3) and opposite-edge ratio ≤ 1.5 (taper, not in App. B) | `partitionElement` |
+| Far-field quadrature | Fixed n (paper) or, with `far_tol` > 0, Gauss order m per cell from the Bernstein-ellipse bound ρ^(−2m) < far_tol, ρ from distance / bounding radius; element-wide rules with geometry, basis and data evaluated once | `ElementIntegrator` |
 | Near-singular quadrature | App. B: quadtree refinement towards the closest point while d ≤ 3h | `nearRect` |
 | Solver | Dense bordered system [A R; Rᵀ 0] with the 6 rigid modes R, partial-pivot LU | `app/patch_test.cpp` |
 | Error measure | Relative L²(Γ) displacement error after removing the L²-best rigid motion, 10×10 Gauss per cell | `relativeL2Error` |
@@ -113,9 +150,13 @@ traction σn prescribed on both surfaces:
 | Cavity geometry | Quadratic cube (6 patches) plus Bembel's sphere scaled to a = 0.2 with u and v swapped so its normals point into the cavity; both refined together (12 → 768 elements). Orientation check: the computed volume is 1 − 4πa³/3 to 1e-13 | `make_geometries.py` |
 | Cavity solver | Same bordered SBIE system; general traction data t(y, n); SVD rank check every run | `app/cavity_test.cpp` |
 | Stress recovery | σ on Γ from tangential gradient of u_h plus t, at the equator point c + a e_x and along the meridian in the x–z plane | `src/recovery.hpp` |
+| Plate geometry | 16 biquadratic rational patches (each face quadrant blends the hole arc to the square edge; straight radial lines), exact degree elevation to p = 4, then k-refinement (16 → 1,024 elements); optional end blocks for a longer strip. Geometry error is zero: volume (L − πa²)t to 1e-13 | `make_geometries.py` |
+| Plate data | Traction data interpolated in the traction space (t ≈ Σ N_j t_j), so the right-hand side is G t for any load; integrating the data exactly is kept as a check (`--exact-data`) | `NeumannModel::solve` |
 
 **Visualization.** Semilog plots of error against integration points per direction, matching the
-paper's Figs. 2, 3, 6 and 7, plus a CSV of every run (`results/patch_tests.csv`).
+paper's Figs. 2, 3, 6 and 7, plus a CSV of every run (`results/*_tests.csv`). The plate figure adds
+log-log error against unknowns and against wall time with h^(p+1) reference slopes, SCF error, and
+the through-thickness stress profile.
 
 ## Assumptions and deviations (please read)
 
@@ -139,8 +180,8 @@ paper's Figs. 2, 3, 6 and 7, plus a CSV of every run (`results/patch_tests.csv`)
 4. The κh ≤ 1/8 criterion is estimated from the normal-angle span of a cell (centre-to-corner angle × 2),
    not from principal curvatures.
 5. Traction data are evaluated exactly at quadrature points (t = σn with the discrete geometry's normal)
-   instead of being projected onto a traction basis. For this test that removes data error rather than
-   adding it.
+   instead of being projected onto a traction basis, except in the plate runs, which interpolate it so
+   the operators can be reused for every load (item 8).
 6. Rigid-body removal: the paper says only that rigid motion is "nullified"; here it is a bordered system
    plus an L²-best rigid fit in the error.
 7. The sphere is Bembel's exact six-patch rational quartic (`geo/bembel_sphere.dat`, from
@@ -148,6 +189,12 @@ paper's Figs. 2, 3, 6 and 7, plus a CSV of every run (`results/patch_tests.csv`)
    perturbed sphere is a smooth radial perturbation of the control points, not the paper's
    parametrization. Bembel itself is not linked yet; its H² compression is the planned route to the fast
    solver.
+8. **Plate runs use three numerics changes not in the paper.** (a) Partition aspect ratio 2 instead of
+   3 and a taper split: without them the plate's tapered cells converged slowly in n. The cube, sphere
+   and cavity results are unchanged (regression test). (b) Adaptive far-field Gauss order
+   (`far_tol` = 1e-10) instead of a fixed n: it reproduces the fixed n = 12 results to 8 digits at
+   1/25 of the cost. (c) Interpolated traction data: at p = 2, r3 the Kirsch error is 4.6e-4 with
+   interpolated data and 8.3e-4 with exact data, so interpolation costs nothing in accuracy here.
 
 ## Results
 
@@ -234,10 +281,55 @@ Displacement errors are relative L²(Γ) after rigid-motion removal; n = 12 unle
 
 ![Cavity tests](results/fig_cavity_tests.png)
 
+### Plate with a circular through-hole (SBIE, traction-only)
+
+All runs: `NeumannModel` with adaptive far field (`far_tol` = 1e-10, n = 12 near field), interpolated
+traction data, 4 cores. Time = assembly of H and G + LU + solve of all four load cases; a rerun with the
+operators in `cache/` skips assembly.
+
+| Mesh | Unknowns | Kirsch u error | SCF mid-plane (exact 3) | Assembly | LU | 4 solves |
+| --- | --- | --- | --- | --- | --- | --- |
+| p = 2, 64 el. | 432 | 5.6e-2 | 3.1682 | 0.12 s | 0.005 s | 0.002 s |
+| p = 2, 256 el. | 1,200 | 1.0e-2 | 3.0071 | 0.32 s | 0.05 s | 0.01 s |
+| p = 2, 1,024 el. | 3,888 | 4.6e-4 | 2.99941 | 1.95 s | 0.72 s | 0.07 s |
+| p = 4, 64 el. | 1,200 | 6.6e-3 | 2.99676 | 0.66 s | 0.04 s | 0.01 s |
+| p = 4, 256 el. | 2,352 | 5.0e-3 | 3.0123 | 1.30 s | 0.19 s | 0.03 s |
+| p = 4, 1,024 el. | 5,808 | 3.8e-5 | 2.999963 | 7.57 s | 2.06 s | 0.17 s |
+
+- **Order.** The last step gives rate 4.5 for p = 2 and 7.0 for p = 4 in h (expected p + 1 = 3 and 5; both still above the asymptote);
+  the middle p = 4 step is pre-asymptotic (the interpolation error of the space shows the same plateau,
+  and the BEM error stays within 2.4× of it). An SCF accurate to 1e-3 needs about 3,000 unknowns at
+  p = 2 and about 1,200 at p = 4; 1e-5 needs p = 4 and about 6,000 (panel c).
+- **Geometry error is zero:** the rational patches reproduce the hole and the faces exactly.
+- **Patch test** u = αx on every mesh: 1e-9 to 3e-6, the floor set by `far_tol`, 10× below the finest
+  Kirsch error.
+- **Thickness effect** (Kirsch traction on the sides, free faces, p = 4, 1,024 el.):
+
+  | t/a | SCF mid-plane | SCF at the face |
+  | --- | --- | --- |
+  | 0.5 | 3.026 | 2.957 |
+  | 1 | 3.062 | 2.879 |
+  | 2 | 3.089 | 2.752 |
+
+  Uncertainty ≈ 0.01 (change from the 256-element mesh). The mid-plane rises above 3 and the face drops
+  below it as the plate thickens, as in Folias & Wang, *Comput. Mech.* 6 (1990) 379–391, who give
+  curves but no tables, so the comparison is qualitative.
+- **Finite-width strip** (L = 3, d/W = 0.4, t/a = 1, p = 4): SCF on the gross stress 3.794, 3.810, 3.832
+  at 1,800, 3,528, 8,712 unknowns (face 3.557, 3.560, 3.578); the r3 run takes 30 s. Plane stress
+  (Howland 1930 via the Peterson curve fit Kt,net = 2 + 0.284(1−d/W) − 0.600(1−d/W)² + 1.32(1−d/W)³,
+  quoted from memory and not checked against the book) gives Kt,net = 2.240, gross 3.733; times the
+  mid-plane thickness factor 3.062/3 from the table above, 3.81. The BEM agrees to 0.6%, the size of its
+  own last mesh change. Heywood's simpler 2 + (1−d/W)³ gives 3.69.
+- **Square plate in tension** (L = W = 1): SCF 4.89 mid-plane. The loaded ends are only 1.5 a from the
+  hole edge, so this is a geometry study, not a Kirsch comparison, and it has no reference.
+
+![Plate tests](results/fig_plate_tests.png)
+
 ## Next steps
 
-1. Mixed Dirichlet–Neumann problems (e.g. the cavity cube clamped on z = 0); exterior Neumann (Eshelby)
-   patch test; FEM cross-check of the finite-cube SCF.
+1. Mixed Dirichlet–Neumann problems on `NeumannModel`'s H and G (e.g. the plate gripped at one end, the
+   cavity cube clamped on z = 0); exterior Neumann (Eshelby) patch test; FEM cross-check of the
+   finite-cube SCF. Move geometry refinement into C++.
 2. Thin curved plate (cylindrical panel built as exact NURBS): Neumann patch test for t/R = 10⁻¹…10⁻³,
    then Scordelis–Lo as a 3D solid.
 3. Iterative solver, preconditioner and H² compression.

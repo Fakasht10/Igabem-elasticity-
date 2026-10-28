@@ -24,7 +24,7 @@
 #include <iostream>
 #include <string>
 
-#include "cavity_exact_gen.hpp"
+#include "problems/cube_cavity.hpp"
 #include "recovery.hpp"
 #include "sbie.hpp"
 
@@ -56,47 +56,18 @@ int main(int argc, char** argv) {
   mesh.build(loadDat(geo), PartitionOptions{});
   int ncells = 0;
   for (const auto& e : mesh.elements) ncells += int(e.cells.size());
-  const int ncube = 6, np = int(mesh.patches.size());  // cube patches first, then the cavity
+  const int ncube = CubeCavity::ncube, np = int(mesh.patches.size());
 
-  const Material mat;
-  const double a = 0.2, S = 1.0, p = 1.0;
-  const Vec3 c(0.5, 0.5, 0.5);
-  const Eigen::Matrix3d alpha = Eigen::Vector3d(-0.25, -0.25, 1.0).asDiagonal();
-  const bool exact = lc != "tension";
-
-  // Exact displacement and gradient at x.
-  auto field = [&](const Vec3& x, Vec3& u, Eigen::Matrix3d& G) {
-    const Vec3 X = x - c;
-    if (lc == "patch") {
-      u = alpha * x;
-      G = alpha;
-    } else if (lc == "pressure") {
-      const double A = p * a * a * a / (4.0 * mat.mu), r = X.norm();
-      u = A * X / (r * r * r);
-      G = A * (Eigen::Matrix3d::Identity() / (r * r * r) - 3.0 * X * X.transpose() / std::pow(r, 5));
-    } else {
-      goodierField(X(0), X(1), X(2), a, S, mat.mu, mat.nu(), u, G);
-    }
-  };
-  auto uexact = [&](const Vec3& x) {
-    Vec3 u;
-    Eigen::Matrix3d G;
-    field(x, u, G);
-    return u;
-  };
-  auto traction = [&](const Vec3& y, const Vec3& n) -> Vec3 {
-    if (lc == "tension") return (y - c).norm() > 2.0 * a ? Vec3(S * n(2) * Vec3::UnitZ()) : Vec3::Zero();
-    Vec3 u;
-    Eigen::Matrix3d G;
-    field(y, u, G);
-    return mat.stress(G) * n;
-  };
-  auto exactStress = [&](const Vec3& x) {
-    Vec3 u;
-    Eigen::Matrix3d G;
-    field(x, u, G);
-    return Eigen::Matrix3d(mat.stress(G));
-  };
+  const CubeCavity cc;
+  CubeCavity::Case k;
+  CubeCavity::parse(lc, k);
+  const Material& mat = cc.mat;
+  const double a = cc.a;
+  const Vec3 c = cc.c;
+  const bool exact = CubeCavity::exact(k);
+  auto uexact = [&](const Vec3& x) { return cc.displacement(k, x); };
+  auto traction = [&](const Vec3& y, const Vec3& n) { return cc.traction(k, y, n); };
+  auto exactStress = [&](const Vec3& x) { return cc.stress(k, x); };
 
   const SurfacePoint eq = locate(mesh, c + a * Vec3::UnitX(), ncube, np);
   const double seq_exact = exact ? exactStress(eq.E.x)(2, 2) : std::nan("");
@@ -128,7 +99,7 @@ int main(int argc, char** argv) {
     const auto t0 = std::chrono::steady_clock::now();
     Eigen::MatrixXd A;
     Eigen::VectorXd b;
-    SbieAssembler(mesh, mat, sopt).assemble(traction, A, b);
+    SbieAssembler(mesh, mat, sopt).assembleTraction(traction, A, b);
 
     // Bordered system [A s*R; s*R^T 0] fixes the 6 rigid-body modes.
     const double s = A.cwiseAbs().maxCoeff();

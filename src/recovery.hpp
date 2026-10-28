@@ -46,12 +46,13 @@ struct SurfacePoint {
   Vec3 N;  // unit normal outward from the solid
 };
 
-// Closest boundary point to x among the patches [p0, p1).
-inline SurfacePoint locate(const Mesh& m, const Vec3& x, int p0, int p1) {
+// Closest boundary point to x among the patches accepted by use(patch).
+template <class Pred>
+inline SurfacePoint locate(const Mesh& m, const Vec3& x, Pred&& use) {
   SurfacePoint s{};
   double best = 1e300;
   for (const auto& e : m.elements) {
-    if (e.patch < p0 || e.patch >= p1) continue;
+    if (!use(e.patch)) continue;
     double d;
     const Vec2 xi = m.closestPoint(e, x, d);
     if (d < best) { best = d; s.patch = e.patch; s.su = e.su; s.sv = e.sv; s.xi = xi; }
@@ -59,6 +60,11 @@ inline SurfacePoint locate(const Mesh& m, const Vec3& x, int p0, int p1) {
   m.patches[s.patch].evalSpan(s.su, s.sv, s.xi(0), s.xi(1), s.E);
   s.N = (s.E.normal() * m.normal_sign).normalized();
   return s;
+}
+
+// Closest boundary point to x among the patches [p0, p1).
+inline SurfacePoint locate(const Mesh& m, const Vec3& x, int p0, int p1) {
+  return locate(m, x, [=](int p) { return p >= p0 && p < p1; });
 }
 
 // Cauchy stress of u_h at a boundary point with known traction t.

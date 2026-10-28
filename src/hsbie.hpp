@@ -26,54 +26,9 @@
 #include "kelvin.hpp"
 #include "mesh.hpp"
 #include "recovery.hpp"
+#include "traction_space.hpp"
 
 namespace igabem {
-
-// Traction space: the geometry's rational basis on each patch, discontinuous
-// across patches (no merging), collocated at Greville points whose first and
-// last entries are moved halfway inwards so that every point is interior to
-// its patch.
-struct TractionSpace {
-  struct Point {
-    int patch, su, sv;
-    Vec2 xi;
-    PatchEval E;  // geometry and basis at the point
-    Vec3 x, N;
-  };
-  std::vector<int> offset;
-  std::vector<Point> points;
-  int ndof = 0;
-
-  static double shifted(const Patch& P, int i, bool in_u) {
-    const int n = in_u ? P.nu : P.nv;
-    if (i == 0) return 0.5 * (P.greville(0, in_u) + P.greville(1, in_u));
-    if (i == n - 1) return 0.5 * (P.greville(n - 2, in_u) + P.greville(n - 1, in_u));
-    return P.greville(i, in_u);
-  }
-
-  void build(const Mesh& m) {
-    offset.clear();
-    points.clear();
-    ndof = 0;
-    for (size_t ip = 0; ip < m.patches.size(); ++ip) {
-      const Patch& P = m.patches[ip];
-      if (P.nu < 3 || P.nv < 3) throw std::runtime_error("traction space needs >= 3 cps per direction");
-      offset.push_back(ndof);
-      for (int k = 0; k < P.nu * P.nv; ++k) {
-        Point c;
-        c.patch = int(ip);
-        c.xi = Vec2(shifted(P, k % P.nu, true), shifted(P, k / P.nu, false));
-        c.su = findSpan(P.nu, P.p, c.xi(0), P.U);
-        c.sv = findSpan(P.nv, P.q, c.xi(1), P.V);
-        P.evalSpan(c.su, c.sv, c.xi(0), c.xi(1), c.E);
-        c.x = c.E.x;
-        c.N = (c.E.normal() * m.normal_sign).normalized();
-        points.push_back(c);
-      }
-      ndof += P.nu * P.nv;
-    }
-  }
-};
 
 class HsbieAssembler {
  public:
@@ -117,7 +72,7 @@ class HsbieAssembler {
       for (const auto& e : mesh_.elements) {
         const auto& l2g = mesh_.l2g[e.patch];
         const int off = ts_.offset[e.patch];
-        quad_.integrate(src, e, [&](const PatchEval& E, double w) {
+        quad_.integrate(src, e, [&](const QPoint& E, double w) {
           const Vec3 nJ = E.normal() * mesh_.normal_sign;
           const double J = nJ.norm();
           const Vec3 n = nJ / J, d = E.x - c.x;

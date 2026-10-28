@@ -149,6 +149,11 @@ struct SolverOptions {
   int n_gauss = 8;          // integration points per direction per cell
   bool near_refine = true;  // App. B near-singular refinement (d <= 3h)
   int near_max_depth = 16;
+  // Far-field order reduction: > 0 picks per cell the smallest Gauss order whose
+  // error estimate rho^(-2m) (rho: Bernstein-ellipse parameter of the nearest
+  // singularity, the source point) is below far_tol, capped at n_gauss.
+  // 0 keeps n_gauss everywhere (the paper's fixed-order rule).
+  double far_tol = 0.0;
 };
 
 }  // namespace igabem
