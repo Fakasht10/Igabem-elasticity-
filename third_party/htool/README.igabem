@@ -1,0 +1,3 @@
+Htool (https://github.com/htool-ddm/htool), MIT license (LICENSE), headers only.
+Vendored from commit 277bbcf687180ec14456745faeccb674775eeca0 (2026-10-13), include/ unchanged.
+Used by src/fast/ (hierarchical compression of the SBIE operators).

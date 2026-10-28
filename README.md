@@ -30,7 +30,9 @@ with a thickness-robust solver for thin curved plates.
 ## Build and run
 
 Requires a C++17 compiler, CMake ≥ 3.16, Eigen ≥ 3.3, optionally OpenMP; Python 3 with NumPy and
-Matplotlib for geometry generation and plots.
+Matplotlib for geometry generation and plots. The compressed operators (`src/fast`, `hmatrix_bench`,
+`test_hmatrix`) also need BLAS and LAPACK (e.g. `libopenblas-dev liblapack-dev`); without them they are
+skipped. Run them with `OPENBLAS_NUM_THREADS=1`: the compression is parallel over blocks.
 
 ```sh
 python3 python/make_geometries.py 3      # writes geo/*.dat (cube, imperfect cube, sphere family, cube with cavity, plate with hole; r0..r3)
@@ -45,6 +47,7 @@ ctest --test-dir build                   # Kelvin kernels (finite differences) +
 ./results/run_cavity.sh                  # cavity runs -> results/cavity_tests.csv, cavity_profile_*.csv (~35 min)
 ./build/plate_test geo/plate_hole_p4_t0.2_r3.dat p4r3 kirsch,tension 0.2 --bc clamp --fields out/p4r3   # mixed BCs, probes, .vtu
 ./results/run_plate.sh                   # plate runs (traction-only and clamped) -> results/plate_tests.csv, plate_profile_*.csv
+./results/run_hmatrix.sh                 # compressed H, G: memory, time, accuracy -> results/hmatrix_tests.csv, fig_hmatrix (~30 min)
 ./results/run_fields.sh                  # probes, .vtu, field figures -> results/fields/, results/fig_probes_*, fig_fields_*
 python3 python/plot_patch_tests.py       # -> results/fig_patch_tests.{pdf,png}
 python3 python/plot_dirichlet_tests.py   # -> results/fig_dirichlet_tests.{pdf,png}
@@ -72,7 +75,8 @@ values, not new numerics.
 | Post-processing | `recovery.hpp`, `interior.hpp`, `probes.hpp`, `vtk.hpp` | Boundary stress recovery; u, ∇u, ε, σ at interior points (near-boundary safe) with an inside test; line probes through the solid and curve probes on the boundary to CSV; surface and section `.vtu` for ParaView |
 | Plots | `python/plot_probes.py`, `python/render_vtu.py` | Canned probe figures (any component, Cartesian or cylindrical, exact overlay) and a rendered 3D field figure |
 | Problems | `problems/cube_cavity.hpp`, `problems/plate_hole.hpp`, `*_exact_gen.hpp` | Load cases, exact fields, quantities of interest, shared by drivers and tests |
-| Tests | `tests/test_kernels.cpp`, `tests/test_regression.cpp` | Kernels; every validated result reproduced on a small mesh, including cache hit = fresh |
+| Compression | `fast/sbie_entries.hpp`, `fast/vector_aca.hpp`, `fast/hmatrix_operator.hpp`, `fast/compressed_sbie.hpp` | H and G as hierarchical matrices on [Htool](https://github.com/htool-ddm/htool) (vendored in `third_party/htool`, MIT): entry callback for any rows x columns (same quadrature as the dense assembly), clustering that keeps the 3 components of a point together, 3 x 3-block ACA with SVD recompression, near field in one pass, rigid-body diagonal from the compressed H, leaves cached on disk. `CompressedSbie` is the counterpart of `OperatorRows` |
+| Tests | `tests/test_kernels.cpp`, `tests/test_regression.cpp`, `tests/test_hmatrix.cpp` | Kernels; every validated result reproduced on a small mesh, including cache hit = fresh; compressed operators against dense (entries, ACA tolerance, rigid modes, cache) |
 
 Not yet in the library: geometry refinement (still `python/make_geometries.py`). `patch_test` and `dirichlet_test` still
 reassemble per n on purpose, because they are quadrature-convergence studies.
