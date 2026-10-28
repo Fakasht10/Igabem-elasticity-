@@ -66,8 +66,11 @@ struct KelvinTraction {
     return lambda * P.trace() * N + mu * (P * N + P.transpose() * N);
   }
 
-  inline void eval(const Eigen::Vector3d& d, const Eigen::Vector3d& N, const Eigen::Vector3d& n,
-                   Eigen::Matrix3d& D, Eigen::Matrix3d& S) const {
+  // Displacement-gradient kernels (no normal at x): P[m]_kl = dU_km/dx_l and
+  // Q[m]_kl = dT_km/dx_l, so that at an interior point
+  //   du_k/dx_l = int P[m]_kl t_m - int Q[m]_kl u_m.
+  inline void gradients(const Eigen::Vector3d& d, const Eigen::Vector3d& n, Eigen::Matrix3d P[3],
+                        Eigen::Matrix3d Q[3]) const {
     const double r = d.norm();
     const Eigen::Vector3d g = d / r;
     const double a = 3.0 - 4.0 * nu;
@@ -75,15 +78,12 @@ struct KelvinTraction {
     const double c2 = cU / (r * r), c3 = cU / (r * r * r);
     for (int m = 0; m < 3; ++m) {
       // P_kl = dU_km/dx_l = -dU_km/dy_l
-      Eigen::Matrix3d P;
       for (int k = 0; k < 3; ++k)
         for (int l = 0; l < 3; ++l)
-          P(k, l) = -c2 * (-a * del(k, m) * g(l) + del(k, l) * g(m) + del(m, l) * g(k) -
-                           3.0 * g(k) * g(m) * g(l));
-      D.col(m) = traction(P, N);
+          P[m](k, l) = -c2 * (-a * del(k, m) * g(l) + del(k, l) * g(m) + del(m, l) * g(k) -
+                              3.0 * g(k) * g(m) * g(l));
     }
     // Q^{(m)}_kl = dT_km/dx_l = -C_mnpq n_n d2U_kp/dy_l dy_q
-    Eigen::Matrix3d Q[3];
     for (int k = 0; k < 3; ++k) {
       for (int l = 0; l < 3; ++l) {
         Eigen::Matrix3d H;  // H_pq = d2 U_kp / dy_l dy_q
@@ -99,6 +99,13 @@ struct KelvinTraction {
         for (int m = 0; m < 3; ++m) Q[m](k, l) = tk(m);
       }
     }
+  }
+
+  inline void eval(const Eigen::Vector3d& d, const Eigen::Vector3d& N, const Eigen::Vector3d& n,
+                   Eigen::Matrix3d& D, Eigen::Matrix3d& S) const {
+    Eigen::Matrix3d P[3], Q[3];
+    gradients(d, n, P, Q);
+    for (int m = 0; m < 3; ++m) D.col(m) = traction(P[m], N);
     for (int m = 0; m < 3; ++m) S.col(m) = traction(Q[m], N);
   }
 };

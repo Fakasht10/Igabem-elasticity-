@@ -7,11 +7,12 @@
 
 #include <Eigen/Dense>
 #include <chrono>
-#include <filesystem>
 #include <string>
+#include <vector>
 
-#include "cache.hpp"
+#include "operators.hpp"
 #include "sbie.hpp"
+#include "solution.hpp"
 #include "traction_space.hpp"
 
 namespace igabem {
@@ -36,23 +37,13 @@ class NeumannModel {
     mesh.build(loadDat(geometry_file), po);
     ts.build(mesh);
     R = rigidModes(mesh);
-    const auto t0 = std::chrono::steady_clock::now();
-    std::string path;
-    Eigen::MatrixXd T(1, 1);
-    if (!cache_dir.empty()) {
-      std::filesystem::create_directories(cache_dir);
-      path = cache_dir + "/" + operatorKey(geometry_file, "sbie_hg", mat, opt, po) + ".bin";
-      from_cache = loadMatrices(path, {&H, &G, &T}) && H.rows() == 3 * mesh.ndof &&
-                   G.cols() == 3 * ts.ndof && T.size() == 1;
-    }
-    if (!from_cache) {
-      SbieAssembler(mesh, mat, opt).assembleHG(ts, H, G);
-      T(0, 0) = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-      if (!path.empty()) saveMatrices(path, {&H, &G, &T});
-    }
+    OperatorRows op = cachedOperatorRows(mesh, ts, mat, opt, po, geometry_file, cache_dir, "sbie_hg", mesh.colloc);
+    H = std::move(op.H);
+    G = std::move(op.G);
+    from_cache = op.from_cache;
+    t_assemble = op.t_assemble;
+    t_load = op.t_load;
     const auto t1 = std::chrono::steady_clock::now();
-    t_assemble = T(0, 0);
-    t_load = from_cache ? std::chrono::duration<double>(t1 - t0).count() : 0.0;
     factor();
     t_factor = std::chrono::duration<double>(std::chrono::steady_clock::now() - t1).count();
   }
@@ -64,6 +55,16 @@ class NeumannModel {
   template <class F>
   Eigen::MatrixXd solve(F&& traction, int K) const {
     return solveRhs(G * ts.interpolate(traction, K));
+  }
+
+  // Full boundary solutions (displacement and interpolated traction), one per case.
+  template <class F>
+  std::vector<BoundarySolution> solutions(F&& traction, int K) const {
+    const Eigen::MatrixXd TC = ts.interpolate(traction, K);
+    const Eigen::MatrixXd UH = solveRhs(G * TC);
+    std::vector<BoundarySolution> out(K);
+    for (int k = 0; k < K; ++k) out[k] = {&mesh, &ts, mat, UH.col(k), TC.col(k)};
+    return out;
   }
 
   // Displacement coefficients for given right-hand sides B (3M x K).

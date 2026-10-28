@@ -31,12 +31,16 @@ inline std::string readFile(const std::string& path) {
   return ss.str();
 }
 
+// Bump when the assembly itself changes (quadrature rules, kernels), so that
+// operators assembled by older code are not reused.
+constexpr int kOperatorVersion = 2;  // 2: singular cells split around the source point
+
 inline std::string operatorKey(const std::string& geometry_file, const std::string& kind,
                                const Material& mat, const SolverOptions& so,
                                const PartitionOptions& po) {
   std::ostringstream ss;
   ss.precision(17);
-  ss << kind << '|' << mat.lambda << ',' << mat.mu << '|' << so.n_gauss << ',' << so.near_refine << ','
+  ss << kind << '|' << kOperatorVersion << '|' << mat.lambda << ',' << mat.mu << '|' << so.n_gauss << ',' << so.near_refine << ','
      << so.near_max_depth << ',' << so.far_tol << '|' << po.enabled << ',' << po.kappa_h << ','
      << po.aspect << ',' << po.taper << ',' << po.max_depth;
   char hex[17];

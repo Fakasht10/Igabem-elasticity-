@@ -96,12 +96,19 @@ class SbieAssembler {
   // later, every mixed boundary condition is a choice of columns and a
   // right-hand side.
   void assembleHG(const TractionSpace& ts, Eigen::MatrixXd& H, Eigen::MatrixXd& G) const {
+    assembleHG(mesh_.colloc, ts, H, G);
+  }
+
+  // The same rows at any set of collocation points on the boundary (3 rows each),
+  // e.g. the traction collocation points of Dirichlet patches (mixed problems).
+  void assembleHG(const std::vector<Collocation>& rows, const TractionSpace& ts, Eigen::MatrixXd& H,
+                  Eigen::MatrixXd& G) const {
     const int M = mesh_.ndof, Nt = ts.ndof;
-    H.setZero(3 * M, 3 * M);
-    G.setZero(3 * M, 3 * Nt);
+    H.setZero(3 * int(rows.size()), 3 * M);
+    G.setZero(3 * int(rows.size()), 3 * Nt);
 #pragma omp parallel for schedule(dynamic)
-    for (int a = 0; a < int(mesh_.colloc.size()); ++a) {
-      const Collocation& c = mesh_.colloc[a];
+    for (int a = 0; a < int(rows.size()); ++a) {
+      const Collocation& c = rows[a];
       const SourcePoint src{c.patch, c.xi, c.x};
       Eigen::MatrixXd Hrow = Eigen::MatrixXd::Zero(3, 3 * M);
       Eigen::MatrixXd Grow = Eigen::MatrixXd::Zero(3, 3 * Nt);
@@ -134,6 +141,22 @@ class SbieAssembler {
   ElementIntegrator quad_;
 };
 
+// SBIE collocation points at the traction collocation points of one patch
+// (interior to the patch), with the displacement basis there.
+inline std::vector<Collocation> tractionCollocation(const Mesh& m, const TractionSpace& ts, int patch) {
+  std::vector<Collocation> out;
+  const int n0 = ts.offset[patch];
+  const int n1 = patch + 1 < int(ts.offset.size()) ? ts.offset[patch + 1] : ts.ndof;
+  for (int i = n0; i < n1; ++i) {
+    const TractionSpace::Point& p = ts.points[i];
+    Collocation c{p.patch, p.su, p.sv, p.xi, p.x, {}};
+    for (int l = 0; l < p.E.n_loc; ++l)
+      if (std::abs(p.E.R[l]) > 1e-15) c.basis.push_back({m.l2g[patch][p.E.idx[l]], p.E.R[l]});
+    out.push_back(std::move(c));
+  }
+  return out;
+}
+
 // Rigid-body modes in coefficient space: 3 translations, 3 rotations about 0.
 inline Eigen::MatrixXd rigidModes(const Mesh& m) {
   Eigen::MatrixXd R = Eigen::MatrixXd::Zero(3 * m.ndof, 6);
@@ -148,9 +171,10 @@ inline Eigen::MatrixXd rigidModes(const Mesh& m) {
 
 // Relative L2(Gamma) error of u_h against an exact field uexact(x), after
 // removing the L2-best rigid-body motion (undetermined by the pure Neumann
-// problem).
+// problem; remove_rigid = false for problems with Dirichlet data).
 template <class Fu>
-inline double displacementL2Error(const Mesh& m, const Eigen::VectorXd& c, Fu&& uexact, int ng = 10) {
+inline double displacementL2Error(const Mesh& m, const Eigen::VectorXd& c, Fu&& uexact, int ng = 10,
+                                  bool remove_rigid = true) {
   const GaussRule g = gaussLegendre(ng);
   struct QP { Vec3 x, e; double w; };
   std::vector<QP> qp;
@@ -179,7 +203,8 @@ inline double displacementL2Error(const Mesh& m, const Eigen::VectorXd& c, Fu&& 
     G += q.w * F.transpose() * F;
     r += q.w * F.transpose() * q.e;
   }
-  const Eigen::Matrix<double, 6, 1> beta = G.ldlt().solve(r);
+  const Eigen::Matrix<double, 6, 1> beta =
+      remove_rigid ? Eigen::Matrix<double, 6, 1>(G.ldlt().solve(r)) : Eigen::Matrix<double, 6, 1>::Zero();
   double num = 0.0, den = 0.0;
   for (const auto& q : qp) {
     num += q.w * (q.e - phi(q.x) * beta).squaredNorm();

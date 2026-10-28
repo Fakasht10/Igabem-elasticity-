@@ -3,6 +3,7 @@
 //   D_im  = C_ijkl N_j dU_km/dx_l             (traction of U at x)
 //   S_im  = C_ijkl N_j dT_km/dx_l             (traction of T at x)
 // Returns non-zero if any relative error exceeds 1e-7.
+#include <algorithm>
 #include <cstdio>
 
 #include "kelvin.hpp"
@@ -43,8 +44,16 @@ int main() {
     Dfd.col(m) = KT.traction(grad(U, m, true), N);
     Sfd.col(m) = KT.traction(grad(T, m, true), N);
   }
+  // Displacement-gradient kernels P[m] = dU_.m/dx, Q[m] = dT_.m/dx (interior evaluation).
+  M3 P[3], Q[3];
+  KT.gradients(y - x, n, P, Q);
+  double eP = 0.0, eQ = 0.0;
+  for (int m = 0; m < 3; ++m) {
+    eP = std::max(eP, (grad(U, m, true) - P[m]).norm() / P[m].norm());
+    eQ = std::max(eQ, (grad(T, m, true) - Q[m]).norm() / Q[m].norm());
+  }
   const double eT = (Tfd - Ta).norm() / Ta.norm(), eD = (Dfd - Da).norm() / Da.norm(),
                eS = (Sfd - Sa).norm() / Sa.norm();
-  std::printf("rel. error  T: %.2e  D: %.2e  S: %.2e\n", eT, eD, eS);
-  return (eT < 1e-7 && eD < 1e-7 && eS < 1e-7) ? 0 : 1;
+  std::printf("rel. error  T: %.2e  D: %.2e  S: %.2e  dU/dx: %.2e  dT/dx: %.2e\n", eT, eD, eS, eP, eQ);
+  return (eT < 1e-7 && eD < 1e-7 && eS < 1e-7 && eP < 1e-7 && eQ < 1e-7) ? 0 : 1;
 }

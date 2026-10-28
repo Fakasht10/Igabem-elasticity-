@@ -2,7 +2,8 @@
 
 Reads results/plate_tests.csv and results/plate_profile_*.csv and writes
 results/fig_plate_tests.{pdf,png}:
-  (a) Kirsch field: displacement error against unknowns, p = 2 and p = 4
+  (a) Kirsch field: displacement error against unknowns, p = 2 and p = 4, traction
+      everywhere and with the end face clamped to the exact displacement (mixed)
   (b) the same error against wall time (assembly of H and G + LU + solve)
   (c) error of the stress concentration factor sigma_xx(0, a, 0) against 3
   (d) sigma_xx through the thickness at the hole edge, free faces (thickness effect)
@@ -33,8 +34,8 @@ def load():
     return d
 
 
-def series(d, p, case, t="0.2", data="interp"):
-    rows = [d.get(("plate_p%d_t%s_r%d" % (p, t, r), case, data)) for r in range(4)]
+def series(d, p, case, t="0.2", data="interp", bc=""):
+    rows = [d.get(("plate_%sp%d_t%s_r%d" % (bc, p, t, r), case, data)) for r in range(4)]
     return [r for r in rows if r is not None]
 
 
@@ -73,16 +74,20 @@ def main():
         N = [int(r["unknowns"]) for r in s]
         ax.loglog(N, [float(r["rel_L2_err"]) for r in s], marker=M[i], color=C[i], ms=4.5, lw=1.4,
                   label=r"$p = %d$" % p)
+    for i, p in enumerate((2, 4)):
+        s = series(d, p, "kirsch", bc="clamp_")
+        ax.loglog([int(r["unknowns"]) for r in s], [float(r["rel_L2_err"]) for r in s], marker=M[i],
+                  color=C[i], ms=4.5, lw=1.0, ls=":", mfc="white", label=r"$p = %d$, end clamped (mixed)" % p)
     s = series(d, 2, "kirsch", data="exact")
     ax.loglog([int(r["unknowns"]) for r in s], [float(r["rel_L2_err"]) for r in s], marker="x",
               color=C[0], ls="none", ms=6, label=r"$p = 2$, data integrated exactly")
     # unknowns ~ h^-2 on a surface: O(h^3) -> N^-3/2, O(h^5) -> N^-5/2
     slope(ax, 1.5e3, 4e3, 3e-2, -1.5, r"$h^{3}$")
-    slope(ax, 2.2e3, 5e3, 2.5e-4, -2.5, r"$h^{5}$")
+    slope(ax, 1.8e3, 4.2e3, 1.6e-4, -2.5, r"$h^{5}$")
     ax.set_xlabel("unknowns $3M$")
     ax.set_ylabel(ylab)
     ax.legend(frameon=False, fontsize=8, loc="lower left")
-    style(ax, "(a) Kirsch field, $t/a = 1$: error against unknowns")
+    style(ax, "(a) Kirsch field, $t/a = 1$: error vs unknowns")
 
     ax = axs[0, 1]
     for i, p in enumerate((2, 4)):
