@@ -55,7 +55,8 @@ struct Rect {
 struct PartitionOptions {
   bool enabled = true;
   double kappa_h = 0.125;  // max normal-angle change across a cell (radians)
-  double aspect = 3.0;
+  double aspect = 2.0;     // App. B uses 3; 2 changes none of the earlier geometries
+  double taper = 1.5;      // max ratio of opposite edge lengths (0 = off); not in App. B
   int max_depth = 8;
 };
 
@@ -83,8 +84,15 @@ inline void partitionElement(const Patch& P, int su, int sv, const Rect& R,
   const double Lu = ((X[2][0] - X[0][0]).norm() + (X[2][2] - X[0][2]).norm()) * 0.5;
   const double Lv = ((X[0][2] - X[0][0]).norm() + (X[2][2] - X[2][0]).norm()) * 0.5;
   const bool curv = ang > opt.kappa_h;
-  const bool split_u = curv || Lu > opt.aspect * Lv;
-  const bool split_v = curv || Lv > opt.aspect * Lu;
+  // Taper: u-edges of different length mean x_u varies along v, so split in v
+  // (and vice versa). Strongly tapered cells put complex zeros of r^2 close to
+  // the Duffy integration domain and slow the quadrature down.
+  const double Lu0 = (X[2][0] - X[0][0]).norm(), Lu1 = (X[2][2] - X[0][2]).norm();
+  const double Lv0 = (X[0][2] - X[0][0]).norm(), Lv1 = (X[2][2] - X[2][0]).norm();
+  const bool tap_u = opt.taper > 0 && std::max(Lu0, Lu1) > opt.taper * std::min(Lu0, Lu1);
+  const bool tap_v = opt.taper > 0 && std::max(Lv0, Lv1) > opt.taper * std::min(Lv0, Lv1);
+  const bool split_u = curv || Lu > opt.aspect * Lv || tap_v;
+  const bool split_v = curv || Lv > opt.aspect * Lu || tap_u;
   if (!split_u && !split_v) { cells.push_back(R); return; }
   const double um = 0.5 * (R.u0 + R.u1), vm = 0.5 * (R.v0 + R.v1);
   if (split_u && split_v) {

@@ -6,6 +6,15 @@ Outputs (in geo/):
   sphere_r{k}.dat        exact unit sphere (Bembel's 6-patch rational quartic), k uniform refinements
   spheroid_k2_r{k}.dat   exact prolate spheroid x^2 + y^2 + (z/2)^2 = 1 (affine image of the sphere)
   sphere_perturbed_r{k}.dat  sphere with a smooth radial perturbation of its control points
+  cube_cavity_r{k}.dat   unit cube with a spherical cavity (radius 0.2, centre (0.5, 0.5, 0.5));
+                         the cavity's patches are transposed so their normals point into the
+                         cavity (outward from the solid); both surfaces refined k times
+  plate_hole_L3_p4_t0.2_r{k}.dat  the same plate extended to [-3/2, 3/2] x [-1/2, 1/2] by an end
+                         box on each side (24 patches), for the finite-width (Howland) case
+  plate_hole_p{p}_t{t}_r{k}.dat  plate [-1/2, 1/2]^2 x [-t/2, t/2] with a circular through-hole
+                         of radius 0.2 on the z axis: 16 patches (4 per face around the hole, 4 on
+                         the hole wall, 4 sides), exact rational circle, degree-elevated from 2 to
+                         p, then refined k times (k-refinement: C^{p-1} inside patches)
 
 Control points are stored homogeneously (x w, y w, z w, w), u index fastest.
 """
@@ -125,6 +134,105 @@ def cube_p2(imperfect=False):
     return out
 
 
+def reversed_patch(P):
+    """Swap u and v: same surface, opposite normal."""
+    return Patch(P.q, P.p, P.V, P.U, np.ascontiguousarray(P.Pw.transpose(1, 0, 2)))
+
+
+def cube_cavity(sphere, a=0.2, c=(0.5, 0.5, 0.5)):
+    out = cube_p2()
+    for P in sphere:
+        Q = Patch(P.p, P.q, P.U, P.V, P.Pw.copy())
+        Q.set_euclid(np.asarray(c) + a * Q.euclid())  # affine: weights unchanged
+        out.append(reversed_patch(Q))
+    return out
+
+
+def elevate_bezier(P, direction):
+    """Raise the degree of a single-span patch by one in u (0) or v (1); exact."""
+    deg = P.p if direction == 0 else P.q
+    A = P.Pw if direction == 0 else P.Pw.transpose(1, 0, 2)  # (rows, deg + 1, 4)
+    Q = np.zeros((A.shape[0], deg + 2, 4))
+    Q[:, 0], Q[:, -1] = A[:, 0], A[:, -1]
+    for i in range(1, deg + 1):
+        c = i / (deg + 1)
+        Q[:, i] = c * A[:, i - 1] + (1 - c) * A[:, i]
+    K = [0.0] * (deg + 2) + [1.0] * (deg + 2)
+    if direction == 0:
+        return Patch(deg + 1, P.q, K, P.V, Q)
+    return Patch(P.p, deg + 1, P.U, K, np.ascontiguousarray(Q.transpose(1, 0, 2)))
+
+
+def bezier_point(P, u, v):
+    """Point of a single-span biquadratic rational patch (Bernstein basis)."""
+    bu = np.array([(1 - u) ** 2, 2 * u * (1 - u), u ** 2])
+    bv = np.array([(1 - v) ** 2, 2 * v * (1 - v), v ** 2])
+    h = np.einsum("j,i,jik->k", bv, bu, P.Pw)
+    return h[:3] / h[3]
+
+
+def oriented(P, outward):
+    """Transpose P if its normal at the centre points against `outward`."""
+    e = 1e-6
+    xu = bezier_point(P, 0.5 + e, 0.5) - bezier_point(P, 0.5 - e, 0.5)
+    xv = bezier_point(P, 0.5, 0.5 + e) - bezier_point(P, 0.5, 0.5 - e)
+    return P if np.dot(np.cross(xu, xv), outward) > 0 else reversed_patch(P)
+
+
+def flat_quad(P00, P10, P01, P11, outward):
+    """Biquadratic patch of the bilinear quad P00-P10-P01-P11 (u along P00->P10)."""
+    P00, P10, P01, P11 = map(np.asarray, (P00, P10, P01, P11))
+    g = [0.0, 0.5, 1.0]
+    X = np.array([[(1 - u) * (1 - v) * P00 + u * (1 - v) * P10 + (1 - u) * v * P01 + u * v * P11
+                   for u in g] for v in g])
+    Pw = np.concatenate([X, np.ones((3, 3, 1))], axis=-1)
+    K = [0, 0, 0, 1, 1, 1]
+    return oriented(Patch(2, 2, K, K, Pw), np.asarray(outward, float))
+
+
+def plate_hole(t, a=0.2, W=1.0, L=None):
+    """Plate W wide (y), L long (x, default W), thickness t, hole radius a. For L > W
+    the square around the hole is extended by a box at each end, loaded at x = +-L/2."""
+    K = [0, 0, 0, 1, 1, 1]
+    h = W / 2
+    L = W if L is None else L
+    out = []
+    for k in range(4):
+        phi = 0.5 * np.pi * k
+        ang = [phi - np.pi / 4, phi, phi + np.pi / 4]
+        er = np.array([np.cos(phi), np.sin(phi), 0.0])
+        # quarter of the hole (rational) and the matching square edge, homogeneous
+        arc = np.array([[a * np.cos(ang[0]), a * np.sin(ang[0]), 1.0],
+                        [a * np.sqrt(2) * np.cos(phi), a * np.sqrt(2) * np.sin(phi), np.sqrt(0.5)],
+                        [a * np.cos(ang[2]), a * np.sin(ang[2]), 1.0]])
+        edge = np.array([[h * np.sqrt(2) * np.cos(ang[0]), h * np.sqrt(2) * np.sin(ang[0]), 1.0],
+                         [h * np.cos(phi), h * np.sin(phi), 1.0],
+                         [h * np.sqrt(2) * np.cos(ang[2]), h * np.sqrt(2) * np.sin(ang[2]), 1.0]])
+
+        def hom(curve, zc):
+            w = curve[:, 2:3]
+            return np.concatenate([curve[:, :2] * w, zc * w, w], axis=1)
+
+        zs = [-t / 2, 0.0, t / 2]
+        for zc, nz in ((t / 2, 1.0), (-t / 2, -1.0)):  # faces: arc -> edge, straight radial lines
+            A, E = hom(arc, zc), hom(edge, zc)
+            Pw = np.stack([A, 0.5 * (A + E), E], axis=0)
+            out.append(oriented(Patch(2, 2, K, K, Pw), np.array([0, 0, nz])))
+        Pw = np.stack([hom(arc, zc) for zc in zs], axis=0)  # hole wall
+        out.append(oriented(Patch(2, 2, K, K, Pw), -er))
+        if L > W and k in (0, 2):  # end box instead of the side face
+            sx, x0, x1, z0, z1 = er[0], er[0] * h, er[0] * L / 2, -t / 2, t / 2
+            for zc, nz in ((z1, 1.0), (z0, -1.0)):
+                out.append(flat_quad((x0, -h, zc), (x1, -h, zc), (x0, h, zc), (x1, h, zc), (0, 0, nz)))
+            for yc in (-h, h):
+                out.append(flat_quad((x0, yc, z0), (x1, yc, z0), (x0, yc, z1), (x1, yc, z1), (0, np.sign(yc), 0)))
+            out.append(flat_quad((x1, -h, z0), (x1, h, z0), (x1, -h, z1), (x1, h, z1), (sx, 0, 0)))
+            continue
+        Pw = np.stack([hom(edge, zc) for zc in zs], axis=0)  # side
+        out.append(oriented(Patch(2, 2, K, K, Pw), er))
+    return out
+
+
 def main():
     os.makedirs(ROOT, exist_ok=True)
     write_dat(os.path.join(ROOT, "cube_p2.dat"), cube_p2(), "cube_p2")
@@ -145,6 +253,22 @@ def main():
             f = 1.0 + 0.1 * np.sin(3 * X[..., 0]) * np.cos(2 * X[..., 1]) * np.cos(X[..., 2])
             P.set_euclid(X * f[..., None])  # same function of position: stays watertight
         write_dat(os.path.join(ROOT, "sphere_perturbed_r%d.dat" % r), per, "sphere_perturbed_r%d" % r)
+        cav = cube_cavity(S)
+        for P in cav[:6]:
+            for _ in range(r):
+                refine_uniform(P)
+        write_dat(os.path.join(ROOT, "cube_cavity_r%d.dat" % r), cav, "cube_cavity_r%d" % r)
+        for deg, t, L in [(d, tt, None) for d in (2, 4) for tt in (0.1, 0.2, 0.4)] + [(4, 0.2, 3.0)]:
+            if True:
+                pl = plate_hole(t, L=L)
+                for _ in range(deg - 2):
+                    pl = [elevate_bezier(elevate_bezier(P, 0), 1) for P in pl]
+                for P in pl:
+                    for _ in range(r):
+                        refine_uniform(P)
+                name = "plate_hole_p%d_t%g_r%d" % (deg, t, r) if L is None else \
+                    "plate_hole_L%g_p%d_t%g_r%d" % (L, deg, t, r)
+                write_dat(os.path.join(ROOT, name + ".dat"), pl, name)
 
 
 if __name__ == "__main__":
