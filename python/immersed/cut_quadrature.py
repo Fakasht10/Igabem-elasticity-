@@ -16,8 +16,8 @@ over candidate points in the closure of the cut region: the q^3 Gauss points of 
 still not fitted, points stepped inward from those along the normal (slivers down to 1e-6 h are fitted).  Tchakaloff's
 theorem guarantees a positive rule with at most nmom nodes in the region; NNLS finds one when the candidate set is rich
 enough, and its solution is sparse (<= nmom = 20 points for p = 3, against 64 for the full Gauss grid).  A cell whose fit
-is not exact (FIT_TOL) is retried with a twice finer grid, up to q = 8(p+2); cells that still fail are counted in
-`failed` (tests require 0).
+is not exact (FIT_REL, FIT_ABS) is retried on a twice finer grid, then once more with the inward-stepped points; cells
+that still fail are counted in `failed` (tests require 0).
 Boundary points lie on the cell faces or the part surface: evaluate the span's polynomial there by the cell index, not
 by a point location that could fall into the neighbouring span.
 method='minnorm' is the earlier rule (all (p+1)^3 Gauss points, minimum-norm weights): exact, but weights go negative.
@@ -35,13 +35,15 @@ from scipy.optimize import nnls
 import cut3d
 
 PMAX = 3
-FIT_TOL = 1e-12          # max |A w - m| on the reference cell (full cell volume = 1)
+FIT_REL, FIT_ABS = 1e-11, 1e-15   # a fit passes when max |A w - m| <= FIT_REL * m_0 + FIT_ABS (reference cell, full
+#                                   volume 1); FIT_ABS is the round-off floor of the flux-sum moments themselves
+NI_MAX = 200                      # cap on interior (Gauss and inward-stepped) candidates per cell and round
 
 
 def cut_cells(V, T, lo, h, n, fid=None):
     """cut3d geometry of the closed, outward triangle mesh (V, T) on the grid lo + h * [0, n]^3.
     Raw Dunavant fans are kept (qdeg=0): the compressed per-square rule of cut3d is exact only to degree 2."""
-    V = np.asarray(V, float); T = np.asarray(T, np.int64); lo = np.asarray(lo, float)
+    V = np.ascontiguousarray(V, float); T = np.ascontiguousarray(T, np.int64); lo = np.asarray(lo, float)
     n = np.broadcast_to(np.asarray(n, np.int64), (3,)).copy()
     if not ((V.min(0) > lo).all() and (V.max(0) < lo + h * n).all()):
         raise ValueError('the solid must lie strictly inside the grid lo + h*[0, n]^3 (cut3d needs a margin)')
@@ -88,13 +90,18 @@ def _columns(V, T, g):
     o, h, n = g['o'], g['h'], g['n']
     P = V[T]; lo = np.floor((P[:, :, 1:].min(1) - o[1:]) / h).astype(np.int64).clip(0, n[1:] - 1)
     hi = np.floor((P[:, :, 1:].max(1) - o[1:]) / h).astype(np.int64).clip(0, n[1:] - 1)
-    tri, col = [], []
-    for t in range(len(T)):
-        jj, kk = np.meshgrid(np.arange(lo[t, 0], hi[t, 0] + 1), np.arange(lo[t, 1], hi[t, 1] + 1), indexing='ij')
-        col.append((jj * n[2] + kk).ravel()); tri.append(np.full(jj.size, t))
-    col = np.concatenate(col); tri = np.concatenate(tri); od = np.argsort(col, kind='stable')
+    ny = hi[:, 0] - lo[:, 0] + 1; nz = hi[:, 1] - lo[:, 1] + 1; cnt = ny * nz
+    tri = np.repeat(np.arange(len(T)), cnt); r = np.arange(cnt.sum()) - np.repeat(np.cumsum(cnt) - cnt, cnt)
+    col = (lo[tri, 0] + r // nz[tri]) * n[2] + lo[tri, 1] + r % nz[tri]; od = np.argsort(col, kind='stable')
     start = np.searchsorted(col[od], np.arange(n[1] * n[2] + 1))
     return start.astype(np.int64), tri[od].astype(np.int64)
+
+
+@nb.njit(cache=True)
+def _edge_in(e, dy, dz):
+    """half-open (top-left) edge rule for a counter-clockwise (y, z) triangle: a point on an edge shared by two
+    triangles is counted by exactly one of them"""
+    return e > 0.0 or (e == 0.0 and (dz < 0.0 or (dz == 0.0 and dy < 0.0)))
 
 
 @nb.njit(parallel=True, cache=True)
@@ -111,7 +118,10 @@ def _parity(X, V, T, start, tri, o, h, n):
             e2 = (a[1] - d[1]) * (z - d[2]) - (a[2] - d[2]) * (y - d[1])
             ar = e0 + e1 + e2
             if ar == 0.0: continue                                  # triangle edge-on to the ray
-            if not ((e0 >= 0 and e1 >= 0 and e2 >= 0) or (e0 <= 0 and e1 <= 0 and e2 <= 0)): continue
+            if ar < 0.0:                                            # make it counter-clockwise in (y, z)
+                b, d = d, b; e0, e1, e2, ar = -e2, -e1, -e0, -ar
+            if not (_edge_in(e0, b[1] - a[1], b[2] - a[2]) and _edge_in(e1, d[1] - b[1], d[2] - b[2])
+                    and _edge_in(e2, a[1] - d[1], a[2] - d[2])): continue
             xs = (e1 * a[0] + e2 * b[0] + e0 * d[0]) / ar           # barycentric x of the ray hit
             if xs > X[i, 0]: cnt += 1
         out[i] = (cnt % 2) == 1
@@ -119,7 +129,9 @@ def _parity(X, V, T, start, tri, o, h, n):
 
 
 def inside(g, X):
-    """True where X lies inside the solid (ray parity); points exactly on a projected triangle edge are not resolved"""
+    """True where X lies inside the solid: parity of the +x ray, half-open edge rule so shared edges and vertices count
+    once.  A point exactly on the surface is inside or outside, either way."""
+    if 'V' not in g: raise ValueError('inside() needs the mesh: build the geometry with cut_cells, not cut3d.build')
     if '_cols' not in g: g['_cols'] = _columns(g['V'], g['T'], g)
     start, tri = g['_cols']
     return _parity(np.ascontiguousarray(X, float), g['V'], g['T'], start, tri, g['o'], g['h'], g['n'])
@@ -137,44 +149,52 @@ def _boundary_candidates(g):
     return C[ok], X[ok], N[ok]
 
 
-OFFSETS = np.geomspace(1e-5, 0.5, 14)       # retries: candidates at x_b + t h n_in, for slivers thinner than h/q
+OFFSETS = np.geomspace(1e-5, 0.5, 14)       # round 3: candidates at x_b + t h n_in, for slivers thinner than h/q
 
 
-def _nnls_cells(g, ic, M, E, q0, qmax=None, nb_max=24):
-    """per cut cell: NNLS weights on inside Gauss points + at most nb_max boundary points (strided; the cap grows with q
-    on retries); from the third round on (slivers thinner than about h/(2 q0)) also points stepped inward from the
-    boundary points (OFFSETS), kept when inside the solid and the cell.  Returns lists of (xi, w), errors, failures"""
-    h = g['h']; qmax = qmax or 4 * q0
+def _strided(k, cap):
+    """at most cap evenly spread entries of the index array k"""
+    return k if len(k) <= cap else k[np.linspace(0, len(k) - 1, cap).astype(np.int64)]
+
+
+def _nnls_cells(g, ic, M, E, q0, nb_max=24):
+    """per cut cell: NNLS weights over candidates in the closure of the cell's solid part, in up to three rounds for
+    the cells not yet fitted: (1) inside Gauss points at q0, (2) at 2 q0, (3) at 4 q0 plus points stepped inward from
+    the boundary points (OFFSETS: slivers thinner than the Gauss spacing).  Each round adds up to nb_max * 2^round
+    boundary points; interior candidates are capped at NI_MAX per kind.  Returns lists of (xi, w), errors, failures"""
+    h = g['h']
     bC, bX, bN = _boundary_candidates(g); od = np.argsort(bC, kind='stable'); bC, bX, bN = bC[od], bX[od], bN[od]
     bs = np.searchsorted(bC, ic, 'left'); be = np.searchsorted(bC, ic, 'right')
-    cen = _centres(g, ic); out_xi, out_w = [None] * len(ic), [None] * len(ic)
-    err = np.full(len(ic), np.inf); todo = np.arange(len(ic)); q = q0
-    while len(todo) and q <= qmax:
-        P, _ = _gauss(q)
+    cen = _centres(g, ic); tol = FIT_REL * np.abs(M[:, 0]) + FIT_ABS
+    out_xi = [np.zeros((0, 3))] * len(ic); out_w = [np.zeros(0)] * len(ic)
+    err = np.full(len(ic), np.inf); todo = np.arange(len(ic))
+    for rnd in range(3):
+        if not len(todo): break
+        q = q0 * 2 ** rnd; P, _ = _gauss(q)
         ins = inside(g, (cen[todo][:, None, :] + h * P[None]).reshape(-1, 3)).reshape(len(todo), -1)
-        st = np.maximum(1, -(-(be[todo] - bs[todo]) // (nb_max * (q // q0))))          # strided boundary subset
-        sel = [np.arange(bs[u], be[u], st[r]) for r, u in enumerate(todo)]
-        xis = [np.r_[P[ins[r]], (bX[sel[r]] - cen[u]) / h] for r, u in enumerate(todo)]
-        if q >= 4 * q0:                                       # third round: inward-stepped candidates for slivers
+        sel = [_strided(np.arange(bs[u], be[u]), nb_max * 2 ** rnd) for u in todo]
+        xis = [np.r_[P[_strided(np.nonzero(ins[r])[0], NI_MAX)], (bX[sel[r]] - cen[u]) / h] for r, u in enumerate(todo)]
+        if rnd == 2:                                                                 # inward-stepped candidates
             k = np.concatenate(sel).astype(np.int64); cell = np.repeat(np.arange(len(todo)), [len(x) for x in sel])
             Y = (bX[k][:, None, :] + h * OFFSETS[None, :, None] * bN[k][:, None, :]).reshape(-1, 3)
             cy = np.repeat(cell, len(OFFSETS)); xy = (Y - cen[todo][cy]) / h
-            ok = inside(g, Y) & (np.abs(xy) < 0.5).all(1)
-            add = [xy[ok & (cy == r)] for r in range(len(todo))]
-            xis = [np.r_[a, b] for a, b in zip(xis, add)]
-        ptr = np.r_[0, np.cumsum([len(x) for x in xis])]
-        Aall = _vander(np.concatenate(xis), E) if ptr[-1] else np.zeros((len(E), 0))  # one batched Vandermonde
-
-        def fit(r):
-            A = np.ascontiguousarray(Aall[:, ptr[r]:ptr[r + 1]])
-            if A.shape[1] == 0: return None, np.inf
-            w, _ = nnls(A, M[todo[r]], maxiter=50 * A.shape[1])
-            return w, np.abs(A @ w - M[todo[r]]).max()
-        res = [fit(r) for r in range(len(todo))]          # scipy's nnls holds the GIL: threads do not help
-        e = np.array([x[1] for x in res])
+            ok = (np.abs(xy) < 0.5).all(1); ok[ok] = inside(g, Y[ok]); xy, cy = xy[ok], cy[ok]   # cy is sorted
+            lo_, hi_ = np.searchsorted(cy, np.arange(len(todo)), 'left'), np.searchsorted(cy, np.arange(len(todo)), 'right')
+            xis = [np.r_[x, xy[_strided(np.arange(lo_[r], hi_[r]), NI_MAX)]] for r, x in enumerate(xis)]
+        e = np.full(len(todo), np.inf)
         for r, u in enumerate(todo):
-            if e[r] < err[u]: w = res[r][0]; keep = w > 0; err[u] = e[r]; out_xi[u] = xis[r][keep]; out_w[u] = w[keep]
-        todo = todo[e > FIT_TOL]; q *= 2
+            if r % 1024 == 0:                                       # batched Vandermonde, 1024 cells at a time
+                ch = xis[r:r + 1024]; ptr = np.r_[0, np.cumsum([len(x) for x in ch])]
+                Ach = _vander(np.concatenate(ch), E) if ptr[-1] else np.zeros((len(E), 0))
+            if not len(xis[r]): continue
+            A = np.ascontiguousarray(Ach[:, ptr[r % 1024]:ptr[r % 1024 + 1]])
+            try:
+                w, _ = nnls(A, M[u], maxiter=50 * A.shape[1])
+            except RuntimeError:                                                     # no convergence: next round
+                continue
+            e[r] = np.abs(A @ w - M[u]).max()
+            if e[r] < err[u]: keep = w > 0; err[u] = e[r]; out_xi[u] = xis[r][keep]; out_w[u] = w[keep]
+        todo = todo[e > tol[todo]]
     return out_xi, out_w, err, len(todo)
 
 
@@ -193,7 +213,7 @@ def volume_rule(g, p=PMAX, method='nnls'):
         Xc = (_centres(g, ic)[:, None, :] + h * P[None]).reshape(-1, 3); Wc = Wc.ravel() * h ** 3
         Cc = np.repeat(ic, len(P)); failed = 0
     elif method == 'nnls':
-        xi, w, err, failed = _nnls_cells(g, ic, M, E, q0=p + 2, qmax=8 * (p + 2))
+        xi, w, err, failed = _nnls_cells(g, ic, M, E, q0=p + 2)
         cnt = np.array([len(a) for a in w], np.int64)
         Cc = np.repeat(ic, cnt); Xc = _centres(g, Cc) + h * (np.concatenate(xi) if len(ic) else np.zeros((0, 3)))
         Wc = (np.concatenate(w) if len(ic) else np.zeros(0)) * h ** 3

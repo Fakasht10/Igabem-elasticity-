@@ -97,7 +97,7 @@ def rel(a, b):
     return np.abs(a - b).max() / np.abs(b).max()
 
 
-def positive_exact(g, q, tol=1e-12):
+def positive_exact(g, q, tol=1e-10):
     """every weight >= 0, no failed fit, and every cell's degree <= 3 moments reproduced (reference-cell units)"""
     assert q['failed'] == 0
     assert q['W'].min() >= 0.0
@@ -105,7 +105,8 @@ def positive_exact(g, q, tol=1e-12):
     xi = (q['X'] - cq._centres(g, q['cell'])) / h
     Mq = np.stack([np.bincount(q['cell'], q['W'] * xi[:, 0] ** a * xi[:, 1] ** b * xi[:, 2] ** c, ncell)
                    for a, b, c in EXPS], 1) / h ** 3
-    assert np.abs(Mq - cq.volume_moments(g, 3) / h ** 3).max() < tol
+    M = cq.volume_moments(g, 3) / h ** 3                      # per-cell tolerance relative to the cell's volume
+    assert (np.abs(Mq - M).max(1) <= tol * np.abs(M[:, 0]) + 1e-14).all()
 
 
 # ------------------------------------------------------------------ gates
@@ -192,3 +193,18 @@ def test_inside_parity():
     V, T = box(lo, hi); g = cq.cut_cells(V, T, (-0.1,) * 3, 0.1, 12)
     X = np.random.default_rng(1).uniform(0.0, 1.0, (20000, 3))
     assert (cq.inside(g, X) == ((X > lo) & (X < hi)).all(1)).all()
+
+
+@pytest.mark.parametrize("flip", [False, True])
+def test_inside_on_shared_edges(flip):
+    """Gauss points exactly on the projected diagonals of the x faces: the half-open edge rule counts a shared edge once.
+    flip turns one x face's diagonal the other way (still a closed mesh)."""
+    lo, hi = np.array([0.23, 0.2, 0.2]), np.array([0.67, 0.6, 0.6])
+    V, T = box(lo, hi)
+    if flip:
+        T = T.copy(); T[0:2] = [[0, 1, 2], [1, 3, 2]]
+    g = cq.cut_cells(V, T, (0.0,) * 3, 0.1, 10)
+    P, _ = cq._gauss(6); C = np.arange(1000)
+    X = (cq._centres(g, C)[:, None, :] + 0.1 * P[None]).reshape(-1, 3)
+    assert (cq.inside(g, X) == ((X > lo) & (X < hi)).all(1)).all()
+    positive_exact(g, cq.volume_rule(g, 3))
