@@ -73,15 +73,89 @@ class BlockACA final : public htool::VirtualInternalLowRankGenerator<double> {
     using Mat = Eigen::MatrixXd;
     const int m = M / 3, n = N / 3;
     if (3 * m != M || 3 * n != N) return false;
-    Mat U(M, 0), V(0, N);
+    Mat U, V;
+    typename Entries::FarBlock fb;
+    if (e_.farBlock(M, rows, N, cols, 0.0, fb)) {  // the assembly's far_tol: a looser rule costs accuracy, not time
+      // Far block: ACA of the point kernel K (cheap rows and columns), then V <- V W.
+      const int nq = fb.points();
+      auto row = [&](int i, Mat& R) {
+        R.resize(3, 3 * nq);
+        const int a = rows[3 * i] / 3;
+        for (int q = 0; q < nq; ++q) R.middleCols(3 * q, 3) = e_.kernel(a, fb, q);
+      };
+      auto col = [&](int q, Mat& C) {
+        C.resize(M, 3);
+        for (int i = 0; i < m; ++i) {
+          const Eigen::Matrix3d K = e_.kernel(rows[3 * i] / 3, fb, q);
+          for (int c = 0; c < 3; ++c) C.row(3 * i + c) = K.row(rows[3 * i + c] % 3);
+        }
+      };
+      // K has more columns than A, and its rank may exceed A's: allow more, then
+      // recompress U (V W) and keep it only if it pays off.
+      const long bound = (long(M) * N) / (M + N);
+      bool ok = blockACA(m, nq, row, col, 0.1 * eps, std::min<long>(4 * bound, std::min(M, N)), U, V);  // |A - A_k| <= |K - K_k| |W|: margin
+      if (ok) {
+        V = V * fb.W;
+        ok = recompress(U, V, 0.5 * eps) <= bound;
+      }
+      if (!ok) {
+        auto rowx = [&](int i, Mat& R) { R.resize(3, N); e_.block(3, N, rows + 3 * i, cols, R.data()); };
+        auto colx = [&](int j, Mat& C) { C.resize(M, 3); e_.block(M, 3, rows, cols + 3 * j, C.data()); };
+        if (!blockACA(m, n, rowx, colx, eps, bound, U, V)) return false;
+      }
+    } else {
+      auto row = [&](int i, Mat& R) { R.resize(3, N); e_.block(3, N, rows + 3 * i, cols, R.data()); };
+      auto col = [&](int j, Mat& C) { C.resize(M, 3); e_.block(M, 3, rows, cols + 3 * j, C.data()); };
+      if (!blockACA(m, n, row, col, eps, (long(M) * N) / (M + N), U, V)) return false;
+    }
+    lr.get_U().resize(M, int(U.cols()));
+    lr.get_V().resize(int(V.rows()), N);
+    std::copy(U.data(), U.data() + U.size(), lr.get_U().data());
+    std::copy(V.data(), V.data() + V.size(), lr.get_V().data());
+    return true;
+  }
+
+  // U V <- truncated SVD of U V (relative Frobenius tolerance eps); returns the rank.
+  static long recompress(Eigen::MatrixXd& U, Eigen::MatrixXd& V, double eps) {  // rank <= min(rows, cols)
+    if (U.cols() == 0) return 0;
+    Eigen::HouseholderQR<Eigen::MatrixXd> qu(U), qv(V.transpose());
+    const long k = U.cols();
+    const Eigen::MatrixXd Ru = qu.matrixQR().topRows(k).triangularView<Eigen::Upper>();
+    const Eigen::MatrixXd Rv = qv.matrixQR().topRows(k).triangularView<Eigen::Upper>();
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(Ru * Rv.transpose(), Eigen::ComputeThinU | Eigen::ComputeThinV);
+    const auto& sv = svd.singularValues();
+    const double total = sv.squaredNorm();
+    long r = k;
+    double tail = 0.0;
+    while (r > 1 && tail + sv(r - 1) * sv(r - 1) <= eps * eps * total) {
+      --r;
+      tail += sv(r) * sv(r);
+    }
+    const Eigen::MatrixXd Qu = qu.householderQ() * Eigen::MatrixXd::Identity(U.rows(), k);
+    const Eigen::MatrixXd Qv = qv.householderQ() * Eigen::MatrixXd::Identity(V.cols(), k);
+    U = Qu * svd.matrixU().leftCols(r) * sv.head(r).asDiagonal();
+    V = (Qv * svd.matrixV().leftCols(r)).transpose();
+    return r;
+  }
+
+  // Partially pivoted ACA on 3 x 3 blocks of an (3m x 3n) matrix given by row(i, R)
+  // (rows of point i, 3 x 3n) and col(j, C) (columns of point j, 3m x 3). False if
+  // the rank would exceed max_rank or nothing was found.
+  template <class Row, class Col>
+  static bool blockACA(int m, int n, Row&& row, Col&& col, double eps, long max_rank, Eigen::MatrixXd& U,
+                       Eigen::MatrixXd& V) {
+    using Mat = Eigen::MatrixXd;
+    const int M = 3 * m, N = 3 * n;
+    U.resize(M, 0);
+    V.resize(0, N);
     std::vector<char> row_used(m, 0), col_used(n, 0);
     double frob2 = 0.0;
     int i = 0, checked = -1;
+    Mat R, C;
     for (int step = 0; step < std::min(m, n); ++step) {
       if (i < 0) break;
       row_used[i] = 1;
-      Mat R(3, N);
-      e_.block(3, N, rows + 3 * i, cols, R.data());
+      row(i, R);
       if (U.cols()) R -= U.middleRows(3 * i, 3) * V;
       int j = -1;
       double best = 0.0;
@@ -95,8 +169,7 @@ class BlockACA final : public htool::VirtualInternalLowRankGenerator<double> {
         continue;
       }
       col_used[j] = 1;
-      Mat C(M, 3);
-      e_.block(M, 3, rows, cols + 3 * j, C.data());
+      col(j, C);
       if (U.cols()) C -= U * V.middleCols(3 * j, 3);
       // Cross through the pseudo-inverse of the 3 x 3 pivot.
       Eigen::JacobiSVD<Eigen::Matrix3d> svd(Eigen::Matrix3d(R.middleCols(3 * j, 3)),
@@ -110,7 +183,7 @@ class BlockACA final : public htool::VirtualInternalLowRankGenerator<double> {
       const double cross = U.cols() ? ((U.transpose() * u).cwiseProduct(V * v.transpose())).sum() : 0.0;
       frob2 += uv2 + 2.0 * cross;
       const int k = int(U.cols());
-      if ((k + r) * (M + N) > M * N) return false;  // not worth storing as low rank
+      if (k + r > max_rank) return false;  // not worth storing as low rank
       U.conservativeResize(M, k + r);
       U.rightCols(r) = u;
       V.conservativeResize(k + r, N);
@@ -129,8 +202,8 @@ class BlockACA final : public htool::VirtualInternalLowRankGenerator<double> {
         if (checked >= 0 || i < 0) break;
         i = farthestUnused(row_used);
         if (i < 0) break;
-        Mat Rc(3, N);
-        e_.block(3, N, rows + 3 * i, cols, Rc.data());
+        Mat Rc;
+        row(i, Rc);
         const double full = Rc.squaredNorm();
         Rc -= U.middleRows(3 * i, 3) * V;
         if (Rc.squaredNorm() <= eps * eps * std::max(full, 1e-300)) break;
@@ -139,12 +212,7 @@ class BlockACA final : public htool::VirtualInternalLowRankGenerator<double> {
         checked = -1;
       }
     }
-    if (U.cols() == 0) return false;
-    lr.get_U().resize(M, int(U.cols()));
-    lr.get_V().resize(int(V.rows()), N);
-    std::copy(U.data(), U.data() + U.size(), lr.get_U().data());
-    std::copy(V.data(), V.data() + V.size(), lr.get_V().data());
-    return true;
+    return U.cols() > 0;
   }
 
   static int nextUnused(const std::vector<char>& used) {

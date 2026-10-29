@@ -77,6 +77,25 @@ class ElementIntegrator {
     }
   }
 
+  // Adaptive mode: the cached rule of element ie meeting the error estimate tol
+  // (max(tol, far_tol); tol = far_tol gives the rule integrateAdaptive uses, or a
+  // finer one) for every source point at least d away from the centre of the
+  // element's bounding ball; f(q, w) for each of its points. False, calling nothing,
+  // if no cached rule qualifies (d too small, or the order above the cache).
+  template <class F>
+  bool farRule(size_t ie, double d, double tol, F&& f) const {
+    if (opt_.far_tol <= 0.0) return false;
+    const Ball& B = elem_ball_[ie];
+    if (d <= 1.5 * B.second) return false;
+    const double q = d / B.second, rho = q + std::sqrt(q * q - 1.0);
+    const int need = int(std::ceil(std::log(1.0 / std::max(tol, opt_.far_tol)) / (2.0 * std::log(rho))));
+    const int m = std::max({2, std::min(opt_.n_gauss, need), min_order_[ie]});
+    if (m > max_cached_) return false;
+    cachedRule(ie, m, f);
+    return true;
+  }
+  const Vec3& elementCentre(size_t ie) const { return elem_ball_[ie].first; }
+
   // Cached far-field points (for callers that cache per-point data).
   long numCached() const { return long(cx_.size()); }
   const Vec3& cachedX(long id) const { return cx_[id]; }

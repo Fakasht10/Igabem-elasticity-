@@ -11,6 +11,7 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <Eigen/Sparse>
 #include <algorithm>
 #include <vector>
 
@@ -125,6 +126,80 @@ class SbieEntries {
         for (int j = 0; j < N; ++j) out[i0 + size_t(M) * j] = acc[9 * size_t(cp[j]) + 3 * (cls[j] % 3) + ri];
       }
     });
+  }
+
+  // Far-field factorization of a block, A(rows, cols) = K W: K the kernel (T or U,
+  // times the quadrature weight) between the row points and the quadrature points
+  // of the elements supporting the columns, W the basis values (sparse). Each
+  // element gets the cached rule that is valid for every row point (the one the
+  // dense assembly uses for the closest of them, or finer), so K costs one kernel
+  // evaluation per entry and has rows and columns equally cheap. The rules are
+  // chosen for the quadrature tolerance tol (at most the assembly's far_tol is
+  // needed for entries that the ACA reproduces only to its own tolerance). False if some
+  // element is too close to the rows for a cached rule.
+  struct FarBlock {
+    std::vector<Vec3> y, n;
+    std::vector<double> w;
+    Eigen::SparseMatrix<double> W;  // 3 |Q| x N
+    int points() const { return int(y.size()); }
+  };
+
+  bool farBlock(int M, const int* rws, int N, const int* cls, double tol, FarBlock& fb) const {
+    Vec3 c = Vec3::Zero();
+    for (int i = 0; i < M; ++i) c += rows_[rws[i] / 3].x;
+    c /= M;
+    double rho = 0.0;
+    for (int i = 0; i < M; ++i) rho = std::max(rho, (rows_[rws[i] / 3].x - c).norm());
+    std::vector<std::vector<int>> at;  // per column dof in the block: its columns
+    std::vector<int> dofs;
+    Scratch& s = scratch();
+    s.pos.resize(ncol_, -1);
+    for (int j = 0; j < N; ++j) {
+      const int d = cls[j] / 3;
+      if (s.pos[d] < 0) { s.pos[d] = int(dofs.size()); dofs.push_back(d); at.emplace_back(); }
+      at[s.pos[d]].push_back(j);
+    }
+    std::vector<int> elems;
+    s.emark.resize(mesh_.elements.size(), 0);
+    for (int d : dofs)
+      for (int ie : support_[d])
+        if (!s.emark[ie]) { s.emark[ie] = 1; elems.push_back(ie); }
+    for (int ie : elems) s.emark[ie] = 0;
+    fb.y.clear();
+    fb.n.clear();
+    fb.w.clear();
+    std::vector<Eigen::Triplet<double>> trip;
+    bool ok = true;
+    for (int ie : elems) {
+      const Element& e = mesh_.elements[ie];
+      const double d = (quad_.elementCentre(ie) - c).norm() - rho;
+      ok = quad_.farRule(size_t(ie), d, tol, [&](const QPoint& E, double w) {
+        const Vec3 nJ = E.normal() * mesh_.normal_sign;
+        const double J = nJ.norm();
+        const int q = int(fb.y.size());
+        fb.y.push_back(E.x);
+        fb.n.push_back(nJ / J);
+        fb.w.push_back(w * J);
+        for (int l = 0; l < E.n_loc; ++l) {
+          const int p = s.pos[column(e.patch, E.idx[l])];
+          if (p < 0) continue;
+          for (int j : at[p]) trip.emplace_back(3 * q + cls[j] % 3, j, E.R[l]);
+        }
+      });
+      if (!ok) break;
+    }
+    for (int d : dofs) s.pos[d] = -1;
+    if (!ok) return false;
+    fb.W.resize(3 * fb.points(), N);
+    fb.W.setFromTriplets(trip.begin(), trip.end());
+    return true;
+  }
+
+  // 3 x 3 kernel block of row point a and quadrature point q of fb, times its weight.
+  Eigen::Matrix3d kernel(int a, const FarBlock& fb, int q) const {
+    Eigen::Matrix3d U, T;
+    K_.eval(fb.y[q] - rows_[a].x, fb.n[q], U, T);
+    return (kind_ == H ? T : U) * fb.w[q];
   }
 
  private:
