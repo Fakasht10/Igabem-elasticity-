@@ -48,11 +48,11 @@ def test_bracket_exact(tmp_path):
     plane fitted between exact sides, so the geometry is the CAD to round-off."""
     step = str(tmp_path / "bracket.step")
     sd.write_step(bracket_solid(), step)
-    r = sa.convert(step, str(tmp_path / "bracket.dat"), h=0.5, degree=3, curvature=6)
+    r = sa.convert(step, str(tmp_path / "bracket.dat"), h=0.5, degree=3, curvature=6, split_closed=True)
     assert r["exact_patches"] >= 40
     _watertight(r, 1e-12, 1e-12, jac=0.005)  # graded fitted cap blocks next to the fillet
 
 
 def test_occt_screw(tmp_path):
-    r = sa.convert(SCREW, str(tmp_path / "screw.dat"), h=6.0, degree=3, split_closed=False)
+    r = sa.convert(SCREW, str(tmp_path / "screw.dat"), h=6.0, degree=3)
     _watertight(r, 1e-4, 5e-3)  # part is ~40 mm long

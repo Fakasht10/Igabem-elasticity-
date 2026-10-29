@@ -3,7 +3,7 @@
 Unlike python/step2dat.py (exact Coons patches of a hand-made quad layout), the layout here
 is automatic; patches are exact where the CAD allows it and fitted elsewhere:
 
-  0. cut: closed (periodic) faces are cut along their own parameter lines into three
+  0. cut (--split): closed (periodic) faces are cut along their own parameter lines into three
      four-sided faces (OpenCASCADE), so their meshes become structured and parameter-aligned;
   1. quad mesh: Gmsh (OpenCASCADE kernel) meshes every CAD face, trimmed or not, with
      quasi-structured quads (few irregular vertices); every CAD edge is a chain of mesh edges;
@@ -27,7 +27,7 @@ is automatic; patches are exact where the CAD allows it and fitted elsewhere:
   5. checks: distance to the CAD faces, interface gap, volume vs. OpenCASCADE.
 
 usage: python3 python/step_auto.py in.step out.dat [--h 0.4] [--degree 3] [--refine k]
-                                     [--fit-all] [--no-split]
+                                     [--fit-all] [--split]
 """
 
 import argparse
@@ -48,7 +48,7 @@ from spline_checks import _basis, conformity_gap, evaluate, spline_volume  # noq
 class QuadMesh:
     """All-quad surface mesh of a STEP solid with its CAD classification (gmsh session open)."""
 
-    def __init__(self, step, h, curvature=8, split_closed=True):
+    def __init__(self, step, h, curvature=8, split_closed=False):
         tmp = None
         if split_closed:
             tmp = tempfile.NamedTemporaryFile(suffix=".brep", delete=False).name
@@ -532,7 +532,7 @@ def _deviation(P, surf, m=4):
     return np.linalg.norm(_project(2, surf, X) - X, axis=1).max()
 
 
-def convert(step, out, h=0.4, degree=3, refine=0, curvature=8, name=None, exact_faces=True, split_closed=True):
+def convert(step, out, h=0.4, degree=3, refine=0, curvature=8, name=None, exact_faces=True, split_closed=False):
     M = QuadMesh(step, h, curvature, split_closed and exact_faces)
     try:
         sep = trace_layout(M)
@@ -592,10 +592,12 @@ def main(argv=None):
     ap.add_argument("--degree", type=int, default=3)
     ap.add_argument("--refine", type=int, default=0)
     ap.add_argument("--fit-all", action="store_true", help="fit every block (no exact CAD patches)")
-    ap.add_argument("--no-split", action="store_true", help="keep closed faces whole (no cuts along their parameter lines)")
+    ap.add_argument("--split", action="store_true",
+                    help="cut closed faces along their parameter lines first (exact hole walls on prismatic parts;"
+                         " on revolved parts such as a bolt it only adds patches)")
     a = ap.parse_args(argv)
     r = convert(a.step, a.out, a.h, a.degree, a.refine, a.curvature, exact_faces=not a.fit_all,
-                split_closed=not a.no_split)
+                split_closed=a.split)
     for k, v in r.items():
         print("%-15s %s" % (k, v))
     return r
