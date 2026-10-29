@@ -26,6 +26,12 @@ with a thickness-robust solver for thin curved plates.
   O(h⁵) for p = 4; SCF error 1.2e-5 at 5,808 unknowns in 10 s from scratch. Thickness effect and a
   finite-width strip agree with the literature. Operators are assembled once, cached on disk and
   reused for every load case.
+- **Two-region bodies (wall shell + homogenized infill core):** each region has its own material
+  and cached SBIE rows; the enclosed core is condensed to a Dirichlet-to-Neumann map, so the bonded
+  body runs on `BcModel` with every support and load. Exact two-material fields are reproduced to
+  1e-10 (Lamé two-layer sphere) and the Goodier/Eshelby inclusion converges from 3.3e-3 to 8.3e-7
+  (7k unknowns, 15 s); a printed coupon's modulus against infill density converges to 0.1%. See
+  [Two-region bodies](#two-region-bodies-multiregion-region_validate).
 
 ## Build and run
 
@@ -85,6 +91,12 @@ python3 python/face_ids.py geo/step/bracket.step geo/step/bracket_exact_p3_h0.7_
 python3 python/grade_dat.py in.dat out.dat --faces 6 --inner 1,13 --h0 0.025   # the same grading by hand
 python3 -m pytest python/test_grade_dat.py -q                # grading: exact surface, conforming, symmetric (~2 s)
 python3 python/plot_bc_validation.py     # -> results/fig_bc_validation.{pdf,png}, fig_bc_bracket.{pdf,png}
+python3 python/gen_inclusion_exact.py    # (needs SymPy) re-derives src/inclusion_exact_gen.hpp (elastic sphere in a matrix)
+python3 python/make_regions.py           # two-region pairs -> geo/regions/*_{host,core}.dat (spheres r0..r3, coupons)
+./build/region_validate eshelby geo/regions/sph2_a0.5_r2_host.dat geo/regions/sph2_a0.5_r2_core.dat --contrast 0.1   # (3 s)
+./build/region_validate coupon geo/regions/coupon_w0.15_n4_host.dat geo/regions/coupon_w0.15_n4_core.dat   # E_eff vs infill density (15 s)
+./results/run_regions.sh                 # -> results/regions/*.csv (~2 min from scratch)
+python3 python/plot_regions.py           # -> results/fig_regions.{pdf,png}
 ```
 
 ## Library layout
@@ -101,6 +113,7 @@ values, not new numerics.
 | Model | `operators.hpp`, `cache.hpp`, `neumann_model.hpp`, `mixed_model.hpp`, `model.hpp` | SBIE rows at any collocation set, cached on disk (key: geometry bytes, material, quadrature options, code version). `NeumannModel`: traction everywhere, bordered LU. `MixedModel`: displacement on chosen patches, traction elsewhere, from the same cached rows plus cached rows per Dirichlet patch. `Model`: either, chosen at run time. Any number of load cases per solve |
 | Solution | `solution.hpp` | `BoundarySolution`: u and t coefficients of one case, whatever was prescribed or solved; boundary gradient, strain, stress, von Mises |
 | Supports and loads | `regions.hpp`, `bc_model.hpp`, `loads.hpp`, `case_io.hpp`, `json.hpp` | Regions picked by CAD face id (`<geometry>.faces`, Gmsh surface tags as geomio), patch, box, plane, half-space, cylinder, ball or normal, cutting through patches anywhere; exact region quadrature on cut cells (marching squares + arc refinement, Duffy/adaptive near the source). `BcModel`: fixed components per support (clamp, symmetry, roller, prescribed u), springs / elastic supports t = −K u on any region, free rigid motions detected and bordered only when the supports leave them free, per-support reactions and an equilibrium residual. Loads: pressure, traction field, resultant force, resultant moment (linear traction), bearing (cosine pressure). Any number of cases on one cached LU. `case_io.hpp`: a JSON case file in the shape of nurb-fea-tcd's `bemkit.solve` supports/loads dicts (`app/bc_case`) |
+| Two-region bodies | `multi_region.hpp`, `problems/two_region.hpp`, `inclusion_exact_gen.hpp` | `MultiRegion`: enclosed inclusions of their own isotropic material bonded to a host (u continuous, t₁ = −t₂). Each inclusion is collocated at its traction points (square G), giving t = S u with S = G⁻¹H, cached per patch and scaled with μ at fixed ν (density sweeps reuse one assembly). `condense` turns any host rows into H + G[:, I] S E with the interface columns removed, so `BcModel` (`regions` pointer) solves the bonded body unchanged; `complete` fills the interface tractions; interface dofs are matched by coordinates and the bases are checked to coincide. `MultiRegionEvaluator`: interior fields in whichever region holds the point. `materialEnu`, `infillMaterial` (Gibson–Ashby E = C ρⁿ E_s) |
 | Post-processing | `recovery.hpp`, `interior.hpp`, `probes.hpp`, `vtk.hpp` | Boundary stress recovery; u, ∇u, ε, σ at interior points (near-boundary safe) with an inside test; line probes through the solid and curve probes on the boundary to CSV; surface and section `.vtu` for ParaView |
 | Plots | `python/plot_probes.py`, `python/render_vtu.py` | Canned probe figures (any component, Cartesian or cylindrical, exact overlay) and a rendered 3D field figure |
 | Problems | `problems/cube_cavity.hpp`, `problems/plate_hole.hpp`, `problems/half_space.hpp`, `*_exact_gen.hpp` | Load cases, exact fields, quantities of interest, shared by drivers and tests |
@@ -505,6 +518,74 @@ prints the equilibrium residual of every case, and `--max-residual` turns it int
 ![Local loads validation](results/fig_bc_validation.png)
 ![Bracket load cases](results/fig_bc_bracket.png)
 
+### Two-region bodies (`MultiRegion`, `region_validate`)
+
+A 3D-printed part is a solid wall shell around a sparse infill core. The core is modelled as a
+homogenized isotropic solid bonded to the wall (displacement continuity, traction equilibrium).
+
+**Theory.** Each region has its own SBIE with its own Kelvin kernel. The core's boundary is all
+interface, so its SBIE is collocated at the traction collocation points of all its patches; then
+G_core is square and the core is a collocation Dirichlet-to-Neumann map t_core = S u_core with
+S = G_core⁻¹ H_core (rigid motions are in its null space: ‖S R‖/‖S‖‖R‖ ≤ 1e-12). With
+t_shell = −t_core on the interface, the shell rows become (H + G[:, I] S E) u = G[:, outer] t:
+a single-region problem on the shell mesh, which `BcModel` solves with supports, springs,
+loads, reactions and free rigid modes unchanged. At fixed ν the core's U scales with 1/μ and T does
+not depend on μ, so S(μ) = μ S(1) and an infill-density sweep reuses one assembly.
+
+**Geometry.** One `.dat` per region (`python/make_regions.py`). The shell holds the outer surface
+plus the interface patches transposed in u and v (normals into the core); the core holds the same
+patches oriented outward. The interface must be conforming. Dofs are matched by coordinates and the
+two sides' bases are checked to coincide, so a non-conforming pair fails at setup.
+
+**Validation.** The spheres have radii 1 (shell) and 0.5 (core), quartic exact rational
+geometry, and E_core/E_shell = 0.1 with ν = 0.35 / 0.3 unless noted. All errors are relative
+L²(Γ).
+
+| Case | Unknowns (shell + core) | u error shell / core | interface t error | σ_zz(a,0,0) matrix side | Time |
+| --- | --- | --- | --- | --- | --- |
+| Same-material patch test u = αx | 1,038 → 6,960 | 1.6e-8 → 1.7e-13 | 4.2e-9 → 2.8e-10 | exact to 1e-9 | 3–15 s |
+| Two-layer Lamé sphere, external pressure | 1,038 → 6,960 | 3.2e-8 → 5.3e-14 | 9.6e-9 → 2.2e-11 | exact to 1e-9 | 2–6 s |
+| Eshelby inclusion, r0 | 1,038 | 3.3e-3 / 8.3e-4 | 1.3e-3 | 1.873124 | 3.9 s |
+| Eshelby inclusion, r1 | 1,560 | 4.4e-4 / 2.6e-4 | 2.5e-4 | 1.875791 | 3.0 s |
+| Eshelby inclusion, r2 | 2,928 | 6.0e-5 / 5.0e-5 | 4.2e-5 | 1.876477 | 2.8 s |
+| Eshelby inclusion, r3 | 6,960 | 8.3e-7 / 4.4e-7 | 3.9e-7 | 1.876442 | 15 s (6 s cached) |
+| Exact (Goodier 1933) | | | | 1.876441 | |
+
+- **Exact in the space.** The patch and Lamé fields are linear on each spherical surface, so they lie
+  in the discrete space. Their errors are the quadrature error (far_tol = 1e-10), which is the test
+  of the interface matching, the signs and the condensation with two different materials.
+- **Order.** The Eshelby displacement error drops by 7.5, 7.3 and 72 per halving of h (rates 2.9,
+  2.9, 6.2), and the matrix-side interface stress error goes 1.8e-3 → 5e-7. The quartic sphere's
+  asymptotic rate is p + 1 = 5; the coarse steps are pre-asymptotic, as on the plate with a hole.
+- **Contrast.** At r2 the interface stress matches the exact value to 3e-5 relative for
+  E_core/E_shell = 0.01, 0.1, 1 and 10 (panel c), from near-cavity (2.050) to a stiff inclusion
+  (0.082 S in the matrix, 1.753 S in the inclusion). Interior stress along both axes, through both
+  regions, is within 2.8e-6 of the exact field at r3, and the inclusion stress is uniform (Eshelby).
+- **Cost.** At r3 the shell rows take 4.7 s, the core rows 2.3 s, the core LU and S 1.3 s, the
+  condensation 0.5 s and the shell LU 1.1 s. The core adds 3 Nt/3M ≈ 0.6× the shell unknowns, and
+  they never enter the LU.
+
+**Printed coupon.** The coupon is [0, 4] × [0, 1]², with walls of thickness 0.15 on all six faces
+and E_core = ρ² E_s (Gibson–Ashby, ν_core = 0.3). The ends are pulled by a prescribed u_x on rollers:
+
+| ρ | 0 (hollow) | 0.1 | 0.2 | 0.4 | 0.6 | 0.8 | 1 (solid) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| E_eff/E_s, 6 el./unit (5,772 unknowns) | 0.5159 | 0.5212 | 0.5369 | 0.5988 | 0.6987 | 0.8338 | 1.0000 |
+| Voigt / series-parallel | 0.547 / 0.529 | 0.551 / 0.534 | 0.565 / 0.549 | 0.619 / 0.607 | 0.710 / 0.703 | 0.837 / 0.835 | 1 / 1 |
+
+The modulus changes by less than 1e-3 between 4 and 6 elements per unit. The solid limit is exact
+(1 + 1e-7, a uniform field), and every value lies between Reuss and Voigt, close to the
+series-parallel estimate. A density sweep costs one condensation and one LU per density (3.8 s
+at 5.8k unknowns), with nothing reassembled.
+
+**Limits.** The core must be enclosed: every patch of it lies on the interface, which is what a printed
+part's perimeters plus top and bottom layers give. A region that also reaches the outer surface (a
+bimaterial bar, an insert) needs the general multi-domain system with its own supports and loads;
+that is the next brick. The materials are isotropic, and the infill law's C and n are parameters to
+be fitted, not data.
+
+![Two-region validation](results/fig_regions.png)
+
 ## Next steps
 
 1. Exterior Neumann (Eshelby) patch test; move geometry
@@ -513,6 +594,9 @@ prints the equilibrium residual of every case, and `--max-residual` turns it int
 2. Thin curved plate (cylindrical panel built as exact NURBS): Neumann patch test for t/R = 10⁻¹…10⁻³,
    then Scordelis–Lo as a 3D solid.
 3. Iterative solver, preconditioner and H² compression.
+4. General multi-domain coupling (regions that reach the outer surface, inserts, bimaterial bars);
+   the bracket with two walls and a gyroid core from an inward offset of its outer patches; the TCD
+   failure layer on the wall stresses.
 
 ## License
 

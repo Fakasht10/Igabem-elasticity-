@@ -38,6 +38,7 @@
 #include <string>
 #include <vector>
 
+#include "multi_region.hpp"
 #include "operators.hpp"
 #include "regions.hpp"
 #include "sbie.hpp"
@@ -123,6 +124,11 @@ class BcModel {
   Eigen::MatrixXd free_modes;             // rigid motions left free (3 ndof x m)
   bool from_cache = false;
   double t_assemble = 0.0, t_load = 0.0, t_springs = 0.0, t_factor = 0.0;
+  // Bonded inclusions (multi_region.hpp), set before setupOn: the host rows are
+  // condensed with each inclusion's Dirichlet-to-Neumann map, and the interface
+  // tractions are filled in every solution. Supports, springs and loads belong on
+  // the outer (non-interface) patches.
+  const MultiRegion* regions = nullptr;
 
   void setup(const std::string& geometry_file, const Material& m, const SolverOptions& o,
              std::vector<FixedSupport> fixed, std::vector<SpringSupport> spr, const std::string& cache_dir = "cache",
@@ -212,6 +218,12 @@ class BcModel {
       G_.middleRows(r, sel.size()) = tp[p].G(sel, Eigen::all);
       r += int(sel.size());
       tp[p] = OperatorRows();
+    }
+    if (regions && !regions->empty()) {
+      for (int p = 0; p < np; ++p)
+        if (regions->onInterface(p) && (dir[p][0] || dir[p][1] || dir[p][2]))
+          throw std::runtime_error("BcModel: a support on an interface patch");
+      regions->condense(H_, G_);
     }
 
     // Springs: S (rows x spring dofs) = sum_s int_R U k N_B.
@@ -492,11 +504,12 @@ class BcModel {
     Eigen::MatrixXd bb = Eigen::MatrixXd::Zero(n + m, K);
     bb.topRows(n) = rhs;
     const Eigen::MatrixXd X = lu_.solve(bb);
+    for (size_t j = 0; j < u_free.size(); ++j) UC.row(u_free[j]) = X.row(j);
+    for (size_t j = 0; j < t_free.size(); ++j) TC.row(t_free[j]) = X.row(u_free.size() + j);
+    if (regions && !regions->empty()) regions->complete(UC, TC);
     std::vector<BoundarySolution> out(K);
     for (int k = 0; k < K; ++k) {
-      Eigen::VectorXd u = UC.col(k), t = TC.col(k);
-      for (size_t j = 0; j < u_free.size(); ++j) u(u_free[j]) = X(j, k);
-      for (size_t j = 0; j < t_free.size(); ++j) t(t_free[j]) = X(u_free.size() + j, k);
+      const Eigen::VectorXd u = UC.col(k), t = TC.col(k);
       BoundarySolution s{&mesh, &ts, mat, u, t, {}};
       for (const auto& L : cases[c0 + k].loads) {
         auto f = L.t;
@@ -536,6 +549,8 @@ class BcModel {
       // smooth data where it is prescribed (not on fixed components)
       BoundarySolution d{&mesh, &ts, mat, s.u, s.t, {}};
       for (int j : t_free) d.t(j) = 0.0;
+      if (regions)
+        for (int j : regions->t_interface) d.t(j) = 0.0;
       r.applied += resultant(d, [](int) { return true; });
     }
     for (const auto& sp : supports) {
@@ -574,6 +589,8 @@ class BcModel {
       if (lc.smooth) {
         Eigen::VectorXd tt = s.t;
         for (int j : t_free) tt(j) = 0.0;
+        if (regions)
+          for (int j : regions->t_interface) tt(j) = 0.0;
         const GaussRule g = gaussLegendre(6);
         PatchEval E;
         for (const Element& e : mesh.elements)
