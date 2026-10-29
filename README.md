@@ -58,6 +58,11 @@ python3 -m pytest python/fem_reference -q   # FEM reference regression (~30 s)
 python3 python/plot_fem_cavity.py        # -> results/fig_fem_cavity.{pdf,png}
 python3 python/gen_cavity_exact.py       # (needs SymPy) re-derives src/cavity_exact_gen.hpp
 python3 python/gen_kirsch_exact.py       # (needs SymPy) re-derives src/kirsch_exact_gen.hpp
+pip install cadquery-ocp                 # OpenCASCADE for STEP import
+python3 python/make_plate_step.py 0.2    # CAD plate with a hole -> geo/step/plate_hole_t0.2.step
+python3 python/step2dat.py geo/step/plate_hole_t0.2.step geo/step/plate_hole_step_p4_t0.2_r3.dat \
+        --split 1,-1,0,0,0,0 --split 1,1,0,0,0,0 --degree 4 --refine 3   # STEP -> conforming .dat (~25 s)
+python3 -m pytest python/test_step2dat.py -q   # STEP pipeline regression (~2 s)
 ```
 
 ## Library layout
