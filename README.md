@@ -70,6 +70,9 @@ python3 python/step_auto.py geo/step/bracket.step geo/step/bracket_auto_p3_h0.5.
 python3 -m pytest python/test_step_auto.py -q  # plate, bracket, OCCT screw: watertight + volume (~45 s)
 pip install numba scipy                  # cut-cell quadrature for immersed IGA-FEM unit cells
 python3 -m pytest python/immersed -q     # exact cut volumes and moments, weights >= 0: box, sphere, cylinder, thin shell, slivers (~9 s; ~60 s first JIT)
+cd python && python3 -m geomio ../geo/step/bracket.step bracket.stl --curvature 16   # STEP -> watertight STL, CAD face id per triangle (0.1 s)
+python3 -m pytest python/geomio -q       # STL/3MF round trips, broken-STL repair, STEP -> mesh -> cut cells (~1 s; ~25 s first JIT)
+python3 python/plot_geomio.py results/fig_geomio.png results/geomio_volume.csv   # face-coloured parts + volume convergence
 ```
 
 ## Library layout
@@ -89,6 +92,7 @@ values, not new numerics.
 | Plots | `python/plot_probes.py`, `python/render_vtu.py` | Canned probe figures (any component, Cartesian or cylindrical, exact overlay) and a rendered 3D field figure |
 | Problems | `problems/cube_cavity.hpp`, `problems/plate_hole.hpp`, `*_exact_gen.hpp` | Load cases, exact fields, quantities of interest, shared by drivers and tests |
 | Immersed | `python/immersed/cut3d.py`, `python/immersed/cut_quadrature.py` | Cartesian cut cells of a closed STL (exact volumes, wet faces, surface pieces; ported from kfbim-octree) and non-negative (NNLS) moment-fitted volume rules per cut cell, exact for degree ≤ 3, for immersed IGA-FEM unit cells |
+| Geometry I/O | `python/geomio/` | STEP/IGES/BREP (Gmsh OCC) → watertight face-tagged triangle mesh, face id = Gmsh surface tag as in `step_auto.py`; STL read/write (binary keeps the face id in the attribute word, ASCII one solid per face) with materializr's robustness checks (binary-vs-ASCII by size, truncation, weld with fold guard, winding flood fill, outward per component by nesting); 3MF write/read (face ids as base materials); dihedral-angle face segmentation for untagged STL. Feeds `immersed/cut_quadrature.py` |
 | Tests | `tests/test_kernels.cpp`, `tests/test_regression.cpp` | Kernels; every validated result reproduced on a small mesh, including cache hit = fresh |
 
 Not yet in the library: geometry refinement (still `python/make_geometries.py`). `patch_test` and `dirichlet_test` still
