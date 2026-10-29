@@ -1,7 +1,7 @@
 """Regression tests of the cut-cell quadrature (python/immersed): exact cut volumes and polynomial moments of
 polyhedral solids on a Cartesian grid, the integration engine for immersed IGA-FEM unit cells.
 
-    python3 -m pytest python/immersed -q      (needs numba; ~40 s on the first run for the JIT, then a few s)
+    python3 -m pytest python/immersed -q      (needs numba and scipy; ~60 s on the first run for the JIT, then ~5 s)
 
 Every reference is independent of cut3d: closed-form box and prism integrals, or a signed tetrahedron fan of the
 STL with a conical Gauss rule (exact for degree <= 7)."""
@@ -97,12 +97,22 @@ def rel(a, b):
     return np.abs(a - b).max() / np.abs(b).max()
 
 
+def positive_exact(g, q, tol=1e-12):
+    """every weight >= 0, no failed fit, and every cell's degree <= 3 moments reproduced (reference-cell units)"""
+    assert q['failed'] == 0
+    assert q['W'].min() >= 0.0
+    h = g['h']; ncell = int(np.prod(g['n']))
+    xi = (q['X'] - cq._centres(g, q['cell'])) / h
+    Mq = np.stack([np.bincount(q['cell'], q['W'] * xi[:, 0] ** a * xi[:, 1] ** b * xi[:, 2] ** c, ncell)
+                   for a, b, c in EXPS], 1) / h ** 3
+    assert np.abs(Mq - cq.volume_moments(g, 3) / h ** 3).max() < tol
+
+
 # ------------------------------------------------------------------ gates
 def test_box_off_grid():
     lo, hi = np.array([0.13, 0.21, 0.17]), np.array([0.71, 0.83, 0.90])
     V, T = box(lo, hi); g = cq.cut_cells(V, T, (-0.1,) * 3, 0.1, 12); checks(g)
-    q = cq.volume_rule(g, 3)
-    assert q['moment_error'] < 1e-12
+    q = cq.volume_rule(g, 3); positive_exact(g, q)
     assert rel(rule_integrals(q, EXPS), box_integrals(lo, hi, EXPS)) < 1e-12
 
 
@@ -112,7 +122,7 @@ def test_box_on_grid_planes():
     act = g['active'].reshape(6, 6, 6)
     assert act[1:5, 1:5, 1:5].all() and act.sum() == 64
     assert np.allclose(g['vol'][g['active']], h ** 3, rtol=0, atol=1e-14)
-    q = cq.volume_rule(g, 3)
+    q = cq.volume_rule(g, 3); positive_exact(g, q)
     assert rel(rule_integrals(q, EXPS), box_integrals((0, 0, 0), (1, 1, 1), EXPS)) < 1e-12
     s = cq.surface_rule(g)
     assert s['orphan'] == 0
@@ -122,9 +132,9 @@ def test_box_on_grid_planes():
 def test_sphere_polyhedral_moments():
     V, T = icosphere(0.4, (0.503, 0.497, 0.511), 3)                       # 1280 facets, off the grid
     g = cq.cut_cells(V, T, (0.0,) * 3, 1 / 16, 16); checks(g)
-    q = cq.volume_rule(g, 3)
-    assert q['moment_error'] < 1e-11
+    q = cq.volume_rule(g, 3); positive_exact(g, q)
     assert rel(rule_integrals(q, EXPS), poly_integrals(V, T, EXPS)) < 1e-11
+    assert q['points_per_cut_cell'] <= len(EXPS)          # NNLS is sparse: <= nmom points per cell
     # facet sag only: the 1280-facet polyhedron is 0.86% under the true ball volume
     assert abs(g['check']['vol_sum'] / (4 / 3 * np.pi * 0.4 ** 3) - 1) < 1e-2
 
@@ -134,7 +144,8 @@ def test_cylinder_volume_and_moments():
     V, T = prism(r, c, z0, z1, k); g = cq.cut_cells(V, T, (0.0,) * 3, 1 / 20, 20); checks(g)
     vol = 0.5 * k * r ** 2 * np.sin(2 * np.pi / k) * (z1 - z0)
     assert abs(g['check']['vol_sum'] / vol - 1) < 1e-12
-    assert rel(rule_integrals(cq.volume_rule(g, 3), EXPS), poly_integrals(V, T, EXPS)) < 1e-11
+    q = cq.volume_rule(g, 3); positive_exact(g, q)
+    assert rel(rule_integrals(q, EXPS), poly_integrals(V, T, EXPS)) < 1e-11
 
 
 def test_hollow_box_volume_fraction():
@@ -145,7 +156,7 @@ def test_hollow_box_volume_fraction():
     g = cq.cut_cells(V, T, (0.0,) * 3, h, 10); checks(g)
     vol = 0.76 ** 3 - (0.76 - 2 * t) ** 3
     assert abs(g['check']['vol_sum'] / vol - 1) < 1e-12
-    q = cq.volume_rule(g, 3)
+    q = cq.volume_rule(g, 3); positive_exact(g, q)
     ref = box_integrals((0.12,) * 3, (0.88,) * 3, EXPS) - box_integrals((0.12 + t,) * 3, (0.88 - t,) * 3, EXPS)
     assert rel(rule_integrals(q, EXPS), ref) < 1e-11
 
@@ -156,3 +167,28 @@ def test_degree_guard_and_margin():
         cq.volume_rule(g, 4)
     with pytest.raises(ValueError):
         cq.cut_cells(V, T, (0.3,) * 3, 0.1, 10)
+
+
+def test_thin_slivers_positive():
+    """faces 1e-3 h past a grid plane: sliver cells with almost no Gauss point inside; the boundary candidates carry
+    the fit"""
+    h = 0.1; e = 1e-3 * h
+    lo, hi = np.array([0.2 - e, 0.3 - e, 0.25]), np.array([0.7 + e, 0.6 + e, 0.65 + e])
+    V, T = box(lo, hi); g = cq.cut_cells(V, T, (0.0,) * 3, h, 10); checks(g)
+    q = cq.volume_rule(g, 3); positive_exact(g, q)
+    assert rel(rule_integrals(q, EXPS), box_integrals(lo, hi, EXPS)) < 1e-12
+
+
+def test_minnorm_negative_nnls_not():
+    """the reason for the NNLS rule: the minimum-norm fit on the Gauss grid has negative weights on the same cells"""
+    V, T = icosphere(0.4, (0.503, 0.497, 0.511), 2); g = cq.cut_cells(V, T, (0.0,) * 3, 1 / 8, 8)
+    old = cq.volume_rule(g, 3, method='minnorm'); new = cq.volume_rule(g, 3)
+    assert old['W'].min() < 0 and new['W'].min() >= 0
+    assert rel(rule_integrals(new, EXPS), rule_integrals(old, EXPS)) < 1e-12
+
+
+def test_inside_parity():
+    lo, hi = np.array([0.13, 0.21, 0.17]), np.array([0.71, 0.83, 0.90])
+    V, T = box(lo, hi); g = cq.cut_cells(V, T, (-0.1,) * 3, 0.1, 12)
+    X = np.random.default_rng(1).uniform(0.0, 1.0, (20000, 3))
+    assert (cq.inside(g, X) == ((X > lo) & (X < hi)).all(1)).all()
