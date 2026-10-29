@@ -29,6 +29,7 @@
 #include "integrator.hpp"
 #include "kelvin.hpp"
 #include "recovery.hpp"
+#include "regions.hpp"
 #include "solution.hpp"
 
 namespace igabem {
@@ -46,6 +47,7 @@ class InteriorEvaluator {
   InteriorEvaluator(const BoundarySolution& s, const SolverOptions& o)
       : s_(s), m_(*s.mesh), K_(s.mat), KT_(s.mat), quad_(*s.mesh, o) {
     if (o.far_tol <= 0.0) throw std::runtime_error("InteriorEvaluator needs SolverOptions::far_tol > 0");
+    for (const auto& d : s.region) region_.emplace_back(*d->R, o);
   }
 
   // Boundary distance below which x is treated as on the boundary.
@@ -92,6 +94,15 @@ class InteriorEvaluator {
           wind += wJ * d.dot(n) / (4.0 * M_PI * r * r * r);
         });
       }
+      // Region tractions (their t_L part is in the loop above, through Sb).
+      for (size_t k = 0; k < region_.size(); ++k)
+        region_[k].visit(src, *s_.region[k], [&](const Vec3& y, const Vec3& n, const RegionBlock& tw) {
+          Eigen::Matrix3d U, T, P[3], Q[3];
+          K_.eval(y - x, n, U, T);
+          KT_.gradients(y - x, n, P, Q);
+          du += U * tw.col(0);
+          for (int mm = 0; mm < 3; ++mm) dG += P[mm] * tw(mm, 0);
+        });
       f.u = ub + Gb * (x - xb) + du;
       f.grad = Gb + dG;
       f.winding = wind;
@@ -115,6 +126,7 @@ class InteriorEvaluator {
   Kelvin K_;
   KelvinTraction KT_;
   ElementIntegrator quad_;
+  std::vector<RegionIntegrator> region_;
 };
 
 }  // namespace igabem

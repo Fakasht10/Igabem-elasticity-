@@ -74,6 +74,14 @@ cd python && python3 -m geomio ../geo/step/bracket.step bracket.stl --curvature 
 cd python && python3 -m geomio ../geo/step/occt_screw.step bolt.vtu --order 2 --volume   # curved tri6 + TET10, mid-nodes on the CAD (0.2 s)
 python3 -m pytest python/geomio -q       # STL/3MF round trips, broken-STL repair, STEP -> mesh -> cut cells, tri6/TET10 on CAD (~2 s; ~25 s first JIT)
 python3 python/plot_geomio.py results/fig_geomio.png results/geomio_volume.csv   # face-coloured parts + volume convergence tri3 vs tri6
+python3 python/make_boxes.py             # boxes, bars, thin plates for the local-load validation
+./build/bc_validate bar geo/bar_L4_p3_n8.dat                 # exact bending / axial / spring end (0.3 s)
+./build/bc_validate halfspace geo/box_hs_q_p3_r1.dat --probe results/bc_halfspace_probe_r1.csv   # disk load vs Love (18 s)
+./build/bc_validate cantilever geo/bar_L10_p3_n40.dat        # clamp + tip shear vs Timoshenko (3 s)
+python3 python/face_ids.py geo/step/bracket.step geo/step/bracket_exact_p3_h0.7_c3.dat   # CAD face id per patch -> .faces
+./build/bc_case cases/bracket_clamped.json                   # 5 load cases by CAD face id / box, one LU (17 s, 7 s cached)
+./build/bc_case cases/bracket_bolted.json                    # bolt hole fixed + elastic pad (springs) (17 s)
+python3 python/plot_bc_validation.py     # -> results/fig_bc_validation.{pdf,png}, fig_bc_bracket.{pdf,png}
 ```
 
 ## Library layout
@@ -89,9 +97,10 @@ values, not new numerics.
 | Operators | `sbie.hpp`, `hsbie.hpp`, `traction_space.hpp` | SBIE matrices H, G (H u = G t), HSBIE assembly, discontinuous traction space |
 | Model | `operators.hpp`, `cache.hpp`, `neumann_model.hpp`, `mixed_model.hpp`, `model.hpp` | SBIE rows at any collocation set, cached on disk (key: geometry bytes, material, quadrature options, code version). `NeumannModel`: traction everywhere, bordered LU. `MixedModel`: displacement on chosen patches, traction elsewhere, from the same cached rows plus cached rows per Dirichlet patch. `Model`: either, chosen at run time. Any number of load cases per solve |
 | Solution | `solution.hpp` | `BoundarySolution`: u and t coefficients of one case, whatever was prescribed or solved; boundary gradient, strain, stress, von Mises |
+| Supports and loads | `regions.hpp`, `bc_model.hpp`, `loads.hpp`, `case_io.hpp`, `json.hpp` | Regions picked by CAD face id (`<geometry>.faces`, Gmsh surface tags as geomio), patch, box, plane, half-space, cylinder, ball or normal, cutting through patches anywhere; exact region quadrature on cut cells (marching squares + arc refinement, Duffy/adaptive near the source). `BcModel`: fixed components per support (clamp, symmetry, roller, prescribed u), springs / elastic supports t = −K u on any region, free rigid motions detected and bordered only when the supports leave them free, per-support reactions and an equilibrium residual. Loads: pressure, traction field, resultant force, resultant moment (linear traction), bearing (cosine pressure). Any number of cases on one cached LU. `case_io.hpp`: a JSON case file in the shape of nurb-fea-tcd's `bemkit.solve` supports/loads dicts (`app/bc_case`) |
 | Post-processing | `recovery.hpp`, `interior.hpp`, `probes.hpp`, `vtk.hpp` | Boundary stress recovery; u, ∇u, ε, σ at interior points (near-boundary safe) with an inside test; line probes through the solid and curve probes on the boundary to CSV; surface and section `.vtu` for ParaView |
 | Plots | `python/plot_probes.py`, `python/render_vtu.py` | Canned probe figures (any component, Cartesian or cylindrical, exact overlay) and a rendered 3D field figure |
-| Problems | `problems/cube_cavity.hpp`, `problems/plate_hole.hpp`, `*_exact_gen.hpp` | Load cases, exact fields, quantities of interest, shared by drivers and tests |
+| Problems | `problems/cube_cavity.hpp`, `problems/plate_hole.hpp`, `problems/half_space.hpp`, `*_exact_gen.hpp` | Load cases, exact fields, quantities of interest, shared by drivers and tests |
 | Immersed | `python/immersed/cut3d.py`, `python/immersed/cut_quadrature.py` | Cartesian cut cells of a closed STL (exact volumes, wet faces, surface pieces; ported from kfbim-octree) and non-negative (NNLS) moment-fitted volume rules per cut cell, exact for degree ≤ 3, for immersed IGA-FEM unit cells |
 | Geometry I/O | `python/geomio/` | STEP/IGES/BREP (Gmsh OCC) → watertight face-tagged triangle mesh, face id = Gmsh surface tag as in `step_auto.py`; STL read/write (binary keeps the face id in the attribute word, ASCII one solid per face) with materializr's robustness checks (binary-vs-ASCII by size, truncation, weld with fold guard, winding flood fill, outward per component by nesting); 3MF write/read (face ids as base materials); dihedral-angle face segmentation for untagged STL. Feeds `immersed/cut_quadrature.py`. `highorder.py`: curved second-order meshes (tri6 surface for BEM, TET10 for FEM) with mid-edge nodes on the CAD curves and faces, fold repair and CAD-volume checks (after nurb-fea-tcd); volume error h⁴ against h² for flat triangles |
 | Tests | `tests/test_kernels.cpp`, `tests/test_regression.cpp` | Kernels; every validated result reproduced on a small mesh, including cache hit = fresh |
@@ -466,10 +475,35 @@ Long strip clamped at one end and pulled at the other:
 
 ![Clamped strip fields](results/fig_fields_strip_clamped.png)
 
+### Local supports and loads (`BcModel`, `bc_validate`, `bc_case`)
+
+Supports and loads go on any part of the surface: a CAD face, or a selector that cuts through
+patches (the load region is integrated exactly on cut cells, so the mesh need not follow it).
+
+| Case | Unknowns | Result | Reference |
+| --- | --- | --- | --- |
+| Bar, symmetry plane + resultant moment / axial force / spring end | 582 | u error 1e-8, σ error 1e-8 | exact polynomial fields |
+| Half-space, pressure disk the mesh does not follow (quarter model, exact far-field traction) | 2,166 → 10,980 | u error 5.6e-3 → 6.3e-4 (h^1.5); max σ error under the load 1.9e-3 → 2.7e-4 p | Love (Boussinesq integrated) |
+| Cantilever L/h = 10, clamped, tip shear | 1,158 → 3,246 | tip w +0.58% → −0.15%, mid-span σ_xx +0.54% → +0.13% | Timoshenko |
+| Thin plate t = 0.2 clamped, tip shear: clamp reaction R_z/F | 2,430 uniform; 1,422 graded | 0.901; 1.012 | 1 |
+| Bracket from STEP, end face clamped, 5 cases on one LU | 6,708 | 17.5 s fresh, 7.3 s cached; equilibrium 2e-3 (pull, pin), 0.15 (bend) | statics |
+
+The clamp reaction in bending is the delicate quantity: the transverse shear is carried in the
+singular corner zone of the clamp, over about one thickness, so the faces next to the clamp must
+be graded towards it (the thin plate goes from 10% to 1% with fewer unknowns). The bracket
+mesh is not graded yet, which is why its bending cases close equilibrium only to 15%; its
+displacement and the stresses away from the clamp are not affected the same way, but
+treat clamp-adjacent bending stresses on ungraded meshes with care. `bc_case` prints the
+equilibrium residual of every case for this reason.
+
+![Local loads validation](results/fig_bc_validation.png)
+![Bracket load cases](results/fig_bc_bracket.png)
+
 ## Next steps
 
 1. Exterior Neumann (Eshelby) patch test; move geometry
-   refinement into C++; partial-patch Dirichlet regions (today Γ_u is a union of whole patches).
+   refinement into C++; partial-patch Dirichlet regions (today a fixed support is a union of whole
+   patches; partial regions take loads and springs). Grading towards supports by knot insertion.
 2. Thin curved plate (cylindrical panel built as exact NURBS): Neumann patch test for t/R = 10⁻¹…10⁻³,
    then Scordelis–Lo as a 3D solid.
 3. Iterative solver, preconditioner and H² compression.

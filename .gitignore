@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 cache/
 results/fields/*.vtu
+results/bc_*.vtu

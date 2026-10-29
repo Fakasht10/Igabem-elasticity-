@@ -1,0 +1,11 @@
+// Thin plate (the bracket arm, t = 0.2) clamped at x = 0 (patch 0), 1 N shear on x = 3 (patch 1).
+// The clamp shear reaction converges only when the faces next to the clamp are graded towards
+// it: the transverse shear is carried in the clamp-corner singularity, over ~ t.
+{
+  "geometry": "../geo/plate_t0.2_graded.dat",
+  "cache": "none",
+  "material": {"E": 3500, "nu": 0.36},
+  "supports": [{"label": "clamp", "patches": [0], "fix": ["ux", "uy", "uz"]}],
+  "cases": [{"name": "bend", "loads": [{"label": "end force", "patches": [1], "force_N": 1, "direction": [0, 0, -1]}]}],
+  "output": {"csv": "results/bc_plate_clamped_graded.csv"}
+}

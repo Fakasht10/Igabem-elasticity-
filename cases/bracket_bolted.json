@@ -1,0 +1,16 @@
+// The same bracket held by a bolt in its hole (CAD face 12, all components) and resting on
+// an elastic pad under the wide end (spring on the part of the bottom face x < -1.1: a box
+// that cuts through patches), pulled and bent at the narrow end.
+{
+  "geometry": "../geo/step/bracket_exact_p3_h0.7_c3.dat",
+  "material": {"E": 3500, "nu": 0.36},
+  "supports": [
+    {"label": "bolt", "face_id": 12, "fix": ["ux", "uy", "uz"]},
+    {"label": "pad", "face_id": 13, "select": {"box": [[-2, -1, -1], [-1.1, 1, 1]]}, "spring": {"k_n": 500, "k_t": 50}}
+  ],
+  "cases": [
+    {"name": "pull", "loads": [{"label": "end force", "face_id": 7, "force_N": 10, "direction": [1, 0, 0]}]},
+    {"name": "bend", "loads": [{"label": "end force", "face_id": 7, "force_N": 1, "direction": [0, 0, -1]}]}
+  ],
+  "output": {"vtu": "results/bc_bracket_bolted", "csv": "results/bc_bracket_bolted.csv"}
+}
