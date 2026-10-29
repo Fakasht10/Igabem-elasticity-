@@ -229,3 +229,76 @@ def test_step_through_cut_cells():
     assert s["orphan"] == 0 and set(np.unique(s["face"]).tolist()) == set(m.fid.tolist())
     for f in np.unique(m.fid)[:5]:                                # per-face area: surface rule vs. mesh
         assert s["W"][s["face"] == f].sum() == pytest.approx(m.areas()[m.fid == f].sum(), rel=1e-10)
+
+
+# ---------------------------------------------------------------- second order (tri6 / TET10 on the CAD)
+def _tet10_volume(X, tet, P, W):
+    """TET10 volume from our own Gmsh-order shape functions (checks the connectivity handed to FEM codes)."""
+    L = np.c_[1 - P.sum(1), P]                                    # barycentric (q, 4)
+    dL = np.array([[-1, -1, -1], [1, 0, 0], [0, 1, 0], [0, 0, 1]], float)
+    dN = [(4 * L[:, i] - 1)[:, None] * dL[i] for i in range(4)]
+    from geomio.highorder import TET10_EDGES
+    dN += [4 * (L[:, a, None] * dL[b] + L[:, b, None] * dL[a]) for a, b in TET10_EDGES]
+    dN = np.stack(dN, 1)                                           # (q, 10, 3)
+    J = np.einsum("qkj,ekc->eqcj", dN, X[tet])
+    return float((np.linalg.det(J) @ W).sum())
+
+
+@pytest.mark.parametrize("name", ["bracket.step", "occt_screw.step", "plate_hole_t0.2.step"])
+def test_second_order_on_cad(tmp_path, name):
+    gmsh = _gmsh()
+    from geomio.highorder import cad_to_mesh2, write_vtu
+    path = os.path.join(STEP, name)
+    m, info = cad_to_mesh2(path, curvature=16, volume=True)
+    d = float(np.linalg.norm(m.X.max(0) - m.X.min(0)))
+    assert info["watertight"] and info["tri6_folded"] == 0 and info["tet_inverted"] == 0
+    assert info["mid_node_cad_dev"] < 1e-5 * d                    # mid-edge nodes on the CAD faces
+    assert info["vol_rel_err"] < 1e-4 and info["vol_rel_err"] < 0.02 * info["vol_rel_err_tri3"]
+    assert info["vol_tet10"] == pytest.approx(info["vol_tri6"], rel=1e-10)   # same curved boundary, both exact rules
+    gmsh.initialize(); gmsh.option.setNumber("General.Terminal", 0)
+    gmsh.model.occ.importShapes(path); gmsh.model.occ.synchronize()
+    tags = sorted(t for _, t in gmsh.model.getEntities(2))
+    P, W = gmsh.model.mesh.getIntegrationPoints(4, "Gauss4")
+    gmsh.finalize()
+    assert sorted(set(m.fid.tolist())) == tags
+    P = np.asarray(P).reshape(-1, 3)
+    assert _tet10_volume(m.X, m.tet10, P, np.asarray(W)) == pytest.approx(info["vol_tet10"], rel=1e-10)
+    c = m.corners()
+    assert gio.is_watertight(c) and c.volume() == pytest.approx(info["vol_tri3"], rel=1e-12)
+    write_vtu(str(tmp_path / "m.vtu"), m)
+    assert os.path.getsize(tmp_path / "m.vtu") > 1000
+
+
+def test_second_order_converges_h4():
+    """volume error of the curved tri6 surface: >= 3.5 observed order on the bolt (flat tri3: about 2)."""
+    _gmsh()
+    from geomio.highorder import cad_to_mesh2
+    path = os.path.join(STEP, "occt_screw.step")
+    e3, e6 = [], []
+    for h in (4.0, 2.0):
+        _, i = cad_to_mesh2(path, h=h, curvature=0, check_cad=False)
+        e3.append(i["vol_rel_err_tri3"]); e6.append(i["vol_rel_err"])
+    assert np.log2(e3[0] / e3[1]) == pytest.approx(2.0, abs=0.4)
+    assert np.log2(e6[0] / e6[1]) > 3.5
+
+
+def test_tet10_fold_is_straightened():
+    """push one TET10 mid-node through its element: the repair puts mid-nodes back on chords until no element is
+    inverted (nurb-fea-tcd's _repair_folds)."""
+    gmsh = _gmsh()
+    from geomio.highorder import _fix_tet_folds, _tet_jacobians
+    gmsh.initialize(); gmsh.option.setNumber("General.Terminal", 0)
+    try:
+        gmsh.model.occ.addBox(0, 0, 0, 1, 1, 1); gmsh.model.occ.synchronize()
+        gmsh.option.setNumber("Mesh.MeshSizeMax", 0.5)
+        gmsh.model.mesh.generate(3); gmsh.model.mesh.setOrder(2)
+        _, nodes = gmsh.model.mesh.getElementsByType(11)
+        row = np.asarray(nodes, np.int64).reshape(-1, 10)[0]
+        a = np.array(gmsh.model.mesh.getNode(int(row[0]))[0]); b = np.array(gmsh.model.mesh.getNode(int(row[1]))[0])
+        c = np.array(gmsh.model.mesh.getNode(int(row[3]))[0])
+        gmsh.model.mesh.setNode(int(row[4]), list(0.5 * (a + b) + 3.0 * (0.5 * (a + b) - c)), [])
+        assert (_tet_jacobians().min(1) <= 0).any()
+        r = _fix_tet_folds(optimise=False)
+        assert r["tet_folded"] >= 1 and r["tet_inverted"] == 0 and r["tet_edges_straightened"] >= 6
+    finally:
+        gmsh.finalize()
