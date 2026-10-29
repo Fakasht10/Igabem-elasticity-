@@ -1,0 +1,19 @@
+// Bracket from STEP (geo/step/bracket.step -> step_auto.py exact layout -> face_ids.py):
+// wide end clamped by CAD face, five load cases on one LU, all placed by CAD face or by a
+// box that cuts through patches. Units: mm, N, MPa (PLA-like material).
+// Faces (python/face_ids.py): 1 top, 13 bottom, 6 end x = -1.5, 7 end x = +1.5, 12 hole.
+{
+  "geometry": "../geo/step/bracket_exact_p3_h0.7_c3.dat",
+  "material": {"E": 3500, "nu": 0.36},
+  "supports": [
+    {"label": "clamp", "face_id": 6, "fix": ["ux", "uy", "uz"]}
+  ],
+  "cases": [
+    {"name": "pull",  "loads": [{"label": "end force", "face_id": 7, "force_N": 10, "direction": [1, 0, 0]}]},
+    {"name": "bend",  "loads": [{"label": "end force", "face_id": 7, "force_N": 1, "direction": [0, 0, -1]}]},
+    {"name": "twist", "loads": [{"label": "end torque", "face_id": 7, "moment": [0.5, 0, 0]}]},
+    {"name": "press", "loads": [{"label": "pad pressure", "select": {"box": [[0.6, -0.15, 0.09], [1.2, 0.15, 0.11]]}, "pressure": 20}]},
+    {"name": "pin",   "loads": [{"label": "pin bearing", "face_id": 12, "bearing": {"force_N": 10, "direction": [1, 0, 0]}}]}
+  ],
+  "output": {"vtu": "results/bc_bracket_clamped", "csv": "results/bc_bracket_clamped.csv"}
+}

@@ -40,7 +40,10 @@ struct SourcePoint {
 
 class ElementIntegrator {
  public:
-  ElementIntegrator(const Mesh& m, const SolverOptions& o)
+  // cache = false: no far-field point cache (adaptive mode then splits far
+  // elements into cells instead), for short-lived integrators on small meshes,
+  // e.g. the sub-cells of a loaded region (regions.hpp).
+  ElementIntegrator(const Mesh& m, const SolverOptions& o, bool cache = true)
       : mesh_(m), opt_(o), g_(gaussLegendre(o.n_gauss)) {
     for (int k = 1; k <= o.n_gauss; ++k) rules_.push_back(gaussLegendre(k));
     // Bounding spheres of elements and cells, for cheap far-field tests.
@@ -51,7 +54,7 @@ class ElementIntegrator {
       elem_ball_[i] = ball(e, e.rect);
       for (const Rect& R : e.cells) cell_ball_[i].push_back(ball(e, R));
     }
-    if (o.far_tol > 0.0) buildCache();
+    if (o.far_tol > 0.0 && cache) buildCache();
   }
 
   // Adaptive mode (far_tol > 0): one cached rule per far element; otherwise
@@ -60,7 +63,7 @@ class ElementIntegrator {
   template <class F>
   void integrateAdaptive(const SourcePoint& c, const Element& e, size_t ie, bool own, F& f) const {
     const Ball& B = elem_ball_[ie];
-    if (!own) {
+    if (!own && max_cached_ > 0) {
       const int m = std::max(farOrder(c.x, B), min_order_[ie]);
       if (m <= max_cached_ && (c.x - B.first).norm() > 1.5 * B.second) { cachedRule(ie, m, f); return; }
     }

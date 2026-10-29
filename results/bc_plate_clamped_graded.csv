@@ -1,0 +1,7 @@
+case,item,kind,Fx,Fy,Fz,Mx,My,Mz
+bend,end force,load,0,0,-1,3.76760254939e-17,3,0
+bend,clamp,reaction,1.09941916682e-12,1.88667137468e-12,1.01168495079,6.49453933558e-13,-3.02193807575,5.31599764209e-12
+bend,equilibrium,residual,0.0115499897329,,,,,
+bend,peak,von_mises,1048.64580065,0,0.5,0.1,,
+bend,peak,s1,1171.95197274,0,0.5,0.1,,
+bend,peak,u_max,3.80603965126,,,,,
