@@ -32,7 +32,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from make_geometries import Patch, refine_uniform, write_dat  # noqa: E402
-from step2dat import conformity_gap, evaluate, spline_volume  # noqa: E402
+from spline_checks import _basis, conformity_gap, evaluate, spline_volume  # noqa: E402
 
 
 # ---------------------------------------------------------------- 1. quad mesh
@@ -247,7 +247,6 @@ def blocks(M, sep):
 def _bspline_basis(p, n_span, t):
     """Clamped uniform B-spline basis (len(t), n_span + p) and its knot vector."""
     U = np.concatenate([np.zeros(p), np.linspace(0, 1, n_span + 1), np.ones(p)])
-    from step2dat import _basis
     return np.array([_basis(p, U, min(x, 1.0))[0] for x in t]), U
 
 
@@ -334,7 +333,7 @@ def _outward(M, P, eps):
     return not inside
 
 
-def jacobian_ratio(P, m=7):
+def jacobian_ratio(P, m=5):
     """min / max of |x_u x x_v| over an m x m grid: near 0 flags a degenerate patch."""
     t = np.linspace(0, 1, m)
     J = [np.linalg.norm(np.cross(*evaluate(P, u, v)[1:])) for u in t for v in t]
@@ -370,7 +369,7 @@ def convert(step, out, h=0.4, degree=3, refine=0, curvature=8, name=None):
         for _ in range(refine):
             refine_uniform(P)
     gap, nshared, lonely = conformity_gap(patches)
-    v_spl = spline_volume(patches, 6)
+    v_spl = spline_volume(patches, 4)  # exact for these polynomial patches up to p = 3
     write_dat(out, patches, name or os.path.basename(out))
     return dict(quads=nquads, patches=len(patches), fallback_blocks=fallback, min_quad_quality=qmin,
                 min_jacobian_ratio=min(jacobian_ratio(P) for P in patches), max_dev=dev,

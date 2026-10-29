@@ -15,7 +15,7 @@ from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection  # noq
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from make_geometries import read_dat  # noqa: E402
 from plot_step_pipeline import setup, shade  # noqa: E402
-from step2dat import evaluate  # noqa: E402
+from spline_checks import evaluate  # noqa: E402
 
 plt.rcParams.update({"font.size": 9, "font.family": "serif", "mathtext.fontset": "cm"})
 

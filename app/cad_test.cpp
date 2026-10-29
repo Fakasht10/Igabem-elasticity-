@@ -4,7 +4,7 @@
 //
 // usage: cad_test <geometry.dat> <label> <case[,case...]> [--bc free|clamp] [--S 1]
 //                 [--snom s] [--tol 1e-6] [--exclude d] [--region name:x0,y0,z0,x1,y1,z1]...
-//                 [--n 12] [--cache dir|none] [--csv file] [--fields prefix]
+//                 [--n 12] [--far-tol 1e-10] [--cache dir|none] [--csv file] [--fields prefix]
 //   cases: patch    u = alpha x, t = sigma n (exact; with --bc clamp, u prescribed on the
 //                   clamped patches)
 //          tension  t = S e_x on the end x = x_max (pointwise, |x - x_max| < tol),
@@ -70,12 +70,15 @@ int main(int argc, char** argv) {
     }
   }
   SolverOptions opt;
+  opt.n_gauss = 12;  // as plate_test: order capped at 12, reduced in the far field
+  opt.far_tol = 1e-10;
   bool clamp = false;
   double S = 1.0, snom = -1.0, tol = 1e-6, exclude = 0.0;
   std::string cache = "cache", csv, fields;
   std::vector<Region> regions;
   for (int i = 4; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--n")) opt.n_gauss = std::atoi(argv[++i]);
+    else if (!std::strcmp(argv[i], "--far-tol")) opt.far_tol = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--bc")) clamp = !std::strcmp(argv[++i], "clamp");
     else if (!std::strcmp(argv[i], "--S")) S = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--snom")) snom = std::atof(argv[++i]);
