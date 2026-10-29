@@ -46,6 +46,11 @@ class SbieEntries {
   }
 
   int rows() const { return 3 * int(rows_.size()); }
+
+  // Quadrature of the entries for elements that get a cached rule: error estimate
+  // tol, Gauss order at least min_order (0, 0: the dense assembly's rules, so that
+  // entries equal the dense ones up to round-off).
+  void setEntryRule(double tol, int min_order) { near_tol_ = tol; near_order_ = min_order; }
   int cols() const { return 3 * ncol_; }
 
   // Column of local control point idx of patch p.
@@ -140,11 +145,23 @@ class SbieEntries {
   struct FarBlock {
     std::vector<Vec3> y, n;
     std::vector<double> w;
-    Eigen::SparseMatrix<double> W;  // 3 |Q| x N
+    // Per element: its points q0 .. q0 + nq - 1, the basis values R (n_loc x nq,
+    // column-major, from the integrator's cache) and which local basis functions
+    // are block dofs (l, dof index p, in order of first appearance). Column j of
+    // the block is component col_comp[j] of dof col_pt[j]:
+    //   A(:, j) = sum_q K(:, 3 q + col_comp[j]) N_{col_pt[j]}(y_q).
+    struct Elem {
+      int q0, nq, n_loc;
+      const double* R;
+      std::vector<std::pair<int, int>> lp;
+    };
+    std::vector<Elem> elems;
+    std::vector<std::vector<std::pair<int, int>>> dof_elems;  // per dof p: (element, l)
+    std::vector<int> col_pt, col_comp;
     int points() const { return int(y.size()); }
   };
 
-  bool farBlock(int M, const int* rws, int N, const int* cls, double tol, FarBlock& fb) const {
+  bool farBlock(int M, const int* rws, int N, const int* cls, double tol, int min_order, FarBlock& fb) const {
     Vec3 c = Vec3::Zero();
     for (int i = 0; i < M; ++i) c += rows_[rws[i] / 3].x;
     c /= M;
@@ -168,38 +185,43 @@ class SbieEntries {
     fb.y.clear();
     fb.n.clear();
     fb.w.clear();
-    std::vector<Eigen::Triplet<double>> trip;
+    fb.elems.clear();
+    fb.dof_elems.assign(dofs.size(), {});
     bool ok = true;
+    ElementIntegrator::RuleData r;
     for (int ie : elems) {
       const Element& e = mesh_.elements[ie];
       const double d = (quad_.elementCentre(ie) - c).norm() - rho;
-      ok = quad_.farRule(size_t(ie), d, tol, [&](const QPoint& E, double w) {
-        const Vec3 nJ = E.normal() * mesh_.normal_sign;
-        const double J = nJ.norm();
-        const int q = int(fb.y.size());
-        fb.y.push_back(E.x);
-        fb.n.push_back(nJ / J);
-        fb.w.push_back(w * J);
-        for (int l = 0; l < E.n_loc; ++l) {
-          const int p = s.pos[column(e.patch, E.idx[l])];
-          if (p < 0) continue;
-          for (int j : at[p]) trip.emplace_back(3 * q + cls[j] % 3, j, E.R[l]);
-        }
-      });
+      ok = quad_.farRuleData(size_t(ie), d, tol, min_order, r);
       if (!ok) break;
+      FarBlock::Elem E{fb.points(), r.n, r.n_loc, r.R, {}};
+      for (int l = 0; l < r.n_loc; ++l) {
+        const int p = s.pos[column(e.patch, r.idx[l])];
+        if (p < 0) continue;
+        E.lp.emplace_back(l, p);
+        fb.dof_elems[p].emplace_back(int(fb.elems.size()), l);
+      }
+      fb.elems.push_back(std::move(E));
+      for (int q = 0; q < r.n; ++q) {
+        const Vec3 nJ = r.nJ[q] * mesh_.normal_sign;
+        const double J = nJ.norm();
+        fb.y.push_back(r.x[q]);
+        fb.n.push_back(nJ / J);
+        fb.w.push_back(r.w[q] * J);
+      }
     }
+    fb.col_pt.resize(N);
+    fb.col_comp.resize(N);
+    for (int j = 0; j < N; ++j) { fb.col_pt[j] = s.pos[cls[j] / 3]; fb.col_comp[j] = cls[j] % 3; }
     for (int d : dofs) s.pos[d] = -1;
-    if (!ok) return false;
-    fb.W.resize(3 * fb.points(), N);
-    fb.W.setFromTriplets(trip.begin(), trip.end());
-    return true;
+    return ok;
   }
 
-  // 3 x 3 kernel block of row point a and quadrature point q of fb, times its weight.
-  Eigen::Matrix3d kernel(int a, const FarBlock& fb, int q) const {
-    Eigen::Matrix3d U, T;
-    K_.eval(fb.y[q] - rows_[a].x, fb.n[q], U, T);
-    return (kind_ == H ? T : U) * fb.w[q];
+  // 3 x 3 kernel block of row point a and quadrature point q of fb, times its
+  // weight, into out (column-major, leading dimension ld).
+  void kernel(int a, const FarBlock& fb, int q, double* out, int ld) const {
+    if (kind_ == H) K_.evalT(fb.y[q] - rows_[a].x, fb.n[q], fb.w[q], out, ld);
+    else K_.evalU(fb.y[q] - rows_[a].x, fb.w[q], out, ld);
   }
 
  private:
@@ -207,6 +229,8 @@ class SbieEntries {
     std::vector<int> pos, elems;
     std::vector<char> emark;
     std::vector<double> acc;  // per column dof: 3 x 3 block, column-major
+    Eigen::Matrix<double, Eigen::Dynamic, 9, Eigen::RowMajor> kw;
+    Eigen::Matrix<double, Eigen::Dynamic, 9> ke;
   };
   static Scratch& scratch() {
     thread_local Scratch s;
@@ -220,16 +244,39 @@ class SbieEntries {
   const std::vector<Collocation>& rows_;
   Kind kind_;
   int ncol_ = 0;
+  double near_tol_ = 0.0;
+  int near_order_ = 0;
   std::vector<std::vector<int>> support_;    // per column dof: supporting elements
   std::vector<std::vector<int>> elem_cols_;  // per element: column dofs
 
   // 3 x 3 blocks of row point a against the column dofs marked in s.pos, into s.acc.
+  // Elements far enough for a cached rule are done in a batch: kernel times weight
+  // at the rule's points (n x 9), contracted with the basis values in one product.
   void rowBlocks(int a, Scratch& s) const {
     std::fill(s.acc.begin(), s.acc.end(), 0.0);
     const Collocation& c = rows_[a];
     const SourcePoint src{c.patch, c.xi, c.x};
+    ElementIntegrator::RuleData r;
     for (int ie : s.elems) {
       const Element& e = mesh_.elements[ie];
+      const bool own = e.patch == c.patch && e.rect.contains(c.xi, 1e-14);
+      if (!own && quad_.farRuleData(size_t(ie), (quad_.elementCentre(ie) - c.x).norm(), near_tol_, near_order_, r)) {
+        s.kw.resize(r.n, 9);
+        for (int q = 0; q < r.n; ++q) {
+          const Vec3 nJ = r.nJ[q] * mesh_.normal_sign;
+          const double J = nJ.norm();
+          if (kind_ == H) K_.evalT(r.x[q] - c.x, Vec3(nJ / J), r.w[q] * J, s.kw.data() + 9 * q, 3);
+          else K_.evalU(r.x[q] - c.x, r.w[q] * J, s.kw.data() + 9 * q, 3);
+        }
+        s.ke.noalias() = Eigen::Map<const Eigen::MatrixXd>(r.R, r.n_loc, r.n) * s.kw;
+        for (int l = 0; l < r.n_loc; ++l) {
+          const int p = s.pos[column(e.patch, r.idx[l])];
+          if (p < 0) continue;
+          double* A = &s.acc[9 * size_t(p)];
+          for (int k = 0; k < 9; ++k) A[k] += s.ke(l, k);
+        }
+        continue;
+      }
       quad_.integrate(src, e, [&](const QPoint& E, double w) {
         const Vec3 nJ = E.normal() * mesh_.normal_sign;
         const double J = nJ.norm();

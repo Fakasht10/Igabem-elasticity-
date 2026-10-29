@@ -35,10 +35,15 @@ namespace igabem {
 
 struct HOptions {
   double eps = 1e-6;  // relative (Frobenius) tolerance per low-rank block
-  double eta = 2.0;   // admissibility
-  int leaf = 48;      // maximal cluster size (rows or columns, 3 per point)
+  double eta = 3.0;   // admissibility 2 min(r_t, r_s) < eta dist
+  int leaf = 192;     // maximal cluster size (rows or columns, 3 per point)
+  // Far-field quadrature of admissible blocks: error estimate far_tol * eps,
+  // Gauss order at least far_order (0: the element's default, degree + 2).
+  double far_tol = 0.1;
+  int far_order = 4;  // rational (curved) elements: one more
   std::string key() const {
-    return "blockaca1_eps" + std::to_string(eps) + "_eta" + std::to_string(eta) + "_leaf" + std::to_string(leaf);
+    return "blockaca9_eps" + std::to_string(eps) + "_eta" + std::to_string(eta) + "_leaf" + std::to_string(leaf) +
+           "_far" + std::to_string(far_tol) + "_" + std::to_string(far_order);
   }
 };
 
@@ -81,10 +86,7 @@ class HOperator {
     const int *tp = target_->get_permutation().data(), *sp = source_->get_permutation().data();
     const HtoolGenerator<Entries> gen(e);
     htool::InternalGeneratorWithPermutation<double> internal(gen, tp, sp);
-    BlockACA<Entries> aca(e, tp, sp);
-    htool::RecompressedLowRankGenerator<double> lr(aca, [](htool::LowRankMatrix<double>& m) {
-      htool::SVD_recompression(m);
-    });
+    const BlockACA<Entries> lr(e, tp, sp, o.far_tol, o.far_order);  // recompresses (QR + SVD) itself
     NearField<Entries> near(e, tp, sp);
     const auto t0 = std::chrono::steady_clock::now();
     assemble(internal, lr, o, &near);
@@ -139,6 +141,23 @@ class HOperator {
       e(j) = 0.0;
     }
     return A;
+  }
+
+  // Per leaf, against a dense reference Ad (user numbering): f(rows, cols, dense?,
+  // |leaf - Ad| (Frobenius), |Ad|). For tests and diagnostics.
+  template <class F>
+  void leafErrors(const Eigen::MatrixXd& Ad, F&& f) const {
+    const int *tp = target_->get_permutation().data(), *sp = source_->get_permutation().data();
+    for (const auto* l : leaves()) {
+      const int ro = l->get_target_cluster().get_offset(), m = l->get_target_cluster().get_size();
+      const int co = l->get_source_cluster().get_offset(), n = l->get_source_cluster().get_size();
+      Eigen::MatrixXd B(m, n), D(m, n);
+      if (l->is_dense()) B = Eigen::Map<const Eigen::MatrixXd>(l->get_dense_data()->data(), m, n);
+      else l->get_low_rank_data()->copy_to_dense(B.data());
+      for (int j = 0; j < n; ++j)
+        for (int i = 0; i < m; ++i) D(i, j) = Ad(tp[ro + i], sp[co + j]);
+      f(m, n, l->is_dense(), (B - D).norm(), D.norm());
+    }
   }
 
   void save(std::ostream& f) const {

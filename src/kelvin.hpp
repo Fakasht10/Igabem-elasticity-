@@ -43,6 +43,24 @@ struct Kelvin {
       }
     }
   }
+
+  // One kernel times w into a column-major 3 x 3 block with leading dimension ld
+  // (out(i, j) = out[i + ld j]); the same values as eval.
+  inline void evalU(const Eigen::Vector3d& d, double w, double* out, int ld) const {
+    const double r = d.norm();
+    const Eigen::Vector3d g = d / r;
+    const double fu = w * cU / r, a = 3.0 - 4.0 * nu;
+    for (int j = 0; j < 3; ++j)
+      for (int i = 0; i < 3; ++i) out[i + ld * j] = fu * ((i == j ? a : 0.0) + g(i) * g(j));
+  }
+  inline void evalT(const Eigen::Vector3d& d, const Eigen::Vector3d& n, double w, double* out, int ld) const {
+    const double r = d.norm();
+    const Eigen::Vector3d g = d / r;
+    const double drdn = g.dot(n), b = 1.0 - 2.0 * nu, ft = w * cT / (r * r);
+    for (int j = 0; j < 3; ++j)
+      for (int i = 0; i < 3; ++i)
+        out[i + ld * j] = ft * (drdn * ((i == j ? b : 0.0) + 3.0 * g(i) * g(j)) - b * (g(i) * n(j) - g(j) * n(i)));
+  }
 };
 
 // Kernels of the traction BIE (HSBIE), obtained by applying the traction

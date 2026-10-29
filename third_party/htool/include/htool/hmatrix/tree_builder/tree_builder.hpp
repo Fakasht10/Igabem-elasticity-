@@ -601,7 +601,7 @@ void HMatrixTreeBuilder<CoefficientPrecision, CoordinatePrecision>::openmp_compu
         // std::vector<HMatrixType *> local_dense_leaves{};
         // std::vector<HMatrixType *> local_low_rank_leaves{};
 #if defined(_OPENMP)
-#    pragma omp for schedule(guided) nowait
+#    pragma omp for schedule(dynamic, 1) nowait  // igabem: was guided (load imbalance on large blocks)
 #endif
         for (int p = 0; p < m_admissible_tasks.size(); p++) {
             bool has_low_rank_approximation_succeded = m_admissible_tasks[p]->compute_low_rank_data(*m_used_low_rank_generator, m_reqrank, m_epsilon);
@@ -630,8 +630,14 @@ void HMatrixTreeBuilder<CoefficientPrecision, CoordinatePrecision>::openmp_compu
         std::vector<int> rows_sizes(this->m_dense_tasks.size()), cols_sizes(this->m_dense_tasks.size()), rows_offsets(this->m_dense_tasks.size()), cols_offsets(this->m_dense_tasks.size());
         std::vector<CoefficientPrecision *> ptr(this->m_dense_tasks.size());
         ZeroGenerator zero_generator;
-        for (int i = 0; i < this->m_dense_tasks.size(); i++) {
+        // igabem: allocate (first touch) in parallel; serial allocation of GBs of
+        // fresh pages took seconds.
+#if defined(_OPENMP)
+#    pragma omp parallel for schedule(dynamic, 16)
+#endif
+        for (int i = 0; i < int(this->m_dense_tasks.size()); i++)
             this->m_dense_tasks[i]->compute_dense_data(zero_generator);
+        for (int i = 0; i < this->m_dense_tasks.size(); i++) {
             rows_sizes[i]   = this->m_dense_tasks[i]->get_target_cluster().get_size();
             cols_sizes[i]   = this->m_dense_tasks[i]->get_source_cluster().get_size();
             rows_offsets[i] = this->m_dense_tasks[i]->get_target_cluster().get_offset();

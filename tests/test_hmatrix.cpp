@@ -77,6 +77,7 @@ int main(int argc, char** argv) {
   for (double eps : {1e-4, 1e-8}) {
     HOptions ho;
     ho.eps = eps;
+    ho.leaf = 24;  // small clusters, so that this small mesh has low-rank blocks
     CompressedSbie C;
     C.setup(mesh, ts, ph.mat, opt, po, ho, geo, cache, "sbie_hg", mesh.colloc);
     const Eigen::MatrixXd Hh = C.Hraw.dense() - Eigen::MatrixXd(C.D), Gh = C.G.dense();

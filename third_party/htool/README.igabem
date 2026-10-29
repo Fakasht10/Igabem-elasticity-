@@ -1,3 +1,7 @@
 Htool (https://github.com/htool-ddm/htool), MIT license (LICENSE), headers only.
-Vendored from commit 277bbcf687180ec14456745faeccb674775eeca0 (2026-10-13), include/ unchanged.
+Vendored from commit 277bbcf687180ec14456745faeccb674775eeca0 (2026-10-13), include/ unchanged except
+two lines in include/htool/hmatrix/tree_builder/tree_builder.hpp (openmp_compute_blocks), marked "igabem":
+  - admissible blocks scheduled dynamic,1 instead of guided (large blocks come first in the task list);
+  - the dense leaves are allocated in parallel before the dense-blocks generator fills them (serial
+    first touch of ~2 GB took 5-6 s at 17k unknowns).
 Used by src/fast/ (hierarchical compression of the SBIE operators).

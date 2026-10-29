@@ -55,8 +55,11 @@ class TriplePartitioning final : public htool::VirtualPartitioning<double> {
 template <class Entries>
 class BlockACA final : public htool::VirtualInternalLowRankGenerator<double> {
  public:
-  BlockACA(const Entries& e, const int* target_perm, const int* source_perm)
-      : e_(e), tp_(target_perm), sp_(source_perm) {}
+  // far_tol: quadrature tolerance of the far-field rules relative to the ACA
+  // tolerance; far_order: their minimum Gauss order (0: the element's default).
+  BlockACA(const Entries& e, const int* target_perm, const int* source_perm, double far_tol = 0.0,
+           int far_order = 0)
+      : e_(e), tp_(target_perm), sp_(source_perm), far_tol_(far_tol), far_order_(far_order) {}
 
   bool copy_low_rank_approximation(int M, int N, int ro, int co, htool::LowRankMatrix<double>& lr) const override {
     return aca(M, N, tp_ + ro, sp_ + co, lr.get_epsilon(), lr);
@@ -68,45 +71,57 @@ class BlockACA final : public htool::VirtualInternalLowRankGenerator<double> {
  private:
   const Entries& e_;
   const int *tp_, *sp_;
+  double far_tol_;
+  int far_order_;
 
   bool aca(int M, int N, const int* rows, const int* cols, double eps, htool::LowRankMatrix<double>& lr) const {
     using Mat = Eigen::MatrixXd;
     const int m = M / 3, n = N / 3;
     if (3 * m != M || 3 * n != N) return false;
     Mat U, V;
-    typename Entries::FarBlock fb;
-    if (e_.farBlock(M, rows, N, cols, 0.0, fb)) {  // the assembly's far_tol: a looser rule costs accuracy, not time
+    using FB = typename Entries::FarBlock;
+    FB fq;
+    const bool far = e_.farBlock(M, rows, N, cols, far_tol_ * eps, far_order_, fq);
+    if (far) {
+      const FB& fb = fq;
       // Far block: ACA of the point kernel K (cheap rows and columns), then V <- V W.
       const int nq = fb.points();
       auto row = [&](int i, Mat& R) {
         R.resize(3, 3 * nq);
         const int a = rows[3 * i] / 3;
-        for (int q = 0; q < nq; ++q) R.middleCols(3 * q, 3) = e_.kernel(a, fb, q);
+        for (int q = 0; q < nq; ++q) e_.kernel(a, fb, q, R.data() + 9 * size_t(q), 3);
       };
+      // Rows of a point come in the order of the cluster (any permutation of x, y, z).
+      std::vector<char> plain(m);
+      for (int i = 0; i < m; ++i)
+        plain[i] = rows[3 * i] % 3 == 0 && rows[3 * i + 1] % 3 == 1 && rows[3 * i + 2] % 3 == 2;
       auto col = [&](int q, Mat& C) {
         C.resize(M, 3);
+        double K[9];
         for (int i = 0; i < m; ++i) {
-          const Eigen::Matrix3d K = e_.kernel(rows[3 * i] / 3, fb, q);
-          for (int c = 0; c < 3; ++c) C.row(3 * i + c) = K.row(rows[3 * i + c] % 3);
+          if (plain[i]) { e_.kernel(rows[3 * i] / 3, fb, q, C.data() + 3 * i, M); continue; }
+          e_.kernel(rows[3 * i] / 3, fb, q, K, 3);
+          for (int c = 0; c < 3; ++c)
+            for (int j = 0; j < 3; ++j) C(3 * i + c, j) = K[rows[3 * i + c] % 3 + 3 * j];
         }
       };
-      // K has more columns than A, and its rank may exceed A's: allow more, then
-      // recompress U (V W) and keep it only if it pays off.
+      // Cross approximation of K whose factor V_K = L K(I, :) (I the pivot rows)
+      // is never formed: residual rows are tracked contracted, V_A = V_K W, and
+      // K residual entries are formed only where needed (the pivot, a column).
       const long bound = (long(M) * N) / (M + N);
-      bool ok = blockACA(m, nq, row, col, 0.1 * eps, std::min<long>(4 * bound, std::min(M, N)), U, V);  // |A - A_k| <= |K - K_k| |W|: margin
-      if (ok) {
-        V = V * fb.W;
-        ok = recompress(U, V, 0.5 * eps) <= bound;
-      }
+      bool ok = implicitACA(m, n, nq, row, col, fb, rows, 0.1 * eps, std::min<long>(2 * bound, std::min(M, N)), U, V);
+      if (ok) ok = recompress(U, V, 0.5 * eps) <= bound;
       if (!ok) {
         auto rowx = [&](int i, Mat& R) { R.resize(3, N); e_.block(3, N, rows + 3 * i, cols, R.data()); };
         auto colx = [&](int j, Mat& C) { C.resize(M, 3); e_.block(M, 3, rows, cols + 3 * j, C.data()); };
         if (!blockACA(m, n, rowx, colx, eps, bound, U, V)) return false;
+        recompress(U, V, eps);
       }
     } else {
       auto row = [&](int i, Mat& R) { R.resize(3, N); e_.block(3, N, rows + 3 * i, cols, R.data()); };
       auto col = [&](int j, Mat& C) { C.resize(M, 3); e_.block(M, 3, rows, cols + 3 * j, C.data()); };
       if (!blockACA(m, n, row, col, eps, (long(M) * N) / (M + N), U, V)) return false;
+      recompress(U, V, eps);
     }
     lr.get_U().resize(M, int(U.cols()));
     lr.get_V().resize(int(V.rows()), N);
@@ -118,23 +133,60 @@ class BlockACA final : public htool::VirtualInternalLowRankGenerator<double> {
   // U V <- truncated SVD of U V (relative Frobenius tolerance eps); returns the rank.
   static long recompress(Eigen::MatrixXd& U, Eigen::MatrixXd& V, double eps) {  // rank <= min(rows, cols)
     if (U.cols() == 0) return 0;
-    Eigen::HouseholderQR<Eigen::MatrixXd> qu(U), qv(V.transpose());
     const long k = U.cols();
-    const Eigen::MatrixXd Ru = qu.matrixQR().topRows(k).triangularView<Eigen::Upper>();
-    const Eigen::MatrixXd Rv = qv.matrixQR().topRows(k).triangularView<Eigen::Upper>();
-    Eigen::JacobiSVD<Eigen::MatrixXd> svd(Ru * Rv.transpose(), Eigen::ComputeThinU | Eigen::ComputeThinV);
+    // Triangular factors from the Gram matrices of the column-scaled factors (one
+    // GEMM each; the truncation at eps >> sqrt(machine eps) is unaffected), and
+    // Householder QR if a Gram matrix is numerically singular.
+    const Eigen::VectorXd su = U.colwise().norm().transpose().cwiseMax(1e-300);
+    const Eigen::VectorXd sv0 = V.rowwise().norm().cwiseMax(1e-300);
+    const Eigen::MatrixXd Us = U * su.cwiseInverse().asDiagonal(), Vs = sv0.cwiseInverse().asDiagonal() * V;
+    Eigen::MatrixXd Gu = Us.transpose() * Us, Gv = Vs * Vs.transpose();
+    Eigen::LLT<Eigen::MatrixXd> lu(Gu), lv(Gv);
+    auto good = [](const Eigen::LLT<Eigen::MatrixXd>& l) {
+      if (l.info() != Eigen::Success) return false;
+      const auto d = l.matrixLLT().diagonal().cwiseAbs();
+      return d.minCoeff() > 1e-6 * d.maxCoeff();
+    };
+    if (!good(lu) || !good(lv)) return recompressQR(U, V, eps);
+    const Eigen::MatrixXd Ru = Eigen::MatrixXd(lu.matrixU()) * su.asDiagonal();
+    const Eigen::MatrixXd Rv = Eigen::MatrixXd(lv.matrixU()) * sv0.asDiagonal();
+    Eigen::BDCSVD<Eigen::MatrixXd> svd(Ru * Rv.transpose(), Eigen::ComputeThinU | Eigen::ComputeThinV);
     const auto& sv = svd.singularValues();
+    const long r = truncation(sv, eps);
+    // U = (Us Lu^-T) X, Lu^-T X by a triangular solve.
+    const Eigen::MatrixXd X = lu.matrixU().solve(Eigen::MatrixXd(svd.matrixU().leftCols(r) * sv.head(r).asDiagonal()));
+    const Eigen::MatrixXd Y = lv.matrixU().solve(Eigen::MatrixXd(svd.matrixV().leftCols(r)));
+    U = Us * X;
+    V = Y.transpose() * Vs;
+    return r;
+  }
+
+  static long truncation(const Eigen::VectorXd& sv, double eps) {
     const double total = sv.squaredNorm();
-    long r = k;
+    long r = sv.size();
     double tail = 0.0;
     while (r > 1 && tail + sv(r - 1) * sv(r - 1) <= eps * eps * total) {
       --r;
       tail += sv(r) * sv(r);
     }
-    const Eigen::MatrixXd Qu = qu.householderQ() * Eigen::MatrixXd::Identity(U.rows(), k);
-    const Eigen::MatrixXd Qv = qv.householderQ() * Eigen::MatrixXd::Identity(V.cols(), k);
-    U = Qu * svd.matrixU().leftCols(r) * sv.head(r).asDiagonal();
-    V = (Qv * svd.matrixV().leftCols(r)).transpose();
+    return r;
+  }
+
+  static long recompressQR(Eigen::MatrixXd& U, Eigen::MatrixXd& V, double eps) {
+    Eigen::HouseholderQR<Eigen::MatrixXd> qu(U), qv(V.transpose());
+    const long k = U.cols();
+    const Eigen::MatrixXd Ru = qu.matrixQR().topRows(k).triangularView<Eigen::Upper>();
+    const Eigen::MatrixXd Rv = qv.matrixQR().topRows(k).triangularView<Eigen::Upper>();
+    Eigen::BDCSVD<Eigen::MatrixXd> svd(Ru * Rv.transpose(), Eigen::ComputeThinU | Eigen::ComputeThinV);
+    const auto& sv = svd.singularValues();
+    const long r = truncation(sv, eps);
+    // Q (core factor padded with zeros): the Householder reflections applied to r
+    // columns only, Q itself is never formed.
+    Eigen::MatrixXd X = Eigen::MatrixXd::Zero(U.rows(), r), Y = Eigen::MatrixXd::Zero(V.cols(), r);
+    X.topRows(k) = svd.matrixU().leftCols(r) * sv.head(r).asDiagonal();
+    Y.topRows(k) = svd.matrixV().leftCols(r);
+    U = qu.householderQ() * X;
+    V = (qv.householderQ() * Y).transpose();
     return r;
   }
 
@@ -146,8 +198,11 @@ class BlockACA final : public htool::VirtualInternalLowRankGenerator<double> {
                        Eigen::MatrixXd& V) {
     using Mat = Eigen::MatrixXd;
     const int M = 3 * m, N = 3 * n;
-    U.resize(M, 0);
-    V.resize(0, N);
+    // Factors grow in place (capacity doubling); the first k columns are used. V is
+    // kept transposed (N x k) so that appending a cross and the products with it
+    // (residual rows, the Frobenius cross term) stream over contiguous columns.
+    Mat Uc(M, 12), Vt(N, 12);
+    int k = 0;
     std::vector<char> row_used(m, 0), col_used(n, 0);
     double frob2 = 0.0;
     int i = 0, checked = -1;
@@ -156,7 +211,7 @@ class BlockACA final : public htool::VirtualInternalLowRankGenerator<double> {
       if (i < 0) break;
       row_used[i] = 1;
       row(i, R);
-      if (U.cols()) R -= U.middleRows(3 * i, 3) * V;
+      if (k) R.noalias() -= Uc.block(3 * i, 0, 3, k) * Vt.leftCols(k).transpose();
       int j = -1;
       double best = 0.0;
       for (int q = 0; q < n; ++q)
@@ -170,7 +225,7 @@ class BlockACA final : public htool::VirtualInternalLowRankGenerator<double> {
       }
       col_used[j] = 1;
       col(j, C);
-      if (U.cols()) C -= U * V.middleCols(3 * j, 3);
+      if (k) C.noalias() -= Uc.leftCols(k) * Vt.block(3 * j, 0, 3, k).transpose();
       // Cross through the pseudo-inverse of the 3 x 3 pivot.
       Eigen::JacobiSVD<Eigen::Matrix3d> svd(Eigen::Matrix3d(R.middleCols(3 * j, 3)),
                                             Eigen::ComputeFullU | Eigen::ComputeFullV);
@@ -178,16 +233,20 @@ class BlockACA final : public htool::VirtualInternalLowRankGenerator<double> {
       int r = 0;
       while (r < 3 && sv(r) > 1e-12 * sv(0)) ++r;
       const Mat u = C * svd.matrixV().leftCols(r) * sv.head(r).cwiseInverse().asDiagonal();
-      const Mat v = svd.matrixU().leftCols(r).transpose() * R;
-      const double uv2 = ((u.transpose() * u).cwiseProduct(v * v.transpose())).sum();
-      const double cross = U.cols() ? ((U.transpose() * u).cwiseProduct(V * v.transpose())).sum() : 0.0;
+      const Mat vt = R.transpose() * svd.matrixU().leftCols(r);  // N x r
+      const double uv2 = ((u.transpose() * u).cwiseProduct(vt.transpose() * vt)).sum();
+      const double cross =
+          k ? ((Uc.leftCols(k).transpose() * u).cwiseProduct(Vt.leftCols(k).transpose() * vt)).sum() : 0.0;
       frob2 += uv2 + 2.0 * cross;
-      const int k = int(U.cols());
       if (k + r > max_rank) return false;  // not worth storing as low rank
-      U.conservativeResize(M, k + r);
-      U.rightCols(r) = u;
-      V.conservativeResize(k + r, N);
-      V.bottomRows(r) = v;
+      if (k + r > Uc.cols()) {
+        const int cap = std::max<int>(2 * int(Uc.cols()), k + r);
+        Uc.conservativeResize(M, cap);
+        Vt.conservativeResize(N, cap);
+      }
+      Uc.middleCols(k, r) = u;
+      Vt.middleCols(k, r) = vt;
+      k += r;
       // Next row: largest entry of the new columns among unused rows.
       i = -1;
       best = -1.0;
@@ -205,14 +264,168 @@ class BlockACA final : public htool::VirtualInternalLowRankGenerator<double> {
         Mat Rc;
         row(i, Rc);
         const double full = Rc.squaredNorm();
-        Rc -= U.middleRows(3 * i, 3) * V;
+        Rc.noalias() -= Uc.block(3 * i, 0, 3, k) * Vt.leftCols(k).transpose();
         if (Rc.squaredNorm() <= eps * eps * std::max(full, 1e-300)) break;
         checked = i;
       } else {
         checked = -1;
       }
     }
-    return U.cols() > 0;
+    U = Uc.leftCols(k);
+    V = Vt.leftCols(k).transpose();
+    return k > 0;
+  }
+
+  // ACA of A = K W (K: 3m x 3nq point kernel, W: 3nq x 3n sparse) with the pivot
+  // rows of K and the pivot columns of K, but every residual kept in dof space: V_K
+  // = L K(I, :) with I the pivot row points, so V_K(:, q) = L K(I, q) costs one
+  // kernel call per pivot row. The pivot column of a row: among the quadrature
+  // points supporting the dof with the largest contracted residual, the one with
+  // the largest K residual (tried on its few largest basis weights).
+  template <class Row, class Col, class FB>
+  bool implicitACA(int m, int n, int nq, Row&& row, Col&& col, const FB& fb, const int* rows, double eps,
+                   long max_rank, Eigen::MatrixXd& U, Eigen::MatrixXd& V) const {
+    using Mat = Eigen::MatrixXd;
+    const int M = 3 * m, N = 3 * n;
+    Mat Uc(M, 12), VAt(N, 12), L(12, 12);  // L: k x 3s
+    std::vector<int> piv;                   // pivot row points (indices into the block's points)
+    int k = 0;
+    std::vector<char> row_used(m, 0), dof_used(n, 0), q_used(nq, 0);
+    double frob2 = 0.0;
+    int i = 0, checked = -1;
+    Mat R, RA, C, VKq;
+    // V_K(:, q) = L K(I, q): k x 3.
+    auto vk = [&](int q, Mat& out) {
+      const int s = int(piv.size());
+      Mat KI(3 * s, 3);
+      double K9[9];
+      for (int t = 0; t < s; ++t) {
+        e_.kernel(rows[3 * piv[t]] / 3, fb, q, K9, 3);
+        for (int c = 0; c < 3; ++c)
+          for (int d = 0; d < 3; ++d) KI(3 * t + c, d) = K9[rows[3 * piv[t] + c] % 3 + 3 * d];
+      }
+      out.noalias() = L.topLeftCorner(k, 3 * s) * KI;
+    };
+    Mat Racc;
+    Mat Ke;
+    auto contract = [&](const Mat& Kr, Mat& Ra) {  // Ra = K row block (3 x 3nq) times W
+      // Kr as 9 x nq (one 3 x 3 block per point), times the basis values per element.
+      const Eigen::Map<const Mat> K9(Kr.data(), 9, nq);
+      Racc.setZero(9, Eigen::Index(fb.dof_elems.size()));
+      for (const auto& el : fb.elems) {
+        Ke.noalias() = K9.middleCols(el.q0, el.nq) * Eigen::Map<const Mat>(el.R, el.n_loc, el.nq).transpose();
+        for (const auto& [l, p] : el.lp) Racc.col(p) += Ke.col(l);
+      }
+      Ra.resize(3, N);
+      for (int jj = 0; jj < N; ++jj) Ra.col(jj) = Racc.col(fb.col_pt[jj]).template segment<3>(3 * fb.col_comp[jj]);
+    };
+    auto contracted = [&](int ii, Mat& Kr, Mat& Ra) {
+      row(ii, Kr);
+      contract(Kr, Ra);
+      if (k) Ra.noalias() -= Uc.block(3 * ii, 0, 3, k) * VAt.leftCols(k).transpose();
+    };
+    for (int step = 0; step < std::min(m, n); ++step) {
+      if (i < 0) break;
+      row_used[i] = 1;
+      contracted(i, R, RA);
+      // Pivot dof, then pivot quadrature point among its support.
+      int j = -1;
+      double best = 0.0;
+      for (int p = 0; p < n; ++p)
+        if (!dof_used[p]) {
+          const double v = RA.middleCols(3 * p, 3).squaredNorm();
+          if (v > best) { best = v; j = p; }
+        }
+      if (j < 0 || best <= 1e-30 * std::max(frob2, 1e-300)) { i = nextUnused(row_used); continue; }
+      dof_used[j] = 1;
+      std::vector<std::pair<double, int>> cand;
+      for (const auto& [el, l] : fb.dof_elems[fb.col_pt[3 * j]]) {
+        const auto& E = fb.elems[el];
+        for (int t = 0; t < E.nq; ++t)
+          if (!q_used[E.q0 + t]) cand.emplace_back(-std::abs(E.R[l + size_t(E.n_loc) * t]), E.q0 + t);
+      }
+      std::sort(cand.begin(), cand.end());
+      int q = -1;
+      double bq = -1.0;
+      Eigen::Matrix3d P;
+      for (size_t t = 0; t < std::min<size_t>(cand.size(), 6); ++t) {
+        const int qq = cand[t].second;
+        Eigen::Matrix3d Pq = R.middleCols(3 * qq, 3);
+        if (k) { vk(qq, VKq); Pq -= Uc.block(3 * i, 0, 3, k) * VKq; }
+        if (Pq.squaredNorm() > bq) { bq = Pq.squaredNorm(); q = qq; P = Pq; }
+      }
+      if (q < 0 || bq <= 1e-30 * std::max(frob2, 1e-300)) continue;  // try the next dof on another row
+      q_used[q] = 1;
+      col(q, C);
+      if (k) { vk(q, VKq); C.noalias() -= Uc.leftCols(k) * VKq; }
+      Eigen::JacobiSVD<Eigen::Matrix3d> svd(P, Eigen::ComputeFullU | Eigen::ComputeFullV);
+      const auto& sv = svd.singularValues();
+      int r = 0;
+      while (r < 3 && sv(r) > 1e-12 * sv(0)) ++r;
+      const Mat u = C * svd.matrixV().leftCols(r) * sv.head(r).cwiseInverse().asDiagonal();
+      const Mat Us = svd.matrixU().leftCols(r);
+      const Mat vt = RA.transpose() * Us;  // N x r
+      const double uv2 = ((u.transpose() * u).cwiseProduct(vt.transpose() * vt)).sum();
+      const double cross =
+          k ? ((Uc.leftCols(k).transpose() * u).cwiseProduct(VAt.leftCols(k).transpose() * vt)).sum() : 0.0;
+      frob2 += uv2 + 2.0 * cross;
+      if (k + r > max_rank) return false;
+      // New rows of L: Us^T [-U_i L, I_3] (the new pivot row block last).
+      const int s = int(piv.size());
+      Mat Lnew = Mat::Zero(r, 3 * (s + 1));
+      if (k) Lnew.leftCols(3 * s) = -Us.transpose() * Uc.block(3 * i, 0, 3, k) * L.topLeftCorner(k, 3 * s);
+      Lnew.rightCols(3) = Us.transpose();
+      if (k + r > Uc.cols()) {
+        const int cap = std::max<int>(2 * int(Uc.cols()), k + r);
+        Uc.conservativeResize(M, cap);
+        VAt.conservativeResize(N, cap);
+      }
+      if (k + r > L.rows() || 3 * (s + 1) > L.cols()) {
+        Mat L2 = Mat::Zero(std::max<int>(2 * int(L.rows()), k + r), std::max<int>(2 * int(L.cols()), 3 * (s + 1)));
+        L2.topLeftCorner(k, 3 * s) = L.topLeftCorner(k, 3 * s);
+        L.swap(L2);
+      }
+      L.block(0, 3 * s, k, 3).setZero();
+      L.block(k, 0, r, 3 * (s + 1)) = Lnew;
+      piv.push_back(i);
+      Uc.middleCols(k, r) = u;
+      VAt.middleCols(k, r) = vt;
+      k += r;
+      i = -1;
+      best = -1.0;
+      for (int p = 0; p < m; ++p)
+        if (!row_used[p]) {
+          const double w = u.middleRows(3 * p, 3).squaredNorm();
+          if (w > best) { best = w; i = p; }
+        }
+      if (uv2 <= eps * eps * frob2) {
+        // Converged by the usual test: confirm on a few unused rows spread over the
+        // cluster (the pivots can miss a part of it); the first failing one becomes
+        // the next pivot row.
+        if (checked >= 0 || i < 0) break;
+        std::vector<int> probe = {farthestUnused(row_used)};
+        for (int f : {m / 3, (2 * m) / 3, m - 1})
+          for (int p = f; p >= 0; --p)
+            if (!row_used[p]) { probe.push_back(p); break; }
+        i = -1;
+        for (int p : probe) {
+          if (p < 0 || row_used[p]) continue;
+          Mat Rc, Rac;
+          row(p, Rc);
+          contract(Rc, Rac);
+          const double full = Rac.squaredNorm();
+          Rac.noalias() -= Uc.block(3 * p, 0, 3, k) * VAt.leftCols(k).transpose();
+          if (Rac.squaredNorm() > eps * eps * std::max(full, 1e-300)) { i = p; break; }
+        }
+        if (i < 0) break;
+        checked = i;
+      } else {
+        checked = -1;
+      }
+    }
+    U = Uc.leftCols(k);
+    V = VAt.leftCols(k).transpose();
+    return k > 0;
   }
 
   static int nextUnused(const std::vector<char>& used) {

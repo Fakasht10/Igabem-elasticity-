@@ -57,6 +57,9 @@ class CompressedSbie {
     hopt = ho;
     const auto t0 = std::chrono::steady_clock::now();
     SbieEntries eh(mesh, ts, mat, opt, rows, SbieEntries::H), eg(mesh, ts, mat, opt, rows, SbieEntries::G);
+    // Dense leaves: the far-field rules at the compression's quadrature tolerance too.
+    eh.setEntryRule(ho.far_tol * ho.eps, ho.far_order);
+    eg.setEntryRule(ho.far_tol * ho.eps, ho.far_order);
     std::vector<double> rxyz, hxyz, hrad, gxyz, grad;
     eh.rowGeometry(rxyz);
     eh.columnGeometry(hxyz, hrad);

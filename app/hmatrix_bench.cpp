@@ -3,12 +3,16 @@
 // and, against the dense operators, the matrix-vector and solution error as a
 // function of the ACA tolerance eps.
 //
-// usage: hmatrix_bench <geometry.dat> <label> <t> [--eps 1e-4,1e-6,1e-8] [--eta 2] [--leaf 48]
-//                      [--dense] [--n 12] [--far-tol 1e-10] [--cache dir|none] [--csv file]
+// usage: hmatrix_bench <geometry.dat> <label> <t> [--eps 1e-4,1e-6,1e-8] [--eta 3] [--leaf 192]
+//                      [--block-tol 0.1] [--block-order 4] [--dense] [--leaf-errors] [--n 12]
+//                      [--far-tol 1e-10] [--cache dir|none] [--csv file]
+//   --block-tol, --block-order  quadrature of the separated element integrals (HOptions::far_tol,
+//            far_order): error estimate block-tol * eps, Gauss order at least block-order
 //   --dense  also assemble (or load) the dense H, G: errors of the compressed products, and the
 //            traction-free Kirsch problem solved with the compressed operators (defect
 //            correction preconditioned by the dense bordered LU, so the result is the solution of
 //            the compressed system) against the dense solve and the exact field
+//   --leaf-errors  with --dense: the G leaves farthest from the dense operator
 //
 // Run with OPENBLAS_NUM_THREADS=1 (the compression is parallel over blocks).
 
@@ -18,6 +22,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -40,7 +45,7 @@ static double peakRssMB() {
 
 int main(int argc, char** argv) {
   if (argc < 4) {
-    std::cerr << "usage: hmatrix_bench <geometry.dat> <label> <t> [--eps 1e-4,1e-6,1e-8] [--eta 2] [--leaf 48] "
+    std::cerr << "usage: hmatrix_bench <geometry.dat> <label> <t> [--eps 1e-4,1e-6,1e-8] [--eta 3] [--leaf 192] "
                  "[--dense] [--n 12] [--far-tol 1e-10] [--cache dir|none] [--csv file]\n";
     return 1;
   }
@@ -51,7 +56,7 @@ int main(int argc, char** argv) {
   SolverOptions opt;
   opt.n_gauss = 12;
   opt.far_tol = 1e-10;
-  bool dense = false;
+  bool dense = false, leaf_errors = false;
   std::string cache = "cache", csv;
   for (int i = 4; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--eps")) {
@@ -61,8 +66,11 @@ int main(int argc, char** argv) {
     } else if (!std::strcmp(argv[i], "--eta")) ho.eta = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--leaf")) ho.leaf = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--dense")) dense = true;
+    else if (!std::strcmp(argv[i], "--leaf-errors")) leaf_errors = true;
     else if (!std::strcmp(argv[i], "--n")) opt.n_gauss = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--far-tol")) opt.far_tol = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--block-tol")) ho.far_tol = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--block-order")) ho.far_order = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--cache")) { cache = argv[++i]; if (cache == "none") cache.clear(); }
     else if (!std::strcmp(argv[i], "--csv")) csv = argv[++i];
   }
@@ -158,6 +166,14 @@ int main(int argc, char** argv) {
       err_k = kirschError(uh);
       sxx_h = sxx(uh);
       du = (uh - ud).norm() / ud.norm();
+    }
+    if (dense && leaf_errors) {
+      struct Bad { double e, n; int m, k; bool d; };
+      std::vector<Bad> bad;
+      C.G.leafErrors(Dn.G, [&](int mm, int nn, bool d, double e, double nr) { bad.push_back({e, nr, mm, nn, d}); });
+      std::sort(bad.begin(), bad.end(), [](auto& a, auto& b) { return a.e > b.e; });
+      for (int t = 0; t < 8 && t < int(bad.size()); ++t)
+        std::printf("# G leaf %d x %d %s: |err| %.3e |A| %.3e\n", bad[t].m, bad[t].k, bad[t].d ? "dense" : "lowrank", bad[t].e, bad[t].n);
     }
     if (!C.from_cache)
       std::printf("#   build: H %.1f s (near field %.1f s), G %.1f s (near field %.1f s); dense leaves %.0f%% of H, %.0f%% of G storage\n",

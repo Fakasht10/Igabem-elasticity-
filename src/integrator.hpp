@@ -82,19 +82,49 @@ class ElementIntegrator {
   // finer one) for every source point at least d away from the centre of the
   // element's bounding ball; f(q, w) for each of its points. False, calling nothing,
   // if no cached rule qualifies (d too small, or the order above the cache).
+  // min_order >= 2 replaces the element's minimum order (degree + 2), e.g. for
+  // separated blocks whose entries are only needed to a compression tolerance.
   template <class F>
-  bool farRule(size_t ie, double d, double tol, F&& f) const {
-    if (opt_.far_tol <= 0.0) return false;
-    const Ball& B = elem_ball_[ie];
-    if (d <= 1.5 * B.second) return false;
-    const double q = d / B.second, rho = q + std::sqrt(q * q - 1.0);
-    const int need = int(std::ceil(std::log(1.0 / std::max(tol, opt_.far_tol)) / (2.0 * std::log(rho))));
-    const int m = std::max({2, std::min(opt_.n_gauss, need), min_order_[ie]});
-    if (m > max_cached_) return false;
+  bool farRule(size_t ie, double d, double tol, F&& f, int min_order = 0) const {
+    const int m = farRuleOrder(ie, d, tol, min_order);
+    if (!m) return false;
     cachedRule(ie, m, f);
     return true;
   }
+
+  // The rule farRule would use, as arrays for batched evaluation: n points x, nJ
+  // (unnormalized normal, |nJ| the Jacobian), weights w, and the n_loc basis values
+  // of point k at R + n_loc k (local indices idx).
+  struct RuleData {
+    const Vec3 *x, *nJ;
+    const double *w, *R;
+    int n, n_loc;
+    const int* idx;
+  };
+  bool farRuleData(size_t ie, double d, double tol, int min_order, RuleData& r) const {
+    const int m = farRuleOrder(ie, d, tol, min_order);
+    if (!m) return false;
+    const long p0 = first_[ie][m];
+    r = {&cx_[p0], &cnj_[p0], &cw_[p0], &cr_[roff_[p0]], m * m, nloc_[ie], eidx_[ie].data()};
+    return true;
+  }
+
+  // Order of farRule's rule, 0 if none qualifies.
+  int farRuleOrder(size_t ie, double d, double tol, int min_order) const {
+    if (opt_.far_tol <= 0.0) return 0;
+    const Ball& B = elem_ball_[ie];
+    if (d <= 1.5 * B.second) return 0;
+    const double q = d / B.second, rho = q + std::sqrt(q * q - 1.0);
+    const int need = int(std::ceil(std::log(1.0 / std::max(tol, opt_.far_tol)) / (2.0 * std::log(rho))));
+    // A lower minimum only where the basis is polynomial: rational (curved) elements
+    // get one order more (a 4 x 4 rule left 3e-3 errors in a far block on the hole,
+    // 5 x 5 is within the tolerance).
+    const int lo = min_order >= 2 ? (rational_[ie] ? std::min(min_order_[ie], min_order + 1) : min_order) : min_order_[ie];
+    const int m = std::max({2, std::min(opt_.n_gauss, need), lo});
+    return m > max_cached_ ? 0 : m;
+  }
   const Vec3& elementCentre(size_t ie) const { return elem_ball_[ie].first; }
+  double elementRadius(size_t ie) const { return elem_ball_[ie].second; }
 
   // Cached far-field points (for callers that cache per-point data).
   long numCached() const { return long(cx_.size()); }
@@ -142,6 +172,7 @@ class ElementIntegrator {
   // Far-field cache: element-wide m x m Gauss rules, m = 2..max_cached_.
   int max_cached_ = 0;
   std::vector<int> min_order_;               // per element: max degree + 2
+  std::vector<char> rational_;               // per element: weights not all equal
   std::vector<std::vector<long>> first_;     // per element, per order: first point id
   std::vector<std::vector<int>> eidx_;       // per element: local basis indices (constant)
   std::vector<int> nloc_;
@@ -154,6 +185,7 @@ class ElementIntegrator {
     const size_t ne = mesh_.elements.size();
     max_cached_ = std::min(opt_.n_gauss, 10);
     min_order_.assign(ne, 2);
+    rational_.assign(ne, 0);
     first_.assign(ne, {});
     eidx_.assign(ne, {});
     nloc_.assign(ne, 0);
@@ -170,7 +202,12 @@ class ElementIntegrator {
         for (int a = 0; a < m; ++a)
           for (int b = 0; b < m; ++b) {
             Pa.evalSpan(e.su, e.sv, R.u0 + R.du() * g.x[a], R.v0 + R.dv() * g.x[b], E);
-            if (eidx_[i].empty()) { eidx_[i].assign(E.idx, E.idx + E.n_loc); nloc_[i] = E.n_loc; }
+            if (eidx_[i].empty()) {
+              eidx_[i].assign(E.idx, E.idx + E.n_loc);
+              nloc_[i] = E.n_loc;
+              for (int l = 1; l < E.n_loc; ++l)
+                if (std::abs(Pa.w(E.idx[l]) - Pa.w(E.idx[0])) > 1e-12 * std::abs(Pa.w(E.idx[0]))) rational_[i] = 1;
+            }
             cx_.push_back(E.x);
             cnj_.push_back(E.normal());
             cw_.push_back(g.w[a] * g.w[b] * R.du() * R.dv());
