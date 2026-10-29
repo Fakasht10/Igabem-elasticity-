@@ -1,8 +1,10 @@
-"""Automatic STEP -> conforming multipatch B-spline surfaces (Bembel .dat), any B-rep solid.
+"""Automatic STEP -> conforming multipatch NURBS surfaces (Bembel .dat), any B-rep solid.
 
 Unlike python/step2dat.py (exact Coons patches of a hand-made quad layout), the layout here
-is automatic and the geometry is fitted:
+is automatic; patches are exact where the CAD allows it and fitted elsewhere:
 
+  0. cut: closed (periodic) faces are cut along their own parameter lines into three
+     four-sided faces (OpenCASCADE), so their meshes become structured and parameter-aligned;
   1. quad mesh: Gmsh (OpenCASCADE kernel) meshes every CAD face, trimmed or not, with
      quasi-structured quads (few irregular vertices); every CAD edge is a chain of mesh edges;
   2. quad layout: separatrices are traced from every irregular vertex (interior valence != 4,
@@ -11,20 +13,27 @@ is automatic and the geometry is fitted:
      ends on a CAD edge also splits the faces on the other side, so blocks meet side to side.
      CAD edges and separatrices cut the mesh into structured n x m blocks (a block that is
      not a rectangle falls back to one patch per quad);
-  3. fit: each block becomes one B-spline patch of degree p with the block's n x m mesh quads
-     as knot spans (C^{p-1} inside). Each block side is fitted once, by least squares to
-     points projected onto its CAD curve (or face, for a separatrix), and shared by both
-     neighbouring blocks, so the patches are conforming and watertight; the interior control
-     points are fitted to points projected onto the CAD face with the boundary held fixed;
+  3a. exact: a block that is a parameter rectangle of an analytic face (plane, cylinder,
+     cone, sphere, torus) becomes the exact rational patch (circle arcs as rational
+     quadratics, degree-elevated and knot-inserted to the common degree p and knot vectors);
+     its sides are registered first;
+  3b. fit: every other block becomes a B-spline patch of degree p with the block's n x m
+     mesh quads as knot spans (C^{p-1} inside). Each side not taken by an exact block is
+     fitted once, by least squares to points projected onto its CAD curve (or face, for a
+     separatrix); every side is shared by both neighbouring blocks, so the patches are
+     conforming and watertight; the interior control points (weight 1) are fitted to points
+     projected onto the CAD face with the boundary held fixed;
   4. orientation: x_u x x_v points out of the solid (Gmsh inside test);
   5. checks: distance to the CAD faces, interface gap, volume vs. OpenCASCADE.
 
 usage: python3 python/step_auto.py in.step out.dat [--h 0.4] [--degree 3] [--refine k]
+                                     [--fit-all] [--no-split]
 """
 
 import argparse
 import os
 import sys
+import tempfile
 from collections import defaultdict
 
 import gmsh
@@ -39,10 +48,16 @@ from spline_checks import _basis, conformity_gap, evaluate, spline_volume  # noq
 class QuadMesh:
     """All-quad surface mesh of a STEP solid with its CAD classification (gmsh session open)."""
 
-    def __init__(self, step, h, curvature=8):
+    def __init__(self, step, h, curvature=8, split_closed=True):
+        tmp = None
+        if split_closed:
+            tmp = tempfile.NamedTemporaryFile(suffix=".brep", delete=False).name
+            _split_closed(step, tmp)
         gmsh.initialize()
         gmsh.option.setNumber("General.Terminal", 0)
-        gmsh.model.occ.importShapes(step)
+        gmsh.model.occ.importShapes(tmp or step)
+        if tmp:
+            os.unlink(tmp)
         gmsh.model.occ.synchronize()
         for k, v in {"Mesh.Algorithm": 11, "Mesh.RecombineAll": 1, "Mesh.MeshSizeMax": h,
                      "Mesh.MeshSizeMin": h / 8, "Mesh.MeshSizeFromCurvature": curvature,
@@ -91,6 +106,22 @@ class QuadMesh:
 
     def hard(self, e):
         return e in self.curve_of
+
+
+def _split_closed(step, out, pieces=3):
+    """Cut every closed (periodic) face along its own parameter lines into `pieces` faces
+    (OpenCASCADE ShapeUpgrade_ShapeDivideClosed), so a hole wall becomes four-sided faces with
+    a structured, parameter-aligned mesh, i.e. exact patches (each piece opens 2 pi / 3)."""
+    from OCP.BRepTools import BRepTools
+    from OCP.ShapeUpgrade import ShapeUpgrade_ShapeDivideClosed
+    from OCP.STEPControl import STEPControl_Reader
+    r = STEPControl_Reader()
+    if r.ReadFile(step) != 1 or not r.TransferRoots():
+        raise RuntimeError("cannot read " + step)
+    d = ShapeUpgrade_ShapeDivideClosed(r.OneShape())
+    d.SetNbSplitPoints(pieces - 1)
+    d.Perform()
+    BRepTools.Write_s(d.Result(), out)
 
 
 def _match_translated_faces(tol=1e-7):
@@ -255,43 +286,197 @@ def _project(dim, tag, X):
 
 
 class SideTable:
-    """One fitted curve per block side (a chain of mesh nodes), shared by its two blocks."""
+    """One curve per block side (a chain of mesh nodes), shared by its two blocks, as
+    homogeneous control points (x w, w). Sides of exact blocks are registered first; the
+    rest are fitted (w = 1) between corner points that exact blocks may have fixed."""
 
     def __init__(self, M, p, k=4):
-        self.M, self.p, self.k, self.curves = M, p, k, {}
+        self.M, self.p, self.k, self.curves, self.corner = M, p, k, {}, {}
+
+    @staticmethod
+    def _orient(chain):
+        key = tuple(chain) if (chain[0], chain[1]) < (chain[-1], chain[-2]) else tuple(chain[::-1])
+        return key, tuple(chain) == key
+
+    def lookup(self, chain):
+        key, fwd = self._orient(chain)
+        C = self.curves.get(key)
+        return None if C is None else (C if fwd else C[::-1])
+
+    def register(self, chain, C):
+        """Store an exact side (end weights 1); its end points snap to corners already fixed."""
+        for n, e in ((chain[0], 0), (chain[-1], -1)):
+            if n in self.corner:
+                C[e] = np.append(self.corner[n], 1.0)
+            else:
+                self.corner[n] = C[e, :3].copy()
+        key, fwd = self._orient(chain)
+        self.curves[key] = C if fwd else C[::-1]
 
     def get(self, chain, surf):
-        key = tuple(chain) if (chain[0], chain[1]) < (chain[-1], chain[-2]) else tuple(chain[::-1])
-        if key not in self.curves:
+        C = self.lookup(chain)
+        if C is None:
+            key, _ = self._orient(chain)
             self.curves[key] = self._fit(list(key), surf)
-        C = self.curves[key]
-        return C if tuple(chain) == key else C[::-1]
+            C = self.lookup(chain)
+        return C
+
+    def _x(self, n):
+        return self.corner.get(n, self.M.x[n])
 
     def _fit(self, chain, surf):
         M, p, n = self.M, self.p, len(chain) - 1
         s = np.linspace(0, 1, self.k + 2)[1:-1]
-        T, X = [0.0], [M.x[chain[0]]]
+        T, X = [0.0], [self._x(chain[0])]
         for i in range(n):
             a, b = M.x[chain[i]], M.x[chain[i + 1]]
             e = _key(chain[i], chain[i + 1])
             dim, tag = (1, M.curve_of[e]) if M.hard(e) else (2, surf)
             P = _project(dim, tag, (1 - s)[:, None] * a + s[:, None] * b)
             T += list((i + s) / n) + [(i + 1) / n]
-            X += list(P) + [M.x[chain[i + 1]]]
+            X += list(P) + [self._x(chain[i + 1]) if i == n - 1 else M.x[chain[i + 1]]]
         B, _ = _bspline_basis(p, n, np.array(T))
         X = np.array(X)
         C = np.zeros((n + p, 3))
         C[0], C[-1] = X[0], X[-1]
         rhs = X - np.outer(B[:, 0], C[0]) - np.outer(B[:, -1], C[-1])
         C[1:-1] = np.linalg.lstsq(B[:, 1:-1], rhs, rcond=None)[0]
-        return C
+        return np.hstack([C, np.ones((n + p, 1))])
+
+
+# ---------------------------------------------------------------- 3a. exact blocks
+# CAD parameter kinds of the analytic surfaces (OpenCASCADE parametrisations, which Gmsh
+# keeps): an angle about an axis ("ang", a circle: exact rational quadratic) or a length
+# along a straight line ("lin", exact linear).
+_KINDS = {"Plane": ("lin", "lin"), "Cylinder": ("ang", "lin"), "Cone": ("ang", "lin"),
+          "Sphere": ("ang", "ang"), "Torus": ("ang", "ang")}
+
+
+def _bezier_ctrl(X, kind, w):
+    """Control points (homogeneous-free) and weights along one direction from the points
+    X[0], X[mid], X[1] of a circle arc of opening w (ang) or of a segment (lin)."""
+    if kind == "lin":
+        return [X[0], X[2]], [1.0, 1.0]
+    c = np.cos(w / 2)
+    M = 0.5 * (X[0] + X[2])
+    C = (M - c * X[1]) / (1 - c)  # circle centre: the chord midpoint lies at cos(w/2) of the way
+    return [X[0], C + (X[1] - C) / c, X[2]], [1.0, c, 1.0]
+
+
+def _bernstein(q, t):
+    from math import comb
+    t = np.asarray(t)[:, None]
+    k = np.arange(q + 1)[None, :]
+    return np.array([comb(q, i) for i in range(q + 1)])[None, :] * t ** k * (1 - t) ** (q - k)
+
+
+def exact_block(M, surf, N, p, max_angle=2 * np.pi / 3):
+    """Exact rational patch (degree p, one knot span per mesh quad, same knot vectors as the
+    fitted patches) of a block that is a parameter rectangle of an analytic CAD face, or None.
+    The block's sides must be iso-parameter lines; each circular direction must open by at
+    most max_angle (one rational quadratic Bezier piece), which is then degree-elevated and
+    knot-inserted exactly (interpolation at the Greville points of the target space)."""
+    t = gmsh.model.getType(2, surf)
+    if t not in _KINDS:  # e.g. a face cut along its parameter lines (trimmed surface): try
+        # each construction; the guard below keeps only one that reproduces the CAD face
+        for kinds in (("ang", "lin"), ("lin", "ang"), ("ang", "ang"), ("lin", "lin")):
+            P = _exact_block(M, surf, N, p, max_angle, kinds)
+            if P is not None:
+                return P
+        return None
+    return _exact_block(M, surf, N, p, max_angle, _KINDS[t])
+
+
+def _exact_block(M, surf, N, p, max_angle, kinds):
+    m, n = N.shape[0] - 1, N.shape[1] - 1
+    X = np.array([M.x[k] for k in N.ravel()])
+    UV = np.asarray(gmsh.model.getParametrization(2, surf, X.ravel())).reshape(m + 1, n + 1, 2)
+    for d in (0, 1):  # unwrap periodic angles about the block centre
+        if kinds[d] == "ang":
+            c = UV[m // 2, n // 2, d]
+            UV[..., d] = c + (UV[..., d] - c + np.pi) % (2 * np.pi) - np.pi
+    # Only the sides must be iso-parameter lines: exactly where a side is a CAD edge; a side
+    # inside the face (separatrix) only needs its end points on the line and its nodes near
+    # it, since the exact side replaces it for the neighbour too. Interior nodes are unused.
+    span = np.ptp(UV.reshape(-1, 2), axis=0)
+
+    def iso(chain, uv, d):
+        hard = all(M.hard(_key(a, b)) for a, b in zip(chain[:-1], chain[1:]))
+        dev = np.abs(uv[:, d] - uv[0, d])
+        return dev[-1] < 1e-8 * (1 + span[d]) and dev.max() < (1e-8 if hard else 0.1 * span[d] / len(uv)) * (1 + span[d])
+
+    rows_const = [iso(N[0], UV[0], d) and iso(N[-1], UV[-1], d) for d in (0, 1)]  # rows j = 0, m
+    cols_const = [iso(N[:, 0], UV[:, 0], d) and iso(N[:, -1], UV[:, -1], d) for d in (0, 1)]  # columns
+    if cols_const[0] and rows_const[1]:  # CAD u runs along i
+        di, dj = 0, 1
+    elif cols_const[1] and rows_const[0]:
+        di, dj = 1, 0
+    else:
+        return None
+    a = (UV[0, 0, di], UV[0, n, di])  # CAD parameter along i (patch u) and along j (patch v)
+    b = (UV[0, 0, dj], UV[m, 0, dj])
+    for (lo, hi), kd in ((a, kinds[di]), (b, kinds[dj])):
+        if abs(hi - lo) < 1e-12 or (kd == "ang" and abs(hi - lo) > max_angle):
+            return None
+
+    def S(ai, bj):  # CAD surface at parameter ai along i, bj along j
+        ai, bj = np.broadcast_arrays(np.asarray(ai, float), np.asarray(bj, float))
+        uv = np.stack([ai, bj] if di == 0 else [bj, ai], -1)
+        return np.asarray(gmsh.model.getValue(2, surf, uv.ravel())).reshape(-1, 3)
+
+    ta, tb = np.array([0.0, 0.5, 1.0]), np.array([0.0, 0.5, 1.0])
+    A = a[0] + ta * (a[1] - a[0])
+    B = b[0] + tb * (b[1] - b[0])
+    G = S(A[None, :].repeat(3, 0), B[:, None].repeat(3, 1)).reshape(3, 3, 3)  # G[j, i]
+    # j-direction control points along each of the three i-stations, then i-direction
+    cols = [_bezier_ctrl(G[:, i], kinds[dj], b[1] - b[0]) for i in range(3)]
+    qj = len(cols[0][0]) - 1
+    Pij, Wij = [], []
+    for k in range(qj + 1):
+        P, w = _bezier_ctrl(np.array([cols[i][0][k] for i in range(3)]), kinds[di], a[1] - a[0])
+        Pij.append(P)
+        Wij.append(np.array(w) * cols[0][1][k])
+    Pij, Wij = np.array(Pij), np.array(Wij)  # (qj + 1, qi + 1, 3), weights
+    qi = Pij.shape[1] - 1
+    Hw = np.concatenate([Pij * Wij[..., None], Wij[..., None]], -1)
+    # exact change of basis: Bezier (qi, qj) -> clamped uniform B-splines (p, n x m spans)
+    gi = _greville(p, n)
+    gj = _greville(p, m)
+    Ri = _bernstein(qi, gi)
+    Rj = _bernstein(qj, gj)
+    Fi, _ = _bspline_basis(p, n, gi)
+    Fj, _ = _bspline_basis(p, m, gj)
+    vals = np.einsum("sj,ti,jik->stk", Rj, Ri, Hw)  # = Fj Pw Fi^T at the Greville points
+    Pw = np.einsum("ab,bck,dc->adk", np.linalg.inv(Fj), vals, np.linalg.inv(Fi))
+    KU = np.concatenate([np.zeros(p), np.linspace(0, 1, n + 1), np.ones(p)])
+    KV = np.concatenate([np.zeros(p), np.linspace(0, 1, m + 1), np.ones(p)])
+    P = Patch(p, p, KU, KV, Pw)
+    # guard: corners on the mesh corners, samples on the CAD face
+    scale = 1.0 + np.abs(X).max()
+    for (jj, ii), (u, v) in (((0, 0), (0, 0)), ((0, n), (1, 0)), ((m, 0), (0, 1)), ((m, n), (1, 1))):
+        if np.linalg.norm(evaluate(P, u, v)[0] - M.x[N[jj, ii]]) > 1e-8 * scale:
+            return None
+    t = np.array([0.0, 0.13, 0.5, 0.87, 1.0])
+    Y = np.array([evaluate(P, u, v)[0] for u in t for v in t])
+    if np.linalg.norm(_project(2, surf, Y) - Y, axis=1).max() > 1e-10 * scale:
+        return None
+    for jj, ii in ((0, 0), (0, -1), (-1, 0), (-1, -1)):  # corners: weight 1, as fitted sides
+        Pw[jj, ii] /= Pw[jj, ii, 3]
+    return P
+
+
+def _greville(p, n_span):
+    U = np.concatenate([np.zeros(p), np.linspace(0, 1, n_span + 1), np.ones(p)])
+    return np.array([U[i + 1:i + p + 1].mean() for i in range(n_span + p)])
 
 
 def fit_block(M, sides, surf, N, k=3):
-    """B-spline patch (degree p, one span per mesh quad) of a block with node grid N."""
+    """B-spline patch (degree p, one span per mesh quad) of a block with node grid N. The
+    boundary rows come from the side table (possibly rational, from an exact neighbour); the
+    interior control points (weight 1) are fitted in homogeneous form, which is linear."""
     p = sides.p
     m, n = N.shape[0] - 1, N.shape[1] - 1
-    C = np.full((m + p, n + p, 3), np.nan)
+    C = np.full((m + p, n + p, 4), np.nan)
     C[0] = sides.get(list(N[0]), surf)
     C[-1] = sides.get(list(N[-1]), surf)
     C[:, 0] = sides.get(list(N[:, 0]), surf)
@@ -315,14 +500,15 @@ def fit_block(M, sides, surf, N, k=3):
     X = np.array(X)
     free = np.zeros((m + p, n + p), bool)
     free[1:-1, 1:-1] = True
+    C[1:-1, 1:-1, 3] = 1.0
     A = np.einsum("sj,si->sji", Bv, Bu).reshape(len(X), -1)
-    Cf = C.reshape(-1, 3)
+    Cf = C.reshape(-1, 4)
     fixed = ~free.ravel()
-    rhs = X - A[:, fixed] @ Cf[fixed]
+    w = A @ Cf[:, 3]  # known weight function at the samples
+    rhs = X * w[:, None] - A[:, fixed] @ Cf[fixed, :3]
     if free.any():
-        Cf[free.ravel()] = np.linalg.lstsq(A[:, free.ravel()], rhs, rcond=None)[0]
-    Pw = np.concatenate([Cf.reshape(m + p, n + p, 3), np.ones((m + p, n + p, 1))], axis=-1)
-    return Patch(p, p, KU, KV, Pw)
+        Cf[free.ravel(), :3] = np.linalg.lstsq(A[:, free.ravel()], rhs, rcond=None)[0]
+    return Patch(p, p, KU, KV, Cf.reshape(m + p, n + p, 4))
 
 
 def _outward(M, P, eps):
@@ -346,21 +532,41 @@ def _deviation(P, surf, m=4):
     return np.linalg.norm(_project(2, surf, X) - X, axis=1).max()
 
 
-def convert(step, out, h=0.4, degree=3, refine=0, curvature=8, name=None):
-    M = QuadMesh(step, h, curvature)
+def convert(step, out, h=0.4, degree=3, refine=0, curvature=8, name=None, exact_faces=True, split_closed=True):
+    M = QuadMesh(step, h, curvature, split_closed and exact_faces)
     try:
         sep = trace_layout(M)
         B, fallback = blocks(M, sep)
         sides = SideTable(M, degree)
         bb = np.array(gmsh.model.getBoundingBox(-1, -1))
         eps = 1e-4 * np.linalg.norm(bb[3:] - bb[:3])
-        patches, dev = [], 0.0
-        for surf, N in B:
-            P = fit_block(M, sides, surf, N)
+        patches, dev, nexact, scale = [], 0.0, 0, 1.0 + np.abs(bb).max()
+        exact = {}
+        if exact_faces:
+            for b, (surf, N) in enumerate(B):
+                P = exact_block(M, surf, N, degree)
+                if P is None:
+                    continue
+                rows = [(list(N[0]), P.Pw[0]), (list(N[-1]), P.Pw[-1]),
+                        (list(N[:, 0]), P.Pw[:, 0]), (list(N[:, -1]), P.Pw[:, -1])]
+                old = [sides.lookup(c) for c, _ in rows]
+                if any(o is not None and np.abs(o - r).max() > 1e-10 * scale for o, (_, r) in zip(old, rows)):
+                    continue  # a side already taken by another exact block, differently parametrised
+                for (c, r), o in zip(rows, old):
+                    if o is None:
+                        sides.register(c, r.copy())
+                P.Pw[0], P.Pw[-1] = sides.lookup(rows[0][0]), sides.lookup(rows[1][0])
+                P.Pw[:, 0], P.Pw[:, -1] = sides.lookup(rows[2][0]), sides.lookup(rows[3][0])
+                exact[b] = P
+        for b, (surf, N) in enumerate(B):
+            P = exact.get(b)
+            if P is None:
+                P = fit_block(M, sides, surf, N)
             if not _outward(M, P, eps):
                 P = Patch(P.q, P.p, P.V, P.U, np.ascontiguousarray(P.Pw.transpose(1, 0, 2)))
             dev = max(dev, _deviation(P, surf))
             patches.append(P)
+        nexact = len(exact)
         v_cad = sum(gmsh.model.occ.getMass(3, v) for v in M.volumes)
         nquads, qmin = len(M.quads), M.min_quality
     finally:
@@ -369,9 +575,9 @@ def convert(step, out, h=0.4, degree=3, refine=0, curvature=8, name=None):
         for _ in range(refine):
             refine_uniform(P)
     gap, nshared, lonely = conformity_gap(patches)
-    v_spl = spline_volume(patches, 4)  # exact for these polynomial patches up to p = 3
+    v_spl = spline_volume(patches, 8)  # rational patches: Gauss rule no longer exact
     write_dat(out, patches, name or os.path.basename(out))
-    return dict(quads=nquads, patches=len(patches), fallback_blocks=fallback, min_quad_quality=qmin,
+    return dict(quads=nquads, patches=len(patches), exact_patches=nexact, fallback_blocks=fallback, min_quad_quality=qmin,
                 min_jacobian_ratio=min(jacobian_ratio(P) for P in patches), max_dev=dev,
                 conformity_gap=gap, shared_edges=nshared, open_edges=lonely, vol_cad=v_cad,
                 vol_spline=v_spl, vol_rel_err=abs(v_spl - v_cad) / abs(v_cad))
@@ -385,8 +591,11 @@ def main(argv=None):
     ap.add_argument("--curvature", type=int, default=8, help="mesh spans per 2 pi of curvature")
     ap.add_argument("--degree", type=int, default=3)
     ap.add_argument("--refine", type=int, default=0)
+    ap.add_argument("--fit-all", action="store_true", help="fit every block (no exact CAD patches)")
+    ap.add_argument("--no-split", action="store_true", help="keep closed faces whole (no cuts along their parameter lines)")
     a = ap.parse_args(argv)
-    r = convert(a.step, a.out, a.h, a.degree, a.refine, a.curvature)
+    r = convert(a.step, a.out, a.h, a.degree, a.refine, a.curvature, exact_faces=not a.fit_all,
+                split_closed=not a.no_split)
     for k, v in r.items():
         print("%-15s %s" % (k, v))
     return r
