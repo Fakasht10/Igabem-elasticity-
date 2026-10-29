@@ -34,7 +34,7 @@ using namespace igabem;
 
 namespace {
 
-struct Region {
+struct BoxRegion {
   std::string name;
   Vec3 lo, hi;
   bool contains(const Vec3& x) const {
@@ -75,7 +75,7 @@ int main(int argc, char** argv) {
   bool clamp = false;
   double S = 1.0, snom = -1.0, tol = 1e-6, exclude = 0.0;
   std::string cache = "cache", csv, fields;
-  std::vector<Region> regions;
+  std::vector<BoxRegion> regions;
   for (int i = 4; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--n")) opt.n_gauss = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--far-tol")) opt.far_tol = std::atof(argv[++i]);
@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--fields")) fields = argv[++i];
     else if (!std::strcmp(argv[i], "--region")) {
       std::string r = argv[++i];
-      Region R;
+      BoxRegion R;
       R.name = r.substr(0, r.find(':'));
       double v[6];
       if (std::sscanf(r.c_str() + r.find(':') + 1, "%lf,%lf,%lf,%lf,%lf,%lf", v, v + 1, v + 2, v + 3, v + 4,
