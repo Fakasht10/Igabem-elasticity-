@@ -105,27 +105,26 @@ struct Patch {
     for (int b = 0; b <= q; ++b) {
       for (int a = 0; a <= p; ++a, ++k) {
         const int id = (su - p + a) + (sv - q + b) * nu;
-        const double w_ = Pw[id](3);
-        const double N = Nu[0][a] * Nv[0][b] * w_;
-        const double Nu_ = Nu[1][a] * Nv[0][b] * w_;
-        const double Nv_ = Nu[0][a] * Nv[1][b] * w_;
+        const Vec4& Pk = Pw[id];  // homogeneous: (w x, w y, w z, w)
+        const double B = Nu[0][a] * Nv[0][b], Bu = Nu[1][a] * Nv[0][b], Bv = Nu[0][a] * Nv[1][b];
+        const double N = B * Pk(3), Nu_ = Bu * Pk(3), Nv_ = Bv * Pk(3);
         E.idx[k] = id;
         E.R[k] = N; E.Ru[k] = Nu_; E.Rv[k] = Nv_;
         W += N; Wu += Nu_; Wv += Nv_;
-        const Vec3 P = Pw[id].head<3>() / w_;
-        A += N * P; Au += Nu_ * P; Av += Nv_ * P;
+        A += B * Pk.head<3>(); Au += Bu * Pk.head<3>(); Av += Bv * Pk.head<3>();
       }
     }
     E.n_loc = k;
+    const double iW = 1.0 / W;
     for (int i = 0; i < k; ++i) {
-      const double R = E.R[i] / W;
-      E.Ru[i] = (E.Ru[i] - R * Wu) / W;
-      E.Rv[i] = (E.Rv[i] - R * Wv) / W;
+      const double R = E.R[i] * iW;
+      E.Ru[i] = (E.Ru[i] - R * Wu) * iW;
+      E.Rv[i] = (E.Rv[i] - R * Wv) * iW;
       E.R[i] = R;
     }
-    E.x = A / W;
-    E.xu = (Au - E.x * Wu) / W;
-    E.xv = (Av - E.x * Wv) / W;
+    E.x = A * iW;
+    E.xu = (Au - E.x * Wu) * iW;
+    E.xv = (Av - E.x * Wv) * iW;
   }
 };
 

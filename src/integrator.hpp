@@ -46,6 +46,7 @@ class ElementIntegrator {
     // Bounding spheres of elements and cells, for cheap far-field tests.
     elem_ball_.resize(m.elements.size());
     cell_ball_.resize(m.elements.size());
+#pragma omp parallel for schedule(dynamic, 16)
     for (size_t i = 0; i < m.elements.size(); ++i) {
       const Element& e = m.elements[i];
       elem_ball_[i] = ball(e, e.rect);
@@ -83,7 +84,8 @@ class ElementIntegrator {
   // element's bounding ball; f(q, w) for each of its points. False, calling nothing,
   // if no cached rule qualifies (d too small, or the order above the cache).
   // min_order >= 2 replaces the element's minimum order (degree + 2), e.g. for
-  // separated blocks whose entries are only needed to a compression tolerance.
+  // separated blocks whose entries are only needed to a compression tolerance;
+  // min_order < 0 takes it from the degree (see farRuleOrder).
   template <class F>
   bool farRule(size_t ie, double d, double tol, F&& f, int min_order = 0) const {
     const int m = farRuleOrder(ie, d, tol, min_order);
@@ -104,10 +106,15 @@ class ElementIntegrator {
   bool farRuleData(size_t ie, double d, double tol, int min_order, RuleData& r) const {
     const int m = farRuleOrder(ie, d, tol, min_order);
     if (!m) return false;
-    const long p0 = first_[ie][m];
-    r = {&cx_[p0], &cnj_[p0], &cw_[p0], &cr_[roff_[p0]], m * m, nloc_[ie], eidx_[ie].data()};
+    ruleData(ie, m, r);
     return true;
   }
+  // The cached m x m rule of element ie (2 <= m <= maxCachedOrder()).
+  void ruleData(size_t ie, int m, RuleData& r) const {
+    const long p0 = first_[ie][m];
+    r = {&cx_[p0], &cnj_[p0], &cw_[p0], &cr_[roff_[p0]], m * m, nloc_[ie], eidx_[ie].data()};
+  }
+  int maxCachedOrder() const { return max_cached_; }
 
   // Order of farRule's rule, 0 if none qualifies.
   int farRuleOrder(size_t ie, double d, double tol, int min_order) const {
@@ -119,7 +126,11 @@ class ElementIntegrator {
     // A lower minimum only where the basis is polynomial: rational (curved) elements
     // get one order more (a 4 x 4 rule left 3e-3 errors in a far block on the hole,
     // 5 x 5 is within the tolerance).
-    const int lo = min_order >= 2 ? (rational_[ie] ? std::min(min_order_[ie], min_order + 1) : min_order) : min_order_[ie];
+    // min_order < 0: from the degree p of the element, the lowest order exact for
+    // a degree-p basis times a linear kernel (2m - 1 >= p + 1), one more on rational elements.
+    const int deg_lo = (min_order_[ie] + 1) / 2 + rational_[ie];  // min_order_ = p + 2
+    const int lo = min_order < 0 ? std::min(min_order_[ie], deg_lo)
+                   : min_order >= 2 ? (rational_[ie] ? std::min(min_order_[ie], min_order + 1) : min_order) : min_order_[ie];
     const int m = std::max({2, std::min(opt_.n_gauss, need), lo});
     return m > max_cached_ ? 0 : m;
   }
@@ -181,6 +192,8 @@ class ElementIntegrator {
   std::vector<long> roff_;                   // per point: offset into cr_
   std::vector<double> cr_;
 
+  // Points of element i, order m, at first_[i][m]; elements in order, orders 2..max_cached_
+  // (n_loc = (p + 1)(q + 1) basis values each), filled in parallel.
   void buildCache() {
     const size_t ne = mesh_.elements.size();
     max_cached_ = std::min(opt_.n_gauss, 10);
@@ -189,30 +202,44 @@ class ElementIntegrator {
     first_.assign(ne, {});
     eidx_.assign(ne, {});
     nloc_.assign(ne, 0);
-    PatchEval E;
+    std::vector<long> rfirst(ne + 1, 0);  // first basis value of each element
+    long npt = 0;
+    for (size_t i = 0; i < ne; ++i) {
+      const Patch& Pa = mesh_.patches[mesh_.elements[i].patch];
+      min_order_[i] = std::max(Pa.p, Pa.q) + 2;
+      nloc_[i] = (Pa.p + 1) * (Pa.q + 1);
+      first_[i].assign(max_cached_ + 1, -1);
+      for (int m = 2; m <= max_cached_; ++m) { first_[i][m] = npt; npt += long(m) * m; }
+      rfirst[i + 1] = rfirst[i] + long(nloc_[i]) * (npt - first_[i][2]);
+    }
+    cx_.resize(npt);
+    cnj_.resize(npt);
+    cw_.resize(npt);
+    roff_.resize(npt);
+    cr_.resize(rfirst[ne]);
+#pragma omp parallel for schedule(dynamic, 16)
     for (size_t i = 0; i < ne; ++i) {
       const Element& e = mesh_.elements[i];
       const Patch& Pa = mesh_.patches[e.patch];
-      min_order_[i] = std::max(Pa.p, Pa.q) + 2;
-      first_[i].assign(max_cached_ + 1, -1);
+      PatchEval E;
+      long id = first_[i][2], ro = rfirst[i];
       for (int m = 2; m <= max_cached_; ++m) {
-        first_[i][m] = long(cx_.size());
         const GaussRule& g = rules_[m - 1];
         const Rect& R = e.rect;
         for (int a = 0; a < m; ++a)
-          for (int b = 0; b < m; ++b) {
+          for (int b = 0; b < m; ++b, ++id) {
             Pa.evalSpan(e.su, e.sv, R.u0 + R.du() * g.x[a], R.v0 + R.dv() * g.x[b], E);
             if (eidx_[i].empty()) {
               eidx_[i].assign(E.idx, E.idx + E.n_loc);
-              nloc_[i] = E.n_loc;
               for (int l = 1; l < E.n_loc; ++l)
                 if (std::abs(Pa.w(E.idx[l]) - Pa.w(E.idx[0])) > 1e-12 * std::abs(Pa.w(E.idx[0]))) rational_[i] = 1;
             }
-            cx_.push_back(E.x);
-            cnj_.push_back(E.normal());
-            cw_.push_back(g.w[a] * g.w[b] * R.du() * R.dv());
-            roff_.push_back(long(cr_.size()));
-            cr_.insert(cr_.end(), E.R, E.R + E.n_loc);
+            cx_[id] = E.x;
+            cnj_[id] = E.normal();
+            cw_[id] = g.w[a] * g.w[b] * R.du() * R.dv();
+            roff_[id] = ro;
+            std::copy(E.R, E.R + E.n_loc, cr_.begin() + ro);
+            ro += E.n_loc;
           }
       }
     }
