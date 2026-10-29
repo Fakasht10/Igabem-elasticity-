@@ -1,14 +1,15 @@
 // Any part with local supports and loads from a JSON case file (src/case_io.hpp):
 // thin driver over BcModel. All cases share the cached operators and one LU.
 //
-// usage: bc_case <case.json> [--csv file] [--vtu prefix] [--sub 4]
+// usage: bc_case <case.json> [--csv file] [--vtu prefix] [--sub 4] [--max-residual r]
 //
 // Prints, per case: the applied resultant of every load, the reaction of every
 // support and spring, the global equilibrium residual |sum of all boundary
 // tractions| / |applied|, the work of the loads on any rigid motion the supports
 // leave free (refused above 1e-4, as an unbalanced pure-traction problem has no
 // solution), max |u| and the peak von Mises and first principal stress on the
-// surface (sub x sub points per element).
+// surface (sub x sub points per element). --max-residual: exit 4 when any case's
+// equilibrium residual is above r (regression tests).
 
 #include <chrono>
 #include <cstdio>
@@ -23,15 +24,17 @@ using namespace igabem;
 
 int main(int argc, char** argv) {
   if (argc < 2) {
-    std::cerr << "usage: bc_case <case.json> [--csv file] [--vtu prefix] [--sub 4]\n";
+    std::cerr << "usage: bc_case <case.json> [--csv file] [--vtu prefix] [--sub 4] [--max-residual r]\n";
     return 1;
   }
   int sub = 4;
   std::string csv_arg, vtu_arg;
+  double max_res = -1.0;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--csv")) csv_arg = argv[++i];
     else if (!std::strcmp(argv[i], "--vtu")) vtu_arg = argv[++i];
     else if (!std::strcmp(argv[i], "--sub")) sub = std::atoi(argv[++i]);
+    else if (!std::strcmp(argv[i], "--max-residual")) max_res = std::atof(argv[++i]);
   }
   const auto t0 = std::chrono::steady_clock::now();
   CaseFile cf;
@@ -83,6 +86,11 @@ int main(int argc, char** argv) {
     for (const auto& [n, W] : r.loads) line(r.name, n, "load", W);
     for (const auto& [n, W] : r.reactions) line(r.name, n, "reaction", W);
     std::printf("  equilibrium residual |sum of boundary tractions| / |applied| = %.3e\n", r.residual(cf.size));
+    if (csv) csv << r.name << ",equilibrium,residual," << r.residual(cf.size) << ",,,,,\n";
+    if (max_res >= 0 && r.residual(cf.size) > max_res) {
+      std::printf("  FAIL: equilibrium residual above %.3e\n", max_res);
+      if (status == 0) status = 4;
+    }
     if (model.freeModes() > 0) {
       std::printf("  work on free rigid motions (relative) = %.3e\n", r.free_work);
       if (r.free_work > 1e-4) {

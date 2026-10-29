@@ -81,6 +81,9 @@ python3 python/make_boxes.py             # boxes, bars, thin plates for the loca
 python3 python/face_ids.py geo/step/bracket.step geo/step/bracket_exact_p3_h0.7_c3.dat   # CAD face id per patch -> .faces
 ./build/bc_case cases/bracket_clamped.json                   # 5 load cases by CAD face id / box, one LU (17 s, 7 s cached)
 ./build/bc_case cases/bracket_bolted.json                    # bolt hole fixed + elastic pad (springs) (17 s)
+./build/bc_case cases/bracket_clamped_graded.json            # mesh graded at the clamp by knot insertion (40 s)
+python3 python/grade_dat.py in.dat out.dat --faces 6 --inner 1,13 --h0 0.025   # the same grading by hand
+python3 -m pytest python/test_grade_dat.py -q                # grading: exact surface, conforming, symmetric (~2 s)
 python3 python/plot_bc_validation.py     # -> results/fig_bc_validation.{pdf,png}, fig_bc_bracket.{pdf,png}
 ```
 
@@ -485,16 +488,19 @@ patches (the load region is integrated exactly on cut cells, so the mesh need no
 | Bar, symmetry plane + resultant moment / axial force / spring end | 582 | u error 1e-8, σ error 1e-8 | exact polynomial fields |
 | Half-space, pressure disk the mesh does not follow (quarter model, exact far-field traction) | 2,166 → 10,980 | u error 5.6e-3 → 6.3e-4 (h^1.5); max σ error under the load 1.9e-3 → 2.7e-4 p | Love (Boussinesq integrated) |
 | Cantilever L/h = 10, clamped, tip shear | 1,158 → 3,246 | tip w +0.58% → −0.15%, mid-span σ_xx +0.54% → +0.13% | Timoshenko |
-| Thin plate t = 0.2 clamped, tip shear: clamp reaction R_z/F | 2,430 uniform; 1,422 graded | 0.901; 1.012 | 1 |
-| Bracket from STEP, end face clamped, 5 cases on one LU | 6,708 | 17.5 s fresh, 7.3 s cached; equilibrium 2e-3 (pull, pin), 0.15 (bend) | statics |
+| Thin plate t = 0.2 clamped, tip shear: equilibrium residual | 2,430 uniform; 2,682 graded by knot insertion | 9.9%; 0.47% | 0 |
+| Bracket from STEP, end face clamped, 5 cases on one LU, uniform mesh | 6,708 | 17.5 s; residual 0.15 (bend), 0.12 (press), 2e-3 (pull, pin) | statics |
+| The same, graded at the clamp (`"grade"`) | 11,292 | 40 s end to end incl. grading; residual 4.6e-3 (bend), 9.5e-3 (press), 1.4e-2 (twist), 1.1e-3 (pull, pin) | statics |
 
 The clamp reaction in bending is the delicate quantity: the transverse shear is carried in the
-singular corner zone of the clamp, over about one thickness, so the faces next to the clamp must
-be graded towards it (the thin plate goes from 10% to 1% with fewer unknowns). The bracket
-mesh is not graded yet, which is why its bending cases close equilibrium only to 15%; its
-displacement and the stresses away from the clamp are not affected the same way, but
-treat clamp-adjacent bending stresses on ungraded meshes with care. `bc_case` prints the
-equilibrium residual of every case for this reason.
+singular corner zone of the clamp, over about one wall thickness. `python/grade_dat.py` (or
+`"grade"` in a case file) refines the mesh there by knot insertion, so the geometry stays exact and
+the mesh conforming: the faces next to the support get elements h0, h0·1.4, … away from it, and
+with `inner` the clamp face itself is graded through the wall thickness (towards the faces that
+carry the bending stress). Knots propagate through every patch that shares the refined
+parameter lines. On the bracket this takes bending equilibrium from 15% to 0.5%. Torsion stays at
+1.4% (grading the clamp's lateral edges as well did not help and cost 14k unknowns). `bc_case`
+prints the equilibrium residual of every case, and `--max-residual` turns it into a test.
 
 ![Local loads validation](results/fig_bc_validation.png)
 ![Bracket load cases](results/fig_bc_bracket.png)
@@ -503,7 +509,7 @@ equilibrium residual of every case for this reason.
 
 1. Exterior Neumann (Eshelby) patch test; move geometry
    refinement into C++; partial-patch Dirichlet regions (today a fixed support is a union of whole
-   patches; partial regions take loads and springs). Grading towards supports by knot insertion.
+   patches; partial regions take loads and springs).
 2. Thin curved plate (cylindrical panel built as exact NURBS): Neumann patch test for t/R = 10⁻¹…10⁻³,
    then Scordelis–Lo as a 3D solid.
 3. Iterative solver, preconditioner and H² compression.

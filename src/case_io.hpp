@@ -7,6 +7,7 @@
 //   "geometry": "geo/step/bracket_exact_p3_h0.7_c3.dat",   // .faces next to it
 //   "material": {"E": 2000, "nu": 0.35},
 //   "solver": {"n_gauss": 12, "far_tol": 1e-10},
+//   "grade": {"faces": [3], "inner": [1, 13], "h0": 0.025},   // mesh graded towards supports
 //   "supports": [
 //     {"face_id": 3, "fix": ["ux", "uy", "uz"]},             // or "dofs": {"ux": true, ...}
 //     {"select": {"box": [[x0,y0,z0], [x1,y1,z1]]}, "fix": ["uz"], "value": [0, 0, -0.01]},
@@ -29,6 +30,10 @@
 // objects is ORed. A support needs whole patches (it sets which traction
 // components are unknown); "snap": true takes the patches covered at least half.
 #pragma once
+#ifndef IGABEM_SOURCE_DIR
+#define IGABEM_SOURCE_DIR "."
+#endif
+#include <cstdlib>
 
 #include <cstdint>
 #include <filesystem>
@@ -70,6 +75,7 @@ struct CaseFile {
     };
     geometry = resolve(J["geometry"].asString());
     faces = J.has("faces") ? resolve(J["faces"].asString()) : faceMapPath(geometry);
+    if (J.has("grade")) gradeGeometry(J["grade"]);
     if (J.has("cache")) cache = J["cache"].asString();
     if (cache == "none") cache.clear();
     if (J.has("material")) {
@@ -276,6 +282,42 @@ struct CaseFile {
   }
 
  private:
+  // "grade": {"faces": [6], "inner": [1, 13], "h0": 0.025, "growth": 1.4}: refine the mesh
+  // towards the given CAD faces (supports) by knot insertion, python/grade_dat.py; the graded
+  // surface <stem>_g<faces>[_i<inner>]_h<h0>.dat (+ .faces) is made once and reused.
+  void gradeGeometry(const Json& G) {
+    auto ids = [&](const char* k) {
+      std::string list, tag;
+      if (G.has(k))
+        for (double v : G[k].asNumbers()) {
+          list += (list.empty() ? "" : ",") + std::to_string(int(v));
+          tag += (tag.empty() ? "" : "-") + std::to_string(int(v));
+        }
+      return std::make_pair(list, tag);
+    };
+    const auto [fl, ft] = ids("faces");
+    const auto [il, it] = ids("inner");
+    if (fl.empty()) throw std::runtime_error("grade: needs \"faces\"");
+    const double h0 = G.get("h0", 0.025), g = G.get("growth", 1.4);
+    char hs[64];
+    std::snprintf(hs, sizeof hs, "_h%g", h0);
+    const std::filesystem::path src(geometry);
+    const std::string out = (src.parent_path() / (src.stem().string() + "_g" + ft + (it.empty() ? "" : "_i" + it) +
+                                                  hs + (g == 1.4 ? "" : "_r" + std::to_string(g)) + ".dat")).string();
+    if (!std::filesystem::exists(out) ||
+        std::filesystem::last_write_time(out) < std::filesystem::last_write_time(src)) {
+      char cmd[2048];
+      std::snprintf(cmd, sizeof cmd, "python3 \"%s/python/grade_dat.py\" \"%s\" \"%s\" --faces %s%s%s --h0 %.17g --growth %.17g",
+                    IGABEM_SOURCE_DIR, geometry.c_str(), out.c_str(), fl.c_str(), il.empty() ? "" : " --inner ",
+                    il.c_str(), h0, g);
+      std::printf("# grading: %s\n", cmd);
+      std::fflush(stdout);
+      if (std::system(cmd) != 0) throw std::runtime_error("grade: python/grade_dat.py failed");
+    }
+    geometry = out;
+    faces = faceMapPath(geometry);
+  }
+
   static std::string regionKey(const Json& L) {
     std::string k;
     for (const char* f : {"face_id", "face_ids", "patches"})

@@ -4,3 +4,7 @@ __pycache__/
 cache/
 results/fields/*.vtu
 results/bc_*.vtu
+geo/*_g*_h*.dat
+geo/*_g*_h*.faces
+geo/step/*_g*_h*.dat
+geo/step/*_g*_h*.faces

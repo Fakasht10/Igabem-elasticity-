@@ -1,0 +1,12 @@
+// The uniform thin plate (cases/plate_clamped_uniform.json, equilibrium residual 10 %), graded
+// towards the clamp by knot insertion ("grade", python/grade_dat.py): 0.5 % at 2.7k unknowns.
+// Faces (geo/plate_t0.2_uniform.faces): 1 clamp x = 0, 2 loaded end x = 3, 5/6 bottom/top.
+{
+  "geometry": "../geo/plate_t0.2_uniform.dat",
+  "grade": {"faces": [1], "h0": 0.025},
+  "cache": "none",
+  "material": {"E": 3500, "nu": 0.36},
+  "supports": [{"label": "clamp", "face_id": 1, "fix": ["ux", "uy", "uz"]}],
+  "cases": [{"name": "bend", "loads": [{"label": "end force", "face_id": 2, "force_N": 1, "direction": [0, 0, -1]}]}],
+  "output": {"csv": "results/bc_plate_clamped_knots.csv"}
+}

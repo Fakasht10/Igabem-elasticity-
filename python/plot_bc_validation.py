@@ -8,8 +8,8 @@ results/fig_bc_validation.{pdf,png}:
       against unknowns
   (c) clamped cantilever (L/h = 10), tip shear: deflection against Timoshenko and
       Euler-Bernoulli
-  (d) clamp shear reaction / applied force against unknowns: cantilever, thin plate
-      (t = 0.2) uniform and graded towards the clamp, and the bracket from STEP
+  (d) equilibrium residual of the clamped thin plate and the bracket from STEP, uniform mesh
+      against the mesh graded towards the clamp by knot insertion (python/grade_dat.py)
 and results/fig_bc_bracket.{pdf,png}: von Mises on the bracket surface for four load
 cases (clamped end, loads placed by CAD face id or by a box through the patches).
 """
@@ -56,11 +56,8 @@ def slope(ax, x0, x1, y0, k, text):
     ax.text(x1 * 1.05, y0 * (x1 / x0) ** k, text, fontsize=8, color="0.35", va="center")
 
 
-def reaction(csvname):
-    b = [r for r in rows(csvname) if r["case"] == "bend"]
-    load = sum(float(r["Fz"]) for r in b if r["kind"] == "load")
-    react = sum(float(r["Fz"]) for r in b if r["kind"] == "reaction")
-    return react / -load
+def residual(csvname, case):
+    return next(float(r["Fx"]) for r in rows(csvname) if r["case"] == case and r["kind"] == "residual")
 
 
 def validation():
@@ -107,22 +104,25 @@ def validation():
     style(ax, "(c) clamped cantilever, tip shear")
 
     ax = axs[1, 1]
-    cant = rows("bc_cantilever.csv")
-    ax.semilogx(col(cant, "unknowns"), col(cant, "reaction_Fz"), marker=M[0], color=C[0], ms=4.5, lw=1.4,
-                label="cantilever $L/h = 10$, uniform")
-    pu = [(2430, reaction("bc_plate_clamped_uniform.csv"))]
-    pg = [(1422, reaction("bc_plate_clamped_graded.csv"))]
-    ax.semilogx(*zip(*pu), marker=M[1], color=C[1], ms=5, lw=0, label="plate $t = 0.2$, uniform")
-    ax.semilogx(*zip(*pg), marker=M[2], color=C[2], ms=5, lw=0, label="plate $t = 0.2$, graded to clamp")
-    ax.semilogx([6708], [reaction("bc_bracket_clamped.csv")], marker=M[3], color=C[3], ms=5, lw=0,
-                label="bracket (STEP), not graded")
-    ax.axhline(1.0, color="0.15", lw=0.9, ls="--")
-    ax.set_xlim(900, 1e4)
-    ax.set_ylim(0.8, 1.05)
-    ax.set_xlabel("unknowns")
-    ax.set_ylabel(r"clamp reaction $R_z / F$")
-    ax.legend(fontsize=7.5, frameon=False, loc="lower right")
-    style(ax, "(d) bending: clamp shear reaction")
+    pairs = [("plate $t = 0.2$, bend", "bc_plate_clamped_uniform.csv", "bc_plate_clamped_knots.csv", "bend")]
+    pairs += [("bracket, " + c, "bc_bracket_clamped.csv", "bc_bracket_clamped_graded.csv", c)
+              for c in ("bend", "press", "twist", "pull", "pin")]
+    for i, (lab, f0, f1, c) in enumerate(pairs):
+        r0, r1 = residual(f0, c), residual(f1, c)
+        y = len(pairs) - 1 - i
+        ax.annotate("", xy=(r1, y), xytext=(r0, y),
+                    arrowprops=dict(arrowstyle="-|>", color="0.6", lw=0.9, shrinkA=4, shrinkB=4))
+        ax.semilogx([r0], [y], marker="o", color=C[1], ms=5, lw=0, mfc="white", label="uniform" if i == 0 else None)
+        ax.semilogx([r1], [y], marker="o", color=C[0], ms=5, lw=0, label="graded at the clamp" if i == 0 else None)
+    ax.axvline(1e-2, color="0.15", lw=0.9, ls="--")
+    ax.text(1.05e-2, -0.5, "1 %", fontsize=8, color="0.3")
+    ax.set_yticks(range(len(pairs)))
+    ax.set_yticklabels([p[0] for p in pairs][::-1], fontsize=8)
+    ax.set_ylim(-0.6, len(pairs) + 0.2)
+    ax.set_xlabel(r"equilibrium residual $|\sum$ tractions$|\,/\,|$applied$|$")
+    ax.legend(fontsize=7.5, frameon=False, loc="upper left", ncol=2)
+    style(ax, "(d) clamp grading by knot insertion")
+    ax.grid(False, axis="y")
 
     for ext in ("pdf", "png"):
         fig.savefig(os.path.join(RES, "fig_bc_validation." + ext), dpi=200)
@@ -134,7 +134,7 @@ def bracket():
     fig = plt.figure(figsize=(10, 6.2))
     fig.subplots_adjust(left=0.0, right=0.95, bottom=0.02, top=0.9, wspace=0.05, hspace=0.12)
     for k, (c, t) in enumerate(cases):
-        v = read_vtu(os.path.join(RES, "bc_bracket_clamped_%s_surface.vtu" % c))
+        v = read_vtu(os.path.join(RES, "bc_bracket_clamped_graded_%s_surface.vtu" % c))
         ax = fig.add_subplot(2, 2, k + 1, projection="3d")
         P, Q = v["points"], v["quads"]
         f = field(v, "von_mises")[Q].mean(axis=1)
@@ -148,7 +148,7 @@ def bracket():
         fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=SEQ), ax=ax, shrink=0.55, pad=0.0,
                      label="von Mises (MPa)")
         ax.set_title("(%s) %s" % ("abcd"[k], t), fontsize=10, loc="left")
-    fig.suptitle("Bracket from STEP, end face 6 clamped; one LU for all cases (6708 unknowns)", fontsize=10)
+    fig.suptitle("Bracket from STEP, end face 6 clamped, mesh graded at the clamp; one LU for all cases (11,292 unknowns)", fontsize=10)
     for ext in ("pdf", "png"):
         fig.savefig(os.path.join(RES, "fig_bc_bracket." + ext), dpi=170, bbox_inches="tight")
 
