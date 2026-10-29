@@ -68,8 +68,8 @@ python3 python/step_auto.py geo/step/bracket.step geo/step/bracket_auto_p3_h0.5.
 ./build/cad_test geo/step/bracket_auto_p3_h0.5.dat bracket tension,patch --bc clamp --exclude 0.3 \
         --region fillet:-0.05,-0.6,-1,0.2,0.6,1 --region hole:-0.95,-0.4,-1,-0.55,0.4,1
 python3 -m pytest python/test_step_auto.py -q  # plate, bracket, OCCT screw: watertight + volume (~45 s)
-pip install numba                        # cut-cell quadrature for immersed IGA-FEM unit cells
-python3 -m pytest python/immersed -q     # exact cut volumes and moments: box, sphere, cylinder, thin shell (~2 s; ~40 s first JIT)
+pip install numba scipy                  # cut-cell quadrature for immersed IGA-FEM unit cells
+python3 -m pytest python/immersed -q     # exact cut volumes and moments, weights >= 0: box, sphere, cylinder, thin shell, slivers (~9 s; ~60 s first JIT)
 ```
 
 ## Library layout
@@ -88,7 +88,7 @@ values, not new numerics.
 | Post-processing | `recovery.hpp`, `interior.hpp`, `probes.hpp`, `vtk.hpp` | Boundary stress recovery; u, ∇u, ε, σ at interior points (near-boundary safe) with an inside test; line probes through the solid and curve probes on the boundary to CSV; surface and section `.vtu` for ParaView |
 | Plots | `python/plot_probes.py`, `python/render_vtu.py` | Canned probe figures (any component, Cartesian or cylindrical, exact overlay) and a rendered 3D field figure |
 | Problems | `problems/cube_cavity.hpp`, `problems/plate_hole.hpp`, `*_exact_gen.hpp` | Load cases, exact fields, quantities of interest, shared by drivers and tests |
-| Immersed | `python/immersed/cut3d.py`, `python/immersed/cut_quadrature.py` | Cartesian cut cells of a closed STL (exact volumes, wet faces, surface pieces; ported from kfbim-octree) and moment-fitted volume rules per cut cell, exact for degree ≤ 3, for immersed IGA-FEM unit cells |
+| Immersed | `python/immersed/cut3d.py`, `python/immersed/cut_quadrature.py` | Cartesian cut cells of a closed STL (exact volumes, wet faces, surface pieces; ported from kfbim-octree) and non-negative (NNLS) moment-fitted volume rules per cut cell, exact for degree ≤ 3, for immersed IGA-FEM unit cells |
 | Tests | `tests/test_kernels.cpp`, `tests/test_regression.cpp` | Kernels; every validated result reproduced on a small mesh, including cache hit = fresh |
 
 Not yet in the library: geometry refinement (still `python/make_geometries.py`). `patch_test` and `dirichlet_test` still
