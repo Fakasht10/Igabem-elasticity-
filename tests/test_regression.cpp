@@ -204,6 +204,32 @@ int main(int argc, char** argv) {
     check((tag + " surface VTU points").c_str(), double(v.points.size()), 9.0 * m.mesh().elements.size(), 0.0);
   }
 
+  // Plate with a hole imported from STEP with the automatic quad layout and fitted p = 3
+  // patches (python/step_auto.py; 96 patches): Kirsch SCF from CAD.
+  {
+    const PlateHole ph;
+    SolverOptions o;
+    o.n_gauss = 12;
+    o.far_tol = 1e-10;
+    auto data = [&](const Vec3& y, const Vec3& n) {
+      TractionBlock T(3, 2);
+      T.col(0) = ph.traction(PlateHole::Patch, y, n);
+      T.col(1) = ph.traction(PlateHole::Kirsch, y, n);
+      return T;
+    };
+    NeumannModel nm;
+    nm.setup(geo + "step/plate_hole_auto_p3_h0.4.dat", ph.mat, o, "");
+    const Eigen::MatrixXd UH = nm.solve(data, 2);
+    const auto hole = PlateHole::holePatches(nm.mesh);
+    check("STEP plate auto p3, volume", nm.mesh.volume(), 0.2 * (1.0 - M_PI * 0.04), 1e-5);
+    check("STEP plate auto p3 patch test, u error",
+          displacementL2Error(nm.mesh, UH.col(0), [&](const Vec3& x) { return ph.displacement(PlateHole::Patch, x); }),
+          3.2015574838e-05, 1e-10);
+    const double scf = ph.sxxAtHole(nm.mesh, hole, PlateHole::Kirsch, UH.col(1), 0.0);
+    check("STEP plate auto p3 Kirsch SCF", scf, 3.0017452136, 1e-6);
+    check("STEP plate auto p3 Kirsch SCF vs exact 3", scf, 3.0, 5e-3);
+  }
+
   std::printf("%d failure(s)\n", failures);
   return failures == 0 ? 0 : 1;
 }

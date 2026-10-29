@@ -71,7 +71,8 @@ struct PlateHole {
       const igabem::Patch& P = m.patches[p];
       PatchEval E;
       P.eval(0.5 * (P.U.front() + P.U.back()), 0.5 * (P.V.front() + P.V.back()), E);
-      hole[p] = std::abs(std::hypot(E.x(0), E.x(1)) - a) < tol;
+      // loose enough for geometry fitted to CAD (python/step_auto.py, error ~1e-5)
+      hole[p] = std::abs(std::hypot(E.x(0), E.x(1)) - a) < 1e-3 * a;
     }
     return hole;
   }

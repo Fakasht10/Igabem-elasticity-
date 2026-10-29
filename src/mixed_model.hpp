@@ -75,12 +75,15 @@ class MixedModel {
     const int nr = 3 * int(u_free.size() + t_free.size());
     H_.resize(nr, 3 * mesh.ndof);
     G_.resize(nr, 3 * ts.ndof);
-    int r = 0;
-    for (int g : u_free) {
-      H_.middleRows(r, 3) = main.H.middleRows(3 * g, 3);
-      G_.middleRows(r, 3) = main.G.middleRows(3 * g, 3);
-      r += 3;
-    }
+    // One gather per matrix: column-major traversal (copying 3 rows at a time strides
+    // across every column and dominated setup on 10k-unknown models).
+    std::vector<int> rows;
+    rows.reserve(3 * u_free.size());
+    for (int g : u_free)
+      for (int c = 0; c < 3; ++c) rows.push_back(3 * g + c);
+    int r = int(rows.size());
+    H_.topRows(r) = main.H(rows, Eigen::placeholders::all);
+    G_.topRows(r) = main.G(rows, Eigen::placeholders::all);
     for (size_t p = 0; p < mesh.patches.size(); ++p) {
       if (!dirichlet[p]) continue;
       OperatorRows op = cachedOperatorRows(mesh, ts, mat, opt, po, geometry_file, cache_dir,
