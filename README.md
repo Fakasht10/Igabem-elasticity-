@@ -63,6 +63,11 @@ python3 python/make_plate_step.py 0.2    # CAD plate with a hole -> geo/step/pla
 python3 python/step2dat.py geo/step/plate_hole_t0.2.step geo/step/plate_hole_step_p4_t0.2_r3.dat \
         --split 1,-1,0,0,0,0 --split 1,1,0,0,0,0 --degree 4 --refine 3   # STEP -> conforming .dat (~25 s)
 python3 -m pytest python/test_step2dat.py -q   # STEP pipeline regression (~2 s)
+pip install gmsh                         # automatic quad layout (any STEP solid, no manual cuts)
+python3 python/step_auto.py geo/step/bracket.step geo/step/bracket_auto_p3_h0.5.dat --h 0.5 --curvature 6
+./build/cad_test geo/step/bracket_auto_p3_h0.5.dat bracket tension,patch --bc clamp --exclude 0.3 \
+        --region fillet:-0.05,-0.6,-1,0.2,0.6,1 --region hole:-0.95,-0.4,-1,-0.55,0.4,1
+python3 -m pytest python/test_step_auto.py -q  # plate, bracket, OCCT screw: watertight + volume (~45 s)
 ```
 
 ## Library layout

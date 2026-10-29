@@ -1,0 +1,2 @@
+label,case,bc,ndof,unknowns,elements,rel_L2_err,region,s1_max,scf,x,y,z,t_assemble,t_factor
+screw_h6,patch,free,5279,15837,761,4.0198606013774e-05,all,13.1712394846551,13.1712394846551,-21.653472968172,-10.0943754440627,5.43633,390.874154991,64.781066713
