@@ -150,7 +150,7 @@ def l2_error(case, space, u, q):
 class Mesh:
     """One discretization: space, stiffness and its factorization, built once for all cases."""
 
-    def __init__(self, p, n, grade, q=None):
+    def __init__(self, p, n, grade, q=None, solver="pardiso"):
         t0 = time.perf_counter()
         self.p, self.n, self.grade = p, n, grade
         self.q = q if q is not None else p + 3
@@ -158,7 +158,8 @@ class Mesh:
         t1 = time.perf_counter()
         K = asm.stiffness(self.space, self.q, LAM, MU)
         t2 = time.perf_counter()
-        self.solver = asm.Solver(K, asm.symmetry_dofs(self.space))
+        self.solver = asm.Solver(K, asm.symmetry_dofs(self.space), method=solver,
+                                 cpts=self.space.cpts)
         t3 = time.perf_counter()
         self.times = dict(space_s=t1 - t0, assemble_s=t2 - t1, factor_s=t3 - t2)
         self.corner = _corner_pointset(self.space)

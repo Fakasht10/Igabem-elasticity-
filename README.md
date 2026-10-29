@@ -328,9 +328,8 @@ evaluation, plus a short NumPy/SciPy assembler and SuperLU.
 - **Quadrature.** p + 3 Gauss points per direction. With JAXIGA's default p + 1, the patch test fails at
   1e-5, because the rational stiffness is under-integrated.
 - **Cost.** K is assembled and factored once per mesh and reused for all three load cases. At p = 4, n = 8
-  (14,292 dofs): 57 s assembly, 23 s SuperLU, under 1 s per load case. `jx.solve` gives the same answer
-  to 1e-12 but spends ~55 s at 4k dofs in JAX compilation. p = 5, n = 8 (~20k dofs) runs out of memory
-  in SuperLU on a 15 GB machine.
+  (14,292 dofs): 57 s assembly, 23 s SuperLU, under 1 s per load case. The default solver is now MKL PARDISO (Cholesky): at p = 5, n = 8 (18,291 dofs) it takes 10 s and 1.9 GB, where SuperLU takes 262 s and 6.5 GB. Both give SCF 2.26900; assembly at 136 s is now the bottleneck. AMG-CG (pyamg with rigid-body modes) needs 90–120 iterations already at 4k dofs on this high-p basis, so it is slower than either direct solver. `jx.solve` gives the same answer
+  to 1e-12 but spends ~55 s at 4k dofs in JAX compilation.
 
 | Case | p | n = 1 | n = 2 | n = 4 | n = 8 | Reference |
 | --- | --- | --- | --- | --- | --- | --- |

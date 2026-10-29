@@ -5,3 +5,5 @@ numpy>=1.24
 scipy>=1.10
 matplotlib>=3.3
 pytest>=7
+pypardiso>=0.4   # MKL PARDISO, default solver
+pyamg>=5        # optional AMG-CG solver
