@@ -52,6 +52,10 @@ python3 python/plot_cavity_tests.py      # -> results/fig_cavity_tests.{pdf,png}
 python3 python/plot_plate_tests.py       # -> results/fig_plate_tests.{pdf,png}
 python3 python/plot_probes.py line results/fields/p4_r3_kirsch_bisector.csv --comp s_rr,s_tt --frame cyl --x r --out fig.png
 python3 python/render_vtu.py results/fields/p4_r3_kirsch --out fig.png
+pip install -r python/fem_reference/requirements.txt   # IGA-FEM reference (JAXIGA, MIT)
+python3 python/fem_reference/cavity_fem.py --p 4,5 --n 1,2,4   # -> results/fem_cavity.csv (+ --p 4 --n 8, ~2 min, 4 GB)
+python3 -m pytest python/fem_reference -q   # FEM reference regression (~30 s)
+python3 python/plot_fem_cavity.py        # -> results/fig_fem_cavity.{pdf,png}
 python3 python/gen_cavity_exact.py       # (needs SymPy) re-derives src/cavity_exact_gen.hpp
 python3 python/gen_kirsch_exact.py       # (needs SymPy) re-derives src/kirsch_exact_gen.hpp
 ```
@@ -302,12 +306,52 @@ Displacement errors are relative L²(Γ) after rigid-motion removal; n = 12 unle
 - **Finite cube in tension.** SCF 2.268 at 768 elements, changing by 1e-2 from 192 elements, so about
   2.27 to within ~1e-3 by analogy with the Goodier sequence. It is 12% above the infinite-medium value,
   the finite-width effect of a cavity spanning 40% of the cube. The compressive pole stress also grows,
-  from −0.587 S to about −0.74 S. This number has no independent reference here; a FEM cross-check is
-  the obvious next validation.
+  from −0.587 S to about −0.74 S. The independent IGA-FEM check below gives 2.2689.
 - **Rank.** σ₆/σ_max falls to 4e-13 with n (six rigid modes, exact null space); σ₇/σ_max rises from
   1.4e-3 to 7.1e-3 under refinement, so the reduced system stays well conditioned.
 
 ![Cavity tests](results/fig_cavity_tests.png)
+
+### Independent IGA-FEM check of the cavity cases (JAXIGA, Galerkin)
+
+`python/fem_reference/` solves the same cube-with-cavity problems as a 3D volume Galerkin IGA-FEM. It uses
+[JAXIGA](https://github.com/CMU-CBML/JAXIGA) (MIT) for the NURBS spaces, multipatch gluing and basis
+evaluation, plus a short NumPy/SciPy assembler and SuperLU.
+
+- **Model.** The octant [0, ½]³ \ B(0, a), with u_n = 0 on the three symmetry planes. This is exact for all
+  three load cases and also removes the rigid motions.
+- **Geometry.** Three exact NURBS volumes (`octant_geometry.py`). Each is a quarter of Bembel's
+  rational-quartic sphere patch (the same surface the BEM uses), ruled to its central projection onto the
+  cube face. The cavity radius and the face planarity hold to 1e-16, the patches conform (JAXIGA's
+  interface check), and det J > 0. Degree is p in all three directions, n elements per direction per
+  patch, with radial knots w = s^1.5 graded toward the cavity.
+- **Quadrature.** p + 3 Gauss points per direction. With JAXIGA's default p + 1, the patch test fails at
+  1e-5, because the rational stiffness is under-integrated.
+- **Cost.** K is assembled and factored once per mesh and reused for all three load cases. At p = 4, n = 8
+  (14,292 dofs): 57 s assembly, 23 s SuperLU, under 1 s per load case. `jx.solve` gives the same answer
+  to 1e-12 but spends ~55 s at 4k dofs in JAX compilation. p = 5, n = 8 (~20k dofs) runs out of memory
+  in SuperLU on a 15 GB machine.
+
+| Case | p | n = 1 | n = 2 | n = 4 | n = 8 | Reference |
+| --- | --- | --- | --- | --- | --- | --- |
+| Patch test, rel. L² error of u | 4 | 9.8e-9 | 1.0e-10 | 1.5e-13 | 2.2e-15 | 0 |
+| Goodier SCF | 4 | 2.06983 | 2.03742 | 2.02085 | 2.021678 | 2.021739 |
+| Goodier SCF | 5 | 2.04793 | 2.02738 | 2.02108 | — | 2.021739 |
+| **Finite cube SCF** | 4 | 2.31759 | 2.28823 | 2.26802 | **2.26893** | IgBEM r3: 2.26827 |
+| Finite cube SCF | 5 | 2.29997 | 2.27535 | 2.26822 | — | |
+| dofs (octant) | 4 / 5 | 915 / 1,638 | 1,638 / 2,667 | 4,056 / 5,859 | 14,292 | |
+
+- **Verdict.** The two methods agree on the finite-cube SCF to 6.6e-4 (0.03%). The finest FEM
+  Goodier SCF is off by 3e-5 relative and the finest BEM Goodier SCF by 1.1e-4, so the SCF is
+  **2.269 ± 0.001**. Along the whole cavity meridian the two σ_θθ profiles differ by less than 8e-4 S
+  (panel c, inset).
+- **Convergence.** At p = 4 the Goodier SCF error drops 14× from n = 4 to n = 8, a rate of 3.8 in h.
+  The finite-cube sequence undershoots at n = 4 like the Goodier one does, so the asymptotic regime
+  starts at n ≈ 4.
+- **Efficiency.** Per unknown, the BEM is more accurate even though it models the full surface and the
+  FEM models only an octant volume: 1.1e-4 SCF error at 3,648 unknowns, against 4.3e-4 at 4,056 (panel a).
+
+![FEM vs IgBEM](results/fig_fem_cavity.png)
 
 ### Plate with a circular through-hole (SBIE, traction-only)
 
@@ -406,7 +450,7 @@ Long strip clamped at one end and pulled at the other:
 
 ## Next steps
 
-1. Exterior Neumann (Eshelby) patch test; FEM cross-check of the finite-cube SCF; move geometry
+1. Exterior Neumann (Eshelby) patch test; move geometry
    refinement into C++; partial-patch Dirichlet regions (today Γ_u is a union of whole patches).
 2. Thin curved plate (cylindrical panel built as exact NURBS): Neumann patch test for t/R = 10⁻¹…10⁻³,
    then Scordelis–Lo as a 3D solid.

@@ -1,0 +1,7 @@
+# IGA-FEM reference (python/fem_reference). JAXIGA is MIT-licensed, github.com/CMU-CBML/JAXIGA.
+jaxiga @ git+https://github.com/CMU-CBML/JAXIGA@f629292059153354d7bb9603579091cee0f89766
+jax>=0.4.20
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.3
+pytest>=7
