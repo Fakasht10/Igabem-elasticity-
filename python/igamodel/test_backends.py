@@ -126,5 +126,48 @@ class Runs(unittest.TestCase):
             r.view("c")
 
 
+SENB = str(pathlib.Path(__file__).resolve().parents[2] / "geo" / "step" / "senb_rho1.step")
+ROOT_PT = (22.0, 5.0, 0.0)
+
+
+class Submodels(unittest.TestCase):
+    def test_ill_posed_boxes_are_refused(self):
+        from .submodel import check_box
+        from failure.validate_cicero import case_for
+        c = case_for(SENB)
+        loaded = [s["face_id"] for s in c["supports"]] + [c["cases"][0]["loads"][0]["face_id"]]
+        check_box(SENB, [20, 3, -3], [24, 7, 3], ROOT_PT, loaded, 1e-6)              # the gate's box
+        for why, lo, hi in (("lies in face", [20, 3, -2], [24, 7, 3]),              # z = -2 is a face of the bar
+                            ("not inside", [20, 6, -3], [24, 9, 3]),                 # the root is below the box
+                            ("carries a support or load", [20, 3, -3], [24, 12, 3]),  # reaches the top pad
+                            ("lo < hi", [24, 3, -3], [20, 7, 3])):
+            with self.subTest(why), self.assertRaisesRegex(ModelError, why):
+                check_box(SENB, lo, hi, ROOT_PT, loaded, 1e-6)
+
+    def test_cut_faces_are_the_box_faces_inside_the_part(self):
+        from .submodel import cut_faces, cut_step
+        with tempfile.TemporaryDirectory() as tmp:
+            out = str(pathlib.Path(tmp) / "cut.step")
+            cut_step(SENB, [20, 3, -3], [24, 7, 3], out)
+            # x = 20, x = 24, y = 7 and y = 3 on both sides of the notch; z = -3, 3 lie off the bar
+            self.assertEqual(len(cut_faces(out, [20, 3, -3], [24, 7, 3], 1e-6)), 5)
+            with self.assertRaisesRegex(ModelError, "misses the part"):
+                cut_step(SENB, [100, 100, 100], [101, 101, 101], str(pathlib.Path(tmp) / "none.step"))
+
+    def test_submodel_nodes_and_the_regions_a_box_can_be_checked_against(self):
+        m = senb_like()
+        with self.assertRaisesRegex(ModelError, "lo < hi"):
+            m.apply({"op": "add", "parent": "root", "kind": "submodel", "props": {"lo": [1, 0, 0], "hi": [0, 1, 1]}})
+        m.apply({"op": "add", "parent": "root", "kind": "submodel", "props": {"label": "notch", "lo": [0, 0, 0],
+                                                                              "hi": [1, 1, 1]}})
+        self.assertIn("submodel", backends.features(m))
+        with self.assertRaisesRegex(ModelError, "acts on a selection"):
+            run._region_faces(m)                      # ALL_FORMS has select- and patch-based regions
+        clean = Model()
+        clean.apply({"op": "add", "parent": "root", "kind": "support", "region": {"face_ids": [3, 4]},
+                     "props": {"fix": ["ux"]}})
+        self.assertEqual(run._region_faces(clean), [3, 4])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -45,6 +45,8 @@ def features(model) -> set[str]:
         f.add("cad_geometry")
     if model.of_kind("assessment"):
         f.add("stress_at_points")
+    if model.of_kind("submodel"):
+        f.add("submodel")
     return f
 
 
@@ -80,6 +82,9 @@ class Run:
         s, w = self.stress_all(points, on_surface)[case or self.cases[0]]
         return s.copy(), w.copy()       # callers write into the result
 
+    def displacement_all(self, points, on_surface=None):
+        return self.solve.displacement_all(points, on_surface)
+
     def view(self, case):
         if case not in self.cases:
             raise ModelError(f"no load case {case!r}; the solve has {self.cases}")
@@ -111,7 +116,7 @@ class IgBEM:
     name = "igabem"
     capabilities = frozenset({"fixed", "prescribed_displacement", "spring", "rbe2", "symmetry", "pressure",
                               "traction", "bearing", "rbe2_load", "force", "moment", "graded_mesh", "cad_geometry",
-                              "stress_at_points"})
+                              "stress_at_points", "submodel"})
     CAD_DEFAULTS = {"h": 3.0, "curvature": 6, "degree": 2}
 
     def geometry(self, model, base, workdir, log=print):

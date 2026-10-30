@@ -11,6 +11,7 @@ that app/bc_case reads (src/case_io.hpp).
       output    (one)     vtu, csv
       cad       (one)     the STEP the geometry is made from (step_auto.py) and the TET10 mesh of assessments
       assessment (many)   TCD failure check of one feature point (python/failure/assess.py)
+      submodel  (many)    a box of the part meshed finer, driven by the global solve (igamodel/submodel.py)
 
 Prop keys are the case file's keys, so nothing is renamed between the tree,
 the file and the solver. cad and assessment are not part of the case file
@@ -63,7 +64,7 @@ def load_rule(props, region):
 
 
 register(NodeType("case", "Model", "case", children=("material", "solver", "grade", "support", "loadcase", "output",
-                                                     "cad", "assessment"),
+                                                     "cad", "assessment", "submodel"),
                   props=(
     Prop("geometry", "str", doc="the .dat surface (step_auto.py / geomio), relative to the case file"),
     Prop("faces", "str", doc="CAD face map; unset = next to the geometry (python/face_ids.py)"),
@@ -139,4 +140,19 @@ register(NodeType("assessment", "Assessment", "tcd", rule=assessment_rule, props
     Prop("mesh_curvature", "int", doc="TET10 elements per radian; unset = 16"),
     Prop("focus_radius", "float", "mm", doc="refinement sphere round the point; unset = 1.5 L"),
     Prop("focus_h", "float", "mm", doc="element size in it; unset = min(0.15, rho / 6), 0.15 without rho"),
+    Prop("submodel", "str", doc="label of the submodel to assess on; unset = the whole part"),
 ), doc="Theory of Critical Distances at one point: the point and energy point methods give the load factor at failure."))
+
+def submodel_rule(props, region):
+    lo, hi = props.get("lo"), props.get("hi")
+    if lo is not None and hi is not None and any(b <= a for a, b in zip(lo, hi)):
+        raise ModelError("a submodel box needs lo < hi in x, y and z")
+
+
+register(NodeType("submodel", "Submodel", "sub", rule=submodel_rule, props=(
+    Prop("label", "str"),
+    Prop("lo", "vec3", "mm", doc="box corner"), Prop("hi", "vec3", "mm", doc="opposite corner"),
+    Prop("h", "float", "mm", doc="IgBEM knot span in the box; unset = 0.5"),
+    Prop("curvature", "int", doc="knot spans per radian on curved edges; unset = 6"),
+    Prop("degree", "int", doc="unset = 2"),
+), doc="The part inside a box, meshed at its own h, its cut faces driven by the global displacement."))

@@ -13,9 +13,11 @@
 //     {"select": {"box": [[x0,y0,z0], [x1,y1,z1]]}, "fix": ["uz"], "value": [0, 0, -0.01]},
 //     {"symmetry": "y", "at": 0},
 //     {"face_id": 7, "spring": {"k_n": 1e3, "k_t": 0}},        // or {"k": [kx,ky,kz]}, {"K_total": K}
-//     {"face_id": 12, "rbe2": {"ref": [x, y, z], "hold": ["uz", "rx"], "k": [kx, ky, kz, krx, kry, krz]}}
+//     {"face_id": 12, "rbe2": {"ref": [x, y, z], "hold": ["uz", "rx"], "k": [kx, ky, kz, krx, kry, krz]}},
+//     {"label": "cut", "face_ids": [4, 5], "fix": ["ux", "uy", "uz"], "field": "u_cut.txt"}
 //   ],                                                         // rigid coupling to a master (bc_model.hpp Rbe2)
-//   "cases": [{"name": "pull", "loads": [
+//                                                              // field: prescribed displacement at sampled points
+//   "cases": [{"name": "pull", "fields": {"cut": "u_cut_pull.txt"}, "loads": [
 //     {"face_id": 5, "force_N": 100, "direction": [1, 0, 0]},  // uniform, resultant F
 //     {"select": {...}, "pressure": 2.0},
 //     {"face_id": 5, "moment": [0, 0, 10], "about": [x, y, z]}, // + optional force_N/direction
@@ -32,14 +34,22 @@
 // {"faces": [...]}, {"patches": [...]}; keys in one object are ANDed, a list of
 // objects is ORed. A support needs whole patches (it sets which traction
 // components are unknown); "snap": true takes the patches covered at least half.
+//
+// "field" (a support) and a case's "fields" ({support label: file}, overriding the support's own) prescribe a
+// displacement that varies over the support: lines "x y z ux uy uz", read at exactly the points the support's
+// patches are interpolated at (bc_case --greville writes them). A submodel's cut faces are driven this way by a
+// global solve (python/igamodel/submodel.py). A point missing from the file is an error, never interpolated.
 #pragma once
 #ifndef IGABEM_SOURCE_DIR
 #define IGABEM_SOURCE_DIR "."
 #endif
 #include <cstdlib>
 
+#include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <string>
@@ -58,7 +68,41 @@ inline Vec3 jvec(const Json& j) {
   return Vec3(v[0], v[1], v[2]);
 }
 
+// A displacement field sampled at points, looked up at the exact points it was sampled at (to tol).
+inline std::function<Vec3(const Vec3&)> fieldFile(const std::string& path, double tol, const std::string& label) {
+  auto X = std::make_shared<std::vector<Vec3>>();
+  auto U = std::make_shared<std::vector<Vec3>>();
+  std::ifstream in(path);
+  if (!in) throw std::runtime_error(label + ": no field file " + path);
+  std::string row;
+  while (std::getline(in, row)) {
+    if (row.empty() || row[0] == '#') continue;
+    double v[6];
+    if (std::sscanf(row.c_str(), "%lf %lf %lf %lf %lf %lf", v, v + 1, v + 2, v + 3, v + 4, v + 5) != 6)
+      throw std::runtime_error(label + ": field line is not x y z ux uy uz: " + row);
+    X->emplace_back(v[0], v[1], v[2]);
+    U->emplace_back(v[3], v[4], v[5]);
+  }
+  if (X->empty()) throw std::runtime_error(label + ": empty field file " + path);
+  return [X, U, tol, label, path](const Vec3& x) {
+    size_t best = 0;
+    double d = 1e300;
+    for (size_t i = 0; i < X->size(); ++i) {
+      const double di = ((*X)[i] - x).squaredNorm();
+      if (di < d) { d = di; best = i; }
+    }
+    if (std::sqrt(d) > tol) {
+      char at[96];
+      std::snprintf(at, sizeof at, " (%.9g, %.9g, %.9g)", x(0), x(1), x(2));
+      throw std::runtime_error(label + ": " + path + " has no value at" + at + "; write it at the points bc_case "
+                               "--greville gives");
+    }
+    return (*U)[best];
+  };
+}
+
 struct CaseFile {
+  bool need_fields = true;  // false: field files may be missing (bc_case --greville writes their points first)
   std::string geometry, faces, cache = "cache";
   Material mat;
   double E = 2.5, nu = 0.25;
@@ -182,6 +226,10 @@ struct CaseFile {
         const Vec3 v = jvec(s["value"]);
         f.value = [v](const Vec3&) { return v; };
       }
+      if (s.has("field")) {
+        if (s.has("value")) throw std::runtime_error(label + ": value or field, not both");
+        f.value = field(resolve(s["field"].asString()), label);
+      }
       fixed.push_back(f);
     }
 
@@ -193,6 +241,14 @@ struct CaseFile {
     for (const auto& [name, loads] : specs) {
       LoadCase lc;
       lc.name = name;
+      if (const Json* c = caseOf(J, name); c && c->has("fields"))
+        for (const auto& [who, file] : (*c)["fields"].obj) {
+          int si = -1;
+          for (size_t i = 0; i < fixed.size(); ++i)
+            if (fixed[i].label == who) si = int(i);
+          if (si < 0) throw std::runtime_error(name + ": fields names no support labelled " + who);
+          lc.support_values.push_back({si, field(resolve(file.asString()), who)});
+        }
       int nl = 0;
       for (const Json& L : loads->arr) {
         const std::string label = L.get("label", name + " load " + std::to_string(nl++));
@@ -233,6 +289,10 @@ struct CaseFile {
       }
       cases.push_back(std::move(lc));
       case_names.push_back(name);
+    }
+    if (!need_fields) {  // bc_case --greville: the supports' patches are all it needs, no operators
+      model.supports = std::move(fixed);
+      return;
     }
     model.setupOn(geometry, std::move(fixed), std::move(springs), cache);
     model.rbe2 = std::move(masters);
@@ -323,6 +383,20 @@ struct CaseFile {
   }
 
  private:
+  std::function<Vec3(const Vec3&)> field(const std::string& path, const std::string& label) const {
+    if (!need_fields && !std::filesystem::exists(path))
+      return [label](const Vec3&) -> Vec3 { throw std::runtime_error(label + ": field file not written yet"); };
+    return fieldFile(path, 1e-9 * size, label);
+  }
+
+  static const Json* caseOf(const Json& J, const std::string& name) {
+    if (!J.has("cases")) return nullptr;
+    int i = 0;
+    for (const Json& c : J["cases"].arr)
+      if (c.get("name", "case " + std::to_string(i++)) == name) return &c;
+    return nullptr;
+  }
+
   // "grade": {"faces": [6], "inner": [1, 13], "h0": 0.025, "growth": 1.4}: refine the mesh
   // towards the given CAD faces (supports) by knot insertion, python/grade_dat.py; the graded
   // surface <stem>_g<faces>[_i<inner>]_h<h0>.dat (+ .faces) is made once and reused.

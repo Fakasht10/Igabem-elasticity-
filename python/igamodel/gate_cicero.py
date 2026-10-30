@@ -8,7 +8,7 @@ validate_cicero result file computed on the same machine.
 
 usage (from python/):
   python3 -m failure.validate_cicero --work W --out D.json [--card ABS-M30-iso --sigma-uts 65]
-  python3 -m igamodel.gate_cicero D.json --work W [--card ABS-M30-iso --sigma-uts 65] [--load-cases] [--rtol 1e-12]
+  python3 -m igamodel.gate_cicero D.json --work W [--card ABS-M30-iso --sigma-uts 65] [--load-cases] [--submodel] [--rtol 1e-12]
 """
 import argparse
 import glob
@@ -54,6 +54,20 @@ def load_cases(rho, props, work):
     return max(abs(ratio / 3 - 1), same_N), {"bend": r1, "bend3": r3}
 
 
+def submodel(rho, props, work, half=2.0, h=1.0, curvature=12):
+    """The same assessment on a box round the notch root, cut faces driven by the global solve. The box face
+    nearest the root is `half` mm from it (> 4 L); the probe line runs along +y, so the box reaches 2 half above."""
+    m = tree(rho, props)
+    x, y, _ = ROOT_PT
+    m.apply({"op": "add", "parent": "root", "kind": "submodel",
+             "props": {"label": "notch", "lo": [x - half, y - half, -3.0], "hi": [x + half, y + half, 3.0], "h": h,
+                       "curvature": curvature}})
+    a = m.of_kind("assessment")[0]
+    m.apply({"op": "set", "tag": a.tag, "key": "submodel", "value": "notch"})
+    m.apply({"op": "set", "tag": a.tag, "key": "mesh_h", "value": min(2.5, half)})
+    return assess(m, ROOT, work)[0]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("direct", help="validate_cicero result file (same machine)")
@@ -62,6 +76,8 @@ def main():
     ap.add_argument("--sigma-uts", type=float)
     ap.add_argument("--rtol", type=float, default=1e-12)
     ap.add_argument("--load-cases", action="store_true", help="also check two load cases on one solve")
+    ap.add_argument("--submodel", action="store_true",
+                    help="also run the last radius on a submodel and compare with the whole part (0.2 %%)")
     ap.add_argument("--out")
     a = ap.parse_args()
     direct = json.load(open(a.direct))
@@ -87,12 +103,21 @@ def main():
     if a.load_cases:
         e, cases = load_cases(direct["rows"][-1]["rho"], props, a.work)
         worst = max(worst, e)
+    sub = None
+    if a.submodel:
+        d = direct["rows"][-1]
+        sub = submodel(d["rho"], props, a.work)
+        e = abs(sub["factor_pm"] / d["predicted_N"] - 1)
+        print(f"submodel rho {d['rho']}: PM {sub['factor_pm']:.4f} N vs whole part {d['predicted_N']:.4f} N "
+              f"({100 * e:+.3f} %), {sub['unknowns']} unknowns, {sub['t_submodel_solve_s']} s", flush=True)
+        if e > 2e-3:
+            worst = max(worst, e)
     new_geo = set(glob.glob(os.path.join(a.work, "geo_*.dat"))) - geo_before
     print(f"geometry cache: {'hit for every radius (same step_auto arguments)' if not new_geo else f'{len(new_geo)} new layouts'}")
     if a.out:
         with open(a.out, "w") as f:
             json.dump({"props": props, "rtol": a.rtol, "worst": worst, "new_layouts": len(new_geo), "rows": rows,
-                   "load_cases": cases},
+                   "load_cases": cases, "submodel": sub},
                       f, indent=1)
     ok = worst <= a.rtol and not new_geo
     print(f"gate {'passed' if ok else 'FAILED'}: worst relative difference {worst:.1e} (rtol {a.rtol:g})")
