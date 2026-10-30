@@ -678,6 +678,17 @@ Bolted bracket from STEP (`cases/bracket_bolted_hmat.json`: bolt hole fixed, ela
 | 41.4k | hmat, eps 1e-5 | 62.7 | 20.9 | 83.9 | 22 / 35 | 4.7 | 2.074222 | 1869.2 |
 | 56.7k | hmat, eps 1e-5 | 113.6 | 34.4 | 148.2 | 24 / 36 | 7.4 | 2.074826 | 1689.1 |
 
+Clamped bracket (`cases/bracket_clamped.json` with the solver block, end face clamped, 5 load cases on one
+operator), eps 1e-5, 4 cores:
+
+| unknowns | operator (s) | preconditioner (s) | 5 solves (s) | end to end (s) | iterations | peak (GB) | bend max \|u\| |
+|---|---|---|---|---|---|---|---|
+| 56.8k | 34.7 | 5.3 | 72.8 | 115.4 | 22-36 | 3.8 | 4.739604 |
+| 113.7k | 93.6 | 25.4 | 151.3 | 276.5 | 19-30 | 9.4 | 4.735840 |
+
+At 114k the preconditioner takes 72% of GMRES time, about 0.7 s per application. That is the sparse LU solve,
+and it is the next lever.
+
 The pull case agrees with dense to 2e-6. The peak von Mises does not converge under refinement: it sits on the
 re-entrant edge at (-0.60, 0, ±0.1), a stress singularity, and needs the TCD layer, not a finer mesh. At 57k the
 elastic pad's dense spring block is the largest single cost: 48 s, and about 1 GB for 488 elements.
