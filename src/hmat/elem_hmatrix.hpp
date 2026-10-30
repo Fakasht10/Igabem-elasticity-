@@ -18,11 +18,16 @@
 //       element columns of ElementBlocks; gamma = 2 mu / distance balances the
 //       two kernels (|U| / |T| ~ r / 2 mu). The factors are assembled to global
 //       columns and recompressed (QR + SVD, Frobenius tail <= eps). The G factor
-//       is applied to the load cases at once and dropped; U and W_H are kept in
-//       single precision.
+//       is applied to the load cases at once; its columns on the kept traction
+//       dofs (gkeep: supported and interface faces of a mixed problem) are stored,
+//       the rest dropped. U, W_H, W_G are kept in single precision.
 //   near field (every other pair)
 //       per point leaf, the dense block of its points against the union of its
-//       inadmissible element leaves, assembled (float); G applied at once.
+//       inadmissible element leaves, assembled (float); G applied at once, its
+//       kept columns stored.
+//
+// Rows are the points `rows` (default mesh.colloc): a mixed problem adds the
+// traction collocation points of its supported faces.
 //
 // Rigid-body term: D(a, B) = N_B(x_a) sum_B Hraw(a, B); the row sums come from
 // the compressed Hraw (three products with the translations) and D is folded
@@ -48,6 +53,7 @@
 
 #include "../traction_space.hpp"
 #include "cluster_tree.hpp"
+#include "coarse.hpp"
 #include "element_blocks.hpp"
 
 namespace igabem {
@@ -86,11 +92,17 @@ class ElemHMatrix {
     double cur_failed_entries = 0.0;
   };
 
-  // C: traction coefficients (3 Mt x K) whose image G C is returned by gc().
+  // C: traction coefficients (3 Mt x K) whose image G C is returned by gc(). rows: collocation
+  // points (default m.colloc); gkeep: per traction dof, store its G column (default none).
   ElemHMatrix(const Mesh& m, const TractionSpace& ts, const Material& mat, const SolverOptions& sopt,
-              const Eigen::MatrixXd& C, const ElemHOptions& o = ElemHOptions())
-      : mesh_(m), ts_(ts), o_(o), eb_(m, mat, sopt, o.tol, o.min_order), mu_(mat.mu) {
-    np_ = int(m.colloc.size());
+              const Eigen::MatrixXd& C, const ElemHOptions& o = ElemHOptions(),
+              const std::vector<Collocation>* rows = nullptr, const std::vector<char>* gkeep = nullptr)
+      : mesh_(m), ts_(ts), rows_(rows ? *rows : m.colloc), o_(o), eb_(m, mat, sopt, o.tol, o.min_order, &rows_),
+        mu_(mat.mu) {
+    np_ = int(rows_.size());
+    if (gkeep) gk_ = *gkeep;
+    gk_.resize(ts.ndof, 0);
+    for (char k : gk_) any_g_ = any_g_ || k;
     ne_ = int(m.elements.size());
     K_ = int(C.cols());
     GC_ = Eigen::MatrixXd::Zero(3 * np_, K_);
@@ -109,7 +121,7 @@ class ElemHMatrix {
     }
     std::vector<Vec3> px(np_), ex(ne_);
     std::vector<double> er(ne_);
-    for (int a = 0; a < np_; ++a) px[a] = m.colloc[a].x;
+    for (int a = 0; a < np_; ++a) px[a] = rows_[a].x;
     for (int ie = 0; ie < ne_; ++ie) {
       ex[ie] = eb_.quad().elementCentre(ie);
       er[ie] = eb_.quad().elementRadius(ie);
@@ -136,62 +148,58 @@ class ElemHMatrix {
   const Eigen::MatrixXd& gc() const { return GC_; }
   const Stats& stats() const { return st_; }
 
-  // y = H x (with the rigid-body term); x, y: 3 ndof.
-  void apply(const double* x, double* y) const { apply(x, y, true); }
+  // y = H x (with the rigid-body term); x: 3 ndof, y: 3 rows.
+  void apply(const double* x, double* y) const { apply(x, nullptr, y, true); }
+  // y = H u - G t, t (3 ts.ndof) read on the kept traction dofs only.
+  void apply(const double* u, const double* t, double* y) const { apply(u, t, y, true); }
+  const std::vector<Collocation>& rowPoints() const { return rows_; }
+  // Largest element diameter in the support of each dof (the preconditioner radius unit).
+  std::vector<double> dofSize() const {
+    std::vector<double> h(mesh_.ndof, 0.0);
+    for (int ie = 0; ie < ne_; ++ie)
+      for (int B : edof_[ie]) h[B] = std::max(h[B], 2.0 * eb_.quad().elementRadius(ie));
+    return h;
+  }
+
+  // Exact G(a, J) of the points `pts` against every traction dof J with mask[J]: add(k, i, J, j, v)
+  // receives each element's part of G(3 pts[k] + i, 3 J + j), from one thread per point k. For
+  // the preconditioner: the traction block of the supported faces is a first-kind single layer,
+  // which a local pattern truncates too closely.
+  template <class Add>
+  void gBlock(const std::vector<int>& pts, const std::vector<char>& mask, Add&& add) const {
+    std::vector<int> elems;
+    for (int ie = 0; ie < ne_; ++ie)
+      for (int J : etdof_[ie])
+        if (mask[J]) { elems.push_back(ie); break; }
+#pragma omp parallel
+    {
+      ElementBlocks::Work w;
+      std::vector<double> Hb, Gb;
+#pragma omp for schedule(dynamic, 4)
+      for (int k = 0; k < int(pts.size()); ++k)
+        for (int ie : elems) {
+          const int nl = int(etdof_[ie].size());
+          Hb.resize(9 * edof_[ie].size());
+          Gb.resize(9 * nl);
+          eb_.row(pts[k], ie, Hb.data(), Gb.data(), w);
+          for (int l = 0; l < nl; ++l)
+            if (mask[etdof_[ie][l]])
+              for (int j = 0; j < 3; ++j)
+                for (int i = 0; i < 3; ++i) add(k, i, etdof_[ie][l], j, Gb[3 * (3 * l + j) + i]);
+        }
+    }
+  }
 
   // Bytes of the integrator's far-rule cache; release it once no more entries are needed
   // (after the preconditioner pattern): only apply / applyCoarse work afterwards.
   double quadratureBytes() const { return eb_.quad().cacheBytes(); }
   void releaseQuadrature() { eb_.releaseCache(); }
 
-  // Coarse space of affine modes (1, x, y, z per component) on the point-tree nodes of at most agg
-  // points (bemkit: 12 modes per 256-node aggregate). Up to 4 nonzeros per row: cid[4 g + f] the
-  // coarse column (-1: none), zr / zc the values on the test (collocation point x_a) and trial
-  // (control point P_B) sides, each mode normalized. Returns the coarse dimension.
-  int coarseSpace(int agg, std::vector<int>& cid, std::vector<double>& zr, std::vector<double>& zc) const {
-    const int N = 3 * np_;
-    cid.assign(4 * N, -1);
-    zr.assign(4 * N, 0.0);
-    zc.assign(4 * N, 0.0);
-    std::vector<int> stack(1, 0), ag;
-    int nc = 0;
-    while (!stack.empty()) {
-      const ClusterTree::Node& P = pt_.nodes[stack.back()];
-      stack.pop_back();
-      if (P.size() > agg && !P.leaf()) {
-        stack.push_back(P.kid[0]);
-        stack.push_back(P.kid[1]);
-        continue;
-      }
-      ag.assign(pt_.perm.begin() + P.lo, pt_.perm.begin() + P.hi);
-      Vec3 cr = Vec3::Zero(), cc = Vec3::Zero();
-      for (int a : ag) { cr += mesh_.colloc[a].x; cc += mesh_.dof_point[a]; }
-      cr /= double(ag.size());
-      cc /= double(ag.size());
-      const double L = std::max(1e-300, 0.5 * P.diam());
-      for (int f = 0; f < 4; ++f) {
-        auto fr = [&](int a) { return f == 0 ? 1.0 : (mesh_.colloc[a].x(f - 1) - cr(f - 1)) / L; };
-        auto fc = [&](int a) { return f == 0 ? 1.0 : (mesh_.dof_point[a](f - 1) - cc(f - 1)) / L; };
-        double nr = 0.0, nn = 0.0;
-        for (int a : ag) { nr += fr(a) * fr(a); nn += fc(a) * fc(a); }
-        if (nr < 1e-8 * double(ag.size()) || nn < 1e-8 * double(ag.size())) continue;  // flat aggregate
-        nr = 1.0 / std::sqrt(nr);
-        nn = 1.0 / std::sqrt(nn);
-        for (int i = 0; i < 3; ++i, ++nc)
-          for (int a : ag) {
-            const int g = 3 * a + i;
-            cid[4 * g + f] = nc;
-            zr[4 * g + f] = fr(a) * nr;
-            zc[4 * g + f] = fc(a) * nn;
-          }
-      }
-    }
-    return nc;
-  }
-
-  // H Z (N x nc, float) for the trial side zc of coarseSpace: each block once, Zc restricted to its
-  // columns; rows scattered under a lock per point leaf.
-  Eigen::MatrixXf applyCoarse(const std::vector<int>& cid, const std::vector<double>& zc, int nc) const {
+  // H Zu - G Zt (3 rows x nc, float) for a coarse basis on the displacement dofs (Zu, 3 ndof rows)
+  // and the kept traction dofs (Zt, 3 ts.ndof rows, may be null): each block once, the basis
+  // restricted to its columns; rows scattered under a lock per point leaf.
+  Eigen::MatrixXf applyCoarse(const SparseBasis& Zu, const SparseBasis* Zt) const {
+    const int nc = Zu.nc;
     const int N = 3 * np_;
     Eigen::MatrixXf HZ = Eigen::MatrixXf::Zero(N, nc);
     std::vector<int> leaf_of(np_, 0);
@@ -207,7 +215,23 @@ class ElemHMatrix {
 #pragma omp parallel
     {
       std::vector<int> mark(nc, -1), ids;
-      Eigen::MatrixXf Zl, Y;
+      Eigen::MatrixXf Zl, Zg, Y;
+      // Z restricted to the columns cols (dof or traction dof, 3 components each), local coarse ids
+      auto restrict = [&](const SparseBasis& Z, const std::vector<int>& cols, Eigen::MatrixXf& Out) {
+        const int n3 = 3 * int(cols.size());
+        Out.setZero(n3, int(ids.size()));
+        for (int c = 0; c < n3; ++c) {
+          const int g = 3 * cols[c / 3] + c % 3;
+          for (int p = Z.ptr[g]; p < Z.ptr[g + 1]; ++p) Out(c, mark[Z.id[p]]) += float(Z.val[p]);
+        }
+      };
+      auto collect = [&](const SparseBasis& Z, const std::vector<int>& cols) {
+        for (int c = 0; c < 3 * int(cols.size()); ++c) {
+          const int g = 3 * cols[c / 3] + c % 3;
+          for (int p = Z.ptr[g]; p < Z.ptr[g + 1]; ++p)
+            if (mark[Z.id[p]] < 0) { mark[Z.id[p]] = int(ids.size()); ids.push_back(Z.id[p]); }
+        }
+      };
 #pragma omp for schedule(dynamic, 4)
       for (int q = 0; q < nb; ++q) {
         const bool nearb = q < int(near_.size());
@@ -215,26 +239,29 @@ class ElemHMatrix {
         const FarBlock* F = nearb ? nullptr : &far_[q - near_.size()];
         const ClusterTree::Node& P = pt_.nodes[nearb ? L->node : F->pnode];
         const std::vector<int>& cols = nearb ? L->cols : F->cols;
+        const std::vector<int>& tcols = nearb ? L->tcols : F->tcols;
         if (!nearb && F->rank == 0) continue;
-        const int M = 3 * P.size(), n3 = 3 * int(cols.size());
+        const int M = 3 * P.size(), n3 = 3 * int(cols.size()), t3 = Zt ? 3 * int(tcols.size()) : 0;
         ids.clear();
-        for (int c = 0; c < n3; ++c)
-          for (int f = 0; f < 4; ++f) {
-            const int k = cid[4 * (3 * cols[c / 3] + c % 3) + f];
-            if (k >= 0 && mark[k] < 0) { mark[k] = int(ids.size()); ids.push_back(k); }
-          }
+        collect(Zu, cols);
+        if (t3) collect(*Zt, tcols);
         const int nl = int(ids.size());
-        Zl.setZero(n3, nl);
-        for (int c = 0; c < n3; ++c)
-          for (int f = 0; f < 4; ++f) {
-            const int g = 4 * (3 * cols[c / 3] + c % 3) + f;
-            if (cid[g] >= 0) Zl(c, mark[cid[g]]) += float(zc[g]);
-          }
+        if (!nl) continue;
+        restrict(Zu, cols, Zl);
+        if (t3) restrict(*Zt, tcols, Zg);
         for (int k : ids) mark[k] = -1;
         using MapF = Eigen::Map<const Eigen::MatrixXf>;
-        if (nearb) Y.noalias() = MapF(L->H.data(), M, n3) * Zl;
-        else if (F->rank < 0) Y.noalias() = MapF(F->D.data(), M, n3) * Zl;
-        else Y.noalias() = MapF(F->U.data(), M, F->rank) * (MapF(F->W.data(), F->rank, n3) * Zl);
+        if (nearb) {
+          Y.noalias() = MapF(L->H.data(), M, n3) * Zl;
+          if (t3) Y.noalias() -= MapF(L->G.data(), M, t3) * Zg;
+        } else if (F->rank < 0) {
+          Y.noalias() = MapF(F->D.data(), M, n3) * Zl;
+          if (t3) Y.noalias() -= MapF(F->DG.data(), M, t3) * Zg;
+        } else {
+          Eigen::MatrixXf T = MapF(F->W.data(), F->rank, n3) * Zl;
+          if (t3) T.noalias() -= MapF(F->WG.data(), F->rank, t3) * Zg;
+          Y.noalias() = MapF(F->U.data(), M, F->rank) * T;
+        }
         int cur = -1;
         for (int k = 0; k < P.size(); ++k) {
           const int lf = leaf_of[P.lo + k];
@@ -285,7 +312,7 @@ class ElemHMatrix {
       std::vector<int> cols;
 #pragma omp for schedule(dynamic, 64)
       for (int a = 0; a < np_; ++a) {
-        const Vec3& x = mesh_.colloc[a].x;
+        const Vec3& x = rows_[a].x;
         // elements within radius hmax + their radius (tree descent)
         elems.clear();
         stack.assign(1, 0);
@@ -314,7 +341,7 @@ class ElemHMatrix {
         for (int ie : elems)
           for (int B : edof_[ie])
             if ((x - mesh_.dof_point[B]).norm() < radius * hB[B]) keep.push_back(B);
-        for (const auto& [B, NB] : mesh_.colloc[a].basis) keep.push_back(B);
+        for (const auto& [B, NB] : rows_[a].basis) keep.push_back(B);
         cols = unique(keep);
         const int nc = int(cols.size());
         row.assign(9 * size_t(nc), 0.0);  // 3 x 3nc
@@ -332,7 +359,7 @@ class ElemHMatrix {
             for (int k = 0; k < 9; ++k) row[9 * c + k] += Hb[9 * l + k];
           }
         }
-        for (const auto& [B, NB] : mesh_.colloc[a].basis) {
+        for (const auto& [B, NB] : rows_[a].basis) {
           const int c = int(std::lower_bound(cols.begin(), cols.end(), B) - cols.begin());
           for (int j = 0; j < 3; ++j)
             for (int i = 0; i < 3; ++i) row[9 * c + 3 * j + i] -= NB * S_(3 * a + i, j);
@@ -347,22 +374,28 @@ class ElemHMatrix {
 
   // Preconditioner entries: exact H(a, B) for |x_a - P_B| < radius h_B, from the near rows
   // completed by the support elements of B outside the leaf's near set (cheap far rules), so
-  // no pattern entry is a partial sum (B's support may straddle a low-rank block).
-  void preconTriplets(double radius, std::vector<Eigen::Triplet<double>>& out) const {
-    std::vector<double> hB(mesh_.ndof, 0.0);
-    std::vector<std::vector<int>> supp(mesh_.ndof);
+  // no pattern entry is a partial sum (B's support may straddle a low-rank block). gout: the
+  // same for G(a, J) on the kept traction dofs J (rows 3 a + i, columns 3 J + j).
+  void preconTriplets(double radius, std::vector<Eigen::Triplet<double>>& out,
+                      std::vector<Eigen::Triplet<double>>* gout = nullptr) const {
+    std::vector<double> hB(mesh_.ndof, 0.0), hJ(ts_.ndof, 0.0);
+    std::vector<std::vector<int>> supp(mesh_.ndof), tsupp(ts_.ndof);
     for (int ie = 0; ie < ne_; ++ie) {
       const double d = 2.0 * eb_.quad().elementRadius(ie);
       for (int l = 0; l < int(edof_[ie].size()); ++l) {
         hB[edof_[ie][l]] = std::max(hB[edof_[ie][l]], d);
         supp[edof_[ie][l]].push_back(ie);
+        if (gk_[etdof_[ie][l]]) {
+          hJ[etdof_[ie][l]] = std::max(hJ[etdof_[ie][l]], d);
+          tsupp[etdof_[ie][l]].push_back(ie);
+        }
       }
     }
-    std::vector<std::vector<Eigen::Triplet<double>>> parts(near_.size());
+    std::vector<std::vector<Eigen::Triplet<double>>> parts(near_.size()), gparts(gout ? near_.size() : 0);
 #pragma omp parallel
     {
       ElementBlocks::Work w;
-      std::vector<double> Hb;
+      std::vector<double> Hb, Gb;
       std::vector<char> inS(ne_, 0);
 #pragma omp for schedule(dynamic, 1)
       for (int q = 0; q < int(near_.size()); ++q) {
@@ -374,7 +407,7 @@ class ElemHMatrix {
           const int B = L.cols[c];
           for (int k = 0; k < m; ++k) {
             const int a = pt_.perm[P.lo + k];
-            if ((mesh_.colloc[a].x - mesh_.dof_point[B]).norm() >= radius * hB[B]) continue;
+            if ((rows_[a].x - mesh_.dof_point[B]).norm() >= radius * hB[B]) continue;
             Eigen::Matrix3d v;
             for (int j = 0; j < 3; ++j)
               for (int i = 0; i < 3; ++i) v(i, j) = L.H[(3 * k + i) + size_t(M) * (3 * c + j)];
@@ -391,10 +424,34 @@ class ElemHMatrix {
               for (int i = 0; i < 3; ++i) parts[q].emplace_back(3 * a + i, 3 * B + j, v(i, j));
           }
         }
+        for (int c = 0; gout && c < int(L.tcols.size()); ++c) {
+          const int J = L.tcols[c];
+          for (int k = 0; k < m; ++k) {
+            const int a = pt_.perm[P.lo + k];
+            if ((rows_[a].x - ts_.points[J].x).norm() >= radius * hJ[J]) continue;
+            Eigen::Matrix3d v;
+            for (int j = 0; j < 3; ++j)
+              for (int i = 0; i < 3; ++i) v(i, j) = L.G[(3 * k + i) + size_t(M) * (3 * c + j)];
+            for (int ie : tsupp[J]) {
+              if (inS[ie]) continue;
+              const int nl = int(etdof_[ie].size());
+              Hb.resize(9 * nl);
+              Gb.resize(9 * nl);
+              eb_.row(a, ie, Hb.data(), Gb.data(), w);
+              const int l = int(std::find(etdof_[ie].begin(), etdof_[ie].end(), J) - etdof_[ie].begin());
+              for (int j = 0; j < 3; ++j)
+                for (int i = 0; i < 3; ++i) v(i, j) += Gb[3 * (3 * l + j) + i];
+            }
+            for (int j = 0; j < 3; ++j)
+              for (int i = 0; i < 3; ++i) gparts[q].emplace_back(3 * a + i, 3 * J + j, v(i, j));
+          }
+        }
         for (int ie : L.elems) inS[ie] = 0;
       }
     }
     for (auto& p : parts) out.insert(out.end(), p.begin(), p.end());
+    if (gout)
+      for (auto& p : gparts) gout->insert(gout->end(), p.begin(), p.end());
   }
 
   // Near-field entries as triplets (row, col, value) of H (rigid term included),
@@ -421,6 +478,8 @@ class ElemHMatrix {
     std::vector<int> elems;  // elements of the inadmissible element leaves
     std::vector<int> cols;   // global dofs (sorted)
     std::vector<float> H;    // 3 m x 3 nc, column-major
+    std::vector<int> tcols;  // kept traction dofs (sorted)
+    std::vector<float> G;    // 3 m x 3 nt
   };
   struct FarBlock {
     int pnode, enode, rank = 0;
@@ -428,10 +487,16 @@ class ElemHMatrix {
     std::vector<float> U;   // 3 m x r
     std::vector<float> W;   // r x 3 nc
     std::vector<float> D;   // dense fallback 3 m x 3 nc (rank = -1)
+    std::vector<int> tcols;  // kept traction dofs (sorted)
+    std::vector<float> WG;   // r x 3 nt
+    std::vector<float> DG;   // dense fallback 3 m x 3 nt
   };
 
   const Mesh& mesh_;
   const TractionSpace& ts_;
+  const std::vector<Collocation>& rows_;
+  std::vector<char> gk_;  // per traction dof: G column stored
+  bool any_g_ = false;
   ElemHOptions o_;
   ElementBlocks eb_;
   double mu_;
@@ -443,6 +508,8 @@ class ElemHMatrix {
   std::vector<NearLeaf> near_;
   std::vector<FarBlock> far_;
   Eigen::MatrixXd GC_, S_;  // S_: rigid-body row sums of Hraw
+  std::vector<double> dres_;  // float rounding residual of the folded rigid term, 9 per (row a, basis B)
+  std::vector<size_t> doff_;  // per row: offset into dres_
   Stats st_;
 
   using clock = std::chrono::steady_clock;
@@ -513,19 +580,33 @@ class ElemHMatrix {
         for (int ie : L.elems) all.insert(all.end(), edof_[ie].begin(), edof_[ie].end());
         L.cols = unique(all);
         const int nc = int(L.cols.size());
-        std::vector<double> H(size_t(3 * m) * 3 * nc, 0.0);
+        std::vector<int> allt;
+        for (int ie : L.elems)
+          for (int J : etdof_[ie])
+            if (gk_[J]) allt.push_back(J);
+        L.tcols = unique(allt);
+        const int nt = int(L.tcols.size());
+        std::vector<double> H(size_t(3 * m) * 3 * nc, 0.0), Gk(size_t(3 * m) * 3 * nt, 0.0);
         Eigen::MatrixXd gcl = Eigen::MatrixXd::Zero(3 * m, K_);
         for (int ie : L.elems) {
           const int nl = int(edof_[ie].size());
           Hb.resize(size_t(3 * m) * 3 * nl);
           Gb.resize(Hb.size());
-          eb_.block(pts, m, ie, Hb.data(), K_ ? Gb.data() : nullptr, 3 * m, w);
+          eb_.block(pts, m, ie, Hb.data(), K_ || nt ? Gb.data() : nullptr, 3 * m, w);
           pairs += m;
           for (int l = 0; l < nl; ++l) {
             const int c = int(std::lower_bound(L.cols.begin(), L.cols.end(), edof_[ie][l]) - L.cols.begin());
             for (int j = 0; j < 3; ++j) {
               const double* s = Hb.data() + size_t(3 * m) * (3 * l + j);
               double* d = H.data() + size_t(3 * m) * (3 * c + j);
+              for (int r = 0; r < 3 * m; ++r) d[r] += s[r];
+            }
+            const int J = etdof_[ie][l];
+            if (!gk_[J]) continue;
+            const int ct = int(std::lower_bound(L.tcols.begin(), L.tcols.end(), J) - L.tcols.begin());
+            for (int j = 0; j < 3; ++j) {
+              const double* s = Gb.data() + size_t(3 * m) * (3 * l + j);
+              double* d = Gk.data() + size_t(3 * m) * (3 * ct + j);
               for (int r = 0; r < 3 * m; ++r) d[r] += s[r];
             }
           }
@@ -537,12 +618,14 @@ class ElemHMatrix {
           }
         }
         L.H.assign(H.begin(), H.end());
+        L.G.assign(Gk.begin(), Gk.end());
         for (int k = 0; k < m; ++k) GC_.middleRows(3 * pts[k], 3) += gcl.middleRows(3 * k, 3);
       }
     }
     st_.near_leaves = int(near_.size());
     st_.near_pairs = pairs;
-    for (const NearLeaf& L : near_) st_.bytes_near += 4.0 * L.H.size() + 4.0 * L.cols.size();
+    for (const NearLeaf& L : near_)
+      st_.bytes_near += 4.0 * (L.H.size() + L.cols.size() + L.G.size() + L.tcols.size());
   }
 
   // ---------------------------------------------------------------- far blocks
@@ -656,7 +739,7 @@ class ElemHMatrix {
     };
     const int M = 3 * m, ne = int(elems.size());
     std::vector<Vec3> px(m), ex(ne);
-    for (int k = 0; k < m; ++k) px[k] = mesh_.colloc[pts[k]].x;
+    for (int k = 0; k < m; ++k) px[k] = rows_[pts[k]].x;
     for (int t = 0; t < ne; ++t) ex[t] = eb_.quad().elementCentre(elems[t]);
     std::vector<int> pord = fpsOrder(px), eord = fpsOrder(ex);
     std::vector<int> prow(m, -1), ecol(ne, -1);
@@ -977,8 +1060,17 @@ class ElemHMatrix {
         }
         F.cols = unique(all);
         const std::vector<int> tcols = unique(allt);
-        const int ncol = eoff.back(), nc = int(F.cols.size()), nt = int(tcols.size());
         const double gamma = 2.0 * mu_ / std::max((P.centre() - E.centre()).norm(), 1e-300);
+        std::vector<int> kept;  // positions in tcols of the kept traction dofs
+        for (int c = 0; c < int(tcols.size()); ++c)
+          if (gk_[tcols[c]]) { kept.push_back(c); F.tcols.push_back(tcols[c]); }
+        // kept G columns (3 per dof) of a matrix whose columns are the joint block's G part
+        auto keptG = [&](const Eigen::MatrixXd& Gpart) {
+          Eigen::MatrixXd o(Gpart.rows(), 3 * kept.size());
+          for (size_t c = 0; c < kept.size(); ++c) o.middleCols(3 * c, 3) = Gpart.middleCols(3 * kept[c], 3) / gamma;
+          return o;
+        };
+        const int ncol = eoff.back(), nc = int(F.cols.size()), nt = int(tcols.size());
         // assembly of unassembled columns -> [H global | G global]
         auto assemble = [&](const Eigen::MatrixXd& V, Eigen::MatrixXd& WH, Eigen::MatrixXd& WG) {
           WH = Eigen::MatrixXd::Zero(V.rows(), 3 * nc);
@@ -1069,9 +1161,17 @@ class ElemHMatrix {
             F.rank = r;
             F.U.assign(Uf.data(), Uf.data() + Uf.size());
             F.W.assign(Wf.data(), Wf.data() + Wf.size());
+            if (!kept.empty()) {
+              const Eigen::MatrixXd Wg = keptG(sv.matrixV().bottomRows(DG.cols()).leftCols(r).transpose());
+              F.WG.assign(Wg.data(), Wg.data() + Wg.size());
+            }
           } else {
             F.rank = -1;
             F.D.assign(DH.data(), DH.data() + DH.size());
+            if (!kept.empty()) {
+              const Eigen::MatrixXd Dg = keptG(DG);
+              F.DG.assign(Dg.data(), Dg.data() + Dg.size());
+            }
           }
           aw.t_rc += wt() - trc;
           continue;
@@ -1106,6 +1206,10 @@ class ElemHMatrix {
         F.U.assign(Uf.data(), Uf.data() + Uf.size());
         const Eigen::MatrixXd WHf = Wf.leftCols(3 * nc);
         F.W.assign(WHf.data(), WHf.data() + WHf.size());
+        if (!kept.empty()) {
+          const Eigen::MatrixXd Wg = keptG(Wf.rightCols(3 * nt));
+          F.WG.assign(Wg.data(), Wg.data() + Wg.size());
+        }
         if (K_) {
           const Eigen::MatrixXd g = Uf * ((Wf.rightCols(3 * nt) / gamma) * Cl);
           for (int kk = 0; kk < m; ++kk) gct.middleRows(3 * pts[kk], 3) += g.middleRows(3 * kk, 3);
@@ -1128,19 +1232,20 @@ class ElemHMatrix {
     double rs = 0.0;
     int nr = 0;
     for (const FarBlock& F : far_) {
-      st_.bytes_far += 4.0 * (F.U.size() + F.W.size() + F.D.size() + F.cols.size());
+      st_.bytes_far += 4.0 * (F.U.size() + F.W.size() + F.D.size() + F.cols.size() + F.WG.size() + F.DG.size() +
+                              F.tcols.size());
       if (F.rank >= 0) { rs += F.rank; ++nr; st_.max_rank = std::max(st_.max_rank, F.rank); }
     }
     st_.rank_mean = nr ? rs / nr : 0.0;
   }
 
-  // y = Hraw x (+ near rigid term if folded) ; with_far false: near only
-  void apply(const double* x, double* y, bool with_far) const {
+  // y = Hraw x (+ near rigid term if folded) - G t (kept columns; t may be null); with_far false: near only
+  void apply(const double* x, const double* t, double* y, bool with_far) const {
     const int N = 3 * np_;
     std::fill(y, y + N, 0.0);
 #pragma omp parallel
     {
-      std::vector<double> xl, yl, t;
+      std::vector<double> xl, yl;
 #pragma omp for schedule(dynamic, 4) nowait
       for (int q = 0; q < int(near_.size()); ++q) {
         const NearLeaf& L = near_[q];
@@ -1157,6 +1262,21 @@ class ElemHMatrix {
 #pragma omp simd
           for (int r = 0; r < M; ++r) yl[r] += h[r] * v;
         }
+        for (int c = 0; t && c < 3 * int(L.tcols.size()); ++c) {
+          const double v = -t[3 * L.tcols[c / 3] + c % 3];
+          const float* h = L.G.data() + size_t(M) * c;
+#pragma omp simd
+          for (int r = 0; r < M; ++r) yl[r] += h[r] * v;
+        }
+        for (int k = 0; !dres_.empty() && k < P.size(); ++k) {
+          const int a = pt_.perm[P.lo + k];
+          const double* r = dres_.data() + doff_[a];
+          for (const auto& [B, NB] : rows_[a].basis) {
+            for (int j = 0; j < 3; ++j)
+              for (int i = 0; i < 3; ++i) yl[3 * k + i] += r[3 * j + i] * x[3 * B + j];
+            r += 9;
+          }
+        }
         for (int k = 0; k < P.size(); ++k)
           for (int i = 0; i < 3; ++i) y[3 * pt_.perm[P.lo + k] + i] += yl[3 * k + i];  // rows disjoint per leaf
       }
@@ -1164,7 +1284,7 @@ class ElemHMatrix {
     if (!with_far) return;
 #pragma omp parallel
     {
-      std::vector<double> yp(N, 0.0), xl, t, yl;
+      std::vector<double> yp(N, 0.0), xl, tl, yl;
 #pragma omp for schedule(dynamic, 4) nowait
       for (int b = 0; b < int(far_.size()); ++b) {
         const FarBlock& F = far_[b];
@@ -1174,6 +1294,7 @@ class ElemHMatrix {
         for (int c = 0; c < nc; ++c)
           for (int j = 0; j < 3; ++j) xl[3 * c + j] = x[3 * F.cols[c] + j];
         yl.assign(M, 0.0);
+        const int nt = t ? int(F.tcols.size()) : 0;
         if (F.rank < 0) {
           for (int c = 0; c < 3 * nc; ++c) {
             const double v = xl[c];
@@ -1181,16 +1302,27 @@ class ElemHMatrix {
 #pragma omp simd
             for (int r = 0; r < M; ++r) yl[r] += h[r] * v;
           }
+          for (int c = 0; c < 3 * nt; ++c) {
+            const double v = -t[3 * F.tcols[c / 3] + c % 3];
+            const float* h = F.DG.data() + size_t(M) * c;
+#pragma omp simd
+            for (int r = 0; r < M; ++r) yl[r] += h[r] * v;
+          }
         } else {
           const int r = F.rank;
-          t.assign(r, 0.0);
+          tl.assign(r, 0.0);
           for (int c = 0; c < 3 * nc; ++c) {
             const double v = xl[c];
             const float* w = F.W.data() + size_t(r) * c;
-            for (int a = 0; a < r; ++a) t[a] += w[a] * v;
+            for (int a = 0; a < r; ++a) tl[a] += w[a] * v;
+          }
+          for (int c = 0; c < 3 * nt; ++c) {
+            const double v = -t[3 * F.tcols[c / 3] + c % 3];
+            const float* w = F.WG.data() + size_t(r) * c;
+            for (int a = 0; a < r; ++a) tl[a] += w[a] * v;
           }
           for (int a = 0; a < r; ++a) {
-            const double v = t[a];
+            const double v = tl[a];
             const float* u = F.U.data() + size_t(M) * a;
 #pragma omp simd
             for (int q = 0; q < M; ++q) yl[q] += u[q] * v;
@@ -1213,23 +1345,36 @@ class ElemHMatrix {
     for (int j = 0; j < 3; ++j) {
       t.setZero();
       for (int g = 0; g < mesh_.ndof; ++g) t(3 * g + j) = 1.0;
-      apply(t.data(), s.data(), true);
+      apply(t.data(), nullptr, s.data(), true);
       S.col(j) = s;
     }
+    // The fold H = Hraw - D is rounded to float; its rounding residual on these
+    // (self) entries is kept in double and added in apply: the diagonal term is
+    // a large difference, and its float error alone shifts stiff mixed problems
+    // (cantilever) by ~1e-4.
+    std::vector<double> dres;
+    doff_.assign(np_, 0);
     for (NearLeaf& L : near_) {
       const ClusterTree::Node& P = pt_.nodes[L.node];
       const int M = 3 * P.size();
       for (int k = 0; k < P.size(); ++k) {
         const int a = pt_.perm[P.lo + k];
-        for (const auto& [B, NB] : mesh_.colloc[a].basis) {
+        doff_[a] = dres.size();
+        for (const auto& [B, NB] : rows_[a].basis) {
           const auto it = std::lower_bound(L.cols.begin(), L.cols.end(), B);
           if (it == L.cols.end() || *it != B) throw std::runtime_error("ElemHMatrix: own dof not in the near field");
           const int c = int(it - L.cols.begin());
           for (int j = 0; j < 3; ++j)
-            for (int i = 0; i < 3; ++i) L.H[(3 * k + i) + size_t(M) * (3 * c + j)] -= float(NB * S(3 * a + i, j));
+            for (int i = 0; i < 3; ++i) {
+              float& h = L.H[(3 * k + i) + size_t(M) * (3 * c + j)];
+              const double v = double(h) - NB * S(3 * a + i, j);
+              h = float(v);
+              dres.push_back(v - double(h));
+            }
         }
       }
     }
+    dres_ = std::move(dres);
   }
 };
 

@@ -1,0 +1,17 @@
+// bracket_bolted.json on the hierarchical backend (src/hmat): the same bolt (fixed hole wall) and
+// elastic pad, solved by GMRES on the H-matrix instead of the dense LU. Meant for 20k-100k+
+// unknowns; here the 7k mesh as a regression test (ctest bc_bracket_bolted_hmat).
+{
+  "geometry": "../geo/step/bracket_exact_p3_h0.7_c3.dat",
+  "material": {"E": 3500, "nu": 0.36},
+  "solver": {"backend": "hmat", "eps": 1e-5},
+  "supports": [
+    {"label": "bolt", "face_id": 12, "fix": ["ux", "uy", "uz"]},
+    {"label": "pad", "face_id": 13, "select": {"box": [[-2, -1, -1], [-1.1, 1, 1]]}, "spring": {"k_n": 500, "k_t": 50}}
+  ],
+  "cases": [
+    {"name": "pull", "loads": [{"label": "end force", "face_id": 7, "force_N": 10, "direction": [1, 0, 0]}]},
+    {"name": "bend", "loads": [{"label": "end force", "face_id": 7, "force_N": 1, "direction": [0, 0, -1]}]}
+  ],
+  "output": {"csv": "results/bc_bracket_bolted_hmat.csv"}
+}

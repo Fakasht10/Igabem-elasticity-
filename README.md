@@ -126,7 +126,7 @@ values, not new numerics.
 | Tests | `tests/test_kernels.cpp`, `tests/test_regression.cpp` | Kernels; every validated result reproduced on a small mesh, including cache hit = fresh |
 | Problems | `problems/cube_cavity.hpp`, `problems/plate_hole.hpp`, `*_exact_gen.hpp` | Load cases, exact fields, quantities of interest, shared by drivers and tests |
 | Compression | `fast/sbie_entries.hpp`, `fast/vector_aca.hpp`, `fast/hmatrix_operator.hpp`, `fast/compressed_sbie.hpp` | H and G as hierarchical matrices on [Htool](https://github.com/htool-ddm/htool) (vendored in `third_party/htool`, MIT): entry callback for any rows x columns (same quadrature as the dense assembly), clustering that keeps the 3 components of a point together, 3 x 3-block ACA with SVD recompression, near field in one pass, rigid-body diagonal from the compressed H, leaves cached on disk. `CompressedSbie` is the counterpart of `OperatorRows` |
-| Hierarchical solver | `hmat/cluster_tree.hpp`, `hmat/element_blocks.hpp`, `hmat/elem_hmatrix.hpp`, `hmat/h_neumann.hpp` | Element-column H-matrix for 50k-100k+ unknowns (bemkit's design): point rows x element columns, sampled CUR on the joint [H \| gamma G] (G C applied during the build, G never stored), one-sided QR + Gram recompression, float storage; near-field sparse LU (UMFPACK) plus a 12-mode-per-aggregate affine coarse level bordered with the rigid modes; right-preconditioned GMRES |
+| Hierarchical solver | `hmat/cluster_tree.hpp`, `hmat/element_blocks.hpp`, `hmat/elem_hmatrix.hpp`, `hmat/coarse.hpp`, `hmat/two_level.hpp`, `hmat/h_neumann.hpp`, `hmat/h_mixed.hpp` | Element-column H-matrix for 50k-100k+ unknowns (bemkit's design): point rows x element columns, sampled CUR on the joint [H \| gamma G] (G C applied during the build, G never stored), one-sided QR + Gram recompression, float storage; near-field sparse LU (UMFPACK) plus a 12-mode-per-aggregate affine coarse level bordered with the rigid modes; right-preconditioned GMRES. `HMixed`: BcModel's mixed system (supports, springs, RBE2, inclusions) on any row set, G kept on the unknown tractions, dense LU of the supported-face traction block |
 | Tests | `tests/test_kernels.cpp`, `tests/test_regression.cpp`, `tests/test_hmatrix.cpp` | Kernels; every validated result reproduced on a small mesh, including cache hit = fresh; compressed operators against dense (entries, ACA tolerance, rigid modes, cache) |
 
 Not yet in the library: geometry refinement (still `python/make_geometries.py`). `patch_test` and `dirichlet_test` still
@@ -639,6 +639,49 @@ Against the gate set for this work (4 cores, 15 GB):
 `ctest -R hmat_kirsch` (5.8k, about 5 s) checks H x and G c against `DenseSbie` (to within 10 eps) and that the
 Kirsch error matches the dense value.
 
+#### Supports and loads on the hierarchical solver (`hmat/h_mixed.hpp`)
+
+`BcModel` (fixed supports, prescribed values, springs, RBE2, bonded inclusions, every load type) runs on the
+same operator with `"solver": {"backend": "hmat", "eps": 1e-5}` in a `bc_case` file, or `--hmat eps` in
+`bc_validate` / `region_validate`. The system and its right-hand sides are the dense path's. Only the solver
+changes:
+
+- **Rows** are the dof collocation points plus the traction points of the supported faces. **G is stored only
+  on the unknown and the interface tractions**, near and far (`full_g` stores it everywhere for smooth traction
+  data). Interface condensation (t_I = -S_I u_I) runs inside the product. Springs stay BcModel's dense block.
+- **Preconditioner:**
+  - Sparse LU of the near field, followed by a dense LU of the whole supported-face traction block (forward
+    block Gauss-Seidel).
+  - The affine coarse level, with separate displacement and traction aggregates, applied first.
+  - Why the dense block is needed: that block is a first-kind single layer. Truncated to a local pattern, even
+    at 4 h, it left the bolted bracket stalled after 1000 iterations. Kept whole, the solve converges in 22 to
+    61 iterations.
+  - The block costs nt² memory and nt³ factor work, where nt is the number of supported-face traction unknowns.
+  - GMRES runs to 1e-10, because RBE2 superposition needs it.
+- **Float storage, fixed:** the rigid-body diagonal folded into the float near field lost about 1e-4 on a stiff
+  cantilever. Its float rounding residual is now kept in double, at 9 values per (row, own basis function),
+  about 11 MB at 88k. The cantilever now matches dense to 1e-8, and the Neumann Kirsch error at eps 1e-6 is
+  6.3e-7, against 6.2e-7 for dense LU (it was 1.3e-6 at eps 1e-5).
+
+All eight dense validation cases also pass on this backend at eps 1e-8, with tolerances floored at the float
+storage level of 1e-7 (`ctest -R _hmat`): bar, half-space, cantilever, RBE2, patch, Lamé, Eshelby and the printed
+coupon.
+
+Bolted bracket from STEP (`cases/bracket_bolted_hmat.json`: bolt hole fixed, elastic pad, pull and bend), eps
+1e-5, 4 cores:
+
+| unknowns | backend | setup (s) | solve (s) | end to end (s) | iterations | peak (GB) | bend max \|u\| | bend max von Mises |
+|---|---|---|---|---|---|---|---|---|
+| 15.3k | dense LU | 98.3 | 2.1 | 100.4 | - | - | 2.076034 | 1506.460 |
+| 15.3k | hmat, eps 1e-5 | 17.1 | 11.0 | 28.5 | 37 / 60 | 1.5 | 2.075562 (2.3e-4) | 1506.162 (2.0e-4) |
+| 15.3k | hmat, eps 1e-6 | 38.1 | 11.7 | 49.8 | 37 / 60 | 1.5 | 2.076074 (1.9e-5) | 1506.512 (3.5e-5) |
+| 41.4k | hmat, eps 1e-5 | 62.7 | 20.9 | 83.9 | 22 / 35 | 4.7 | 2.074222 | 1869.2 |
+| 56.7k | hmat, eps 1e-5 | 113.6 | 34.4 | 148.2 | 24 / 36 | 7.4 | 2.074826 | 1689.1 |
+
+The pull case agrees with dense to 2e-6. The peak von Mises does not converge under refinement: it sits on the
+re-entrant edge at (-0.60, 0, ±0.1), a stress singularity, and needs the TCD layer, not a finer mesh. At 57k the
+elastic pad's dense spring block is the largest single cost: 48 s, and about 1 GB for 488 elements.
+
 ### Failure layer (`python/failure`), treecode and RBE2
 
 nurb-fea-tcd's failure layer (material cards, hot spots, MATS / bisector path, CP-series regression, TCD / Energy
@@ -675,7 +718,10 @@ the same offset. The project's ABS card, with no fit to these tests, lands withi
    patches; partial regions take loads and springs).
 2. Thin curved plate (cylindrical panel built as exact NURBS): Neumann patch test for t/R = 10⁻¹…10⁻³,
    then Scordelis–Lo as a 3D solid.
-3. Hierarchical solver beyond 100k: a 50k run to close the gate, then H² or adaptive-precision far blocks (Kriemann 2023) if memory binds; mixed BCs (`BcModel`) on `src/hmat`.
+3. Hierarchical solver beyond 100k: springs through the H-matrix (G kept on the spring faces) instead of the
+   dense spring block; a compressed or coarse-space supported-face traction block for large clamp faces
+   (it costs nt² memory and nt³ factor work today); H² or adaptive-precision far blocks (Kriemann 2023) if
+   memory binds.
 4. General multi-domain coupling (regions that reach the outer surface, inserts, bimaterial bars);
    the bracket with two walls and a gyroid core from an inward offset of its outer patches; the TCD
    failure layer on the wall stresses.

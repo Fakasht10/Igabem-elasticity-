@@ -3,7 +3,7 @@ that app/bc_case reads (src/case_io.hpp).
 
     case                  geometry, faces map, cache, notes
       material  (one)     E, nu
-      solver    (one)     n_gauss, far_tol
+      solver    (one)     n_gauss, far_tol, backend, eps, gtol, radius, coarse
       grade     (one)     mesh graded towards supports (python/grade_dat.py)
       selection (many)    a named surface: a region supports and loads refer to by {"name": ...}
       support   (many)    fixed | symmetry | spring | rbe2, on a region
@@ -84,7 +84,13 @@ register(NodeType("material", "Material", "mat", singleton=True, props=(
 
 register(NodeType("solver", "Solver", "solver", singleton=True, props=(
     Prop("n_gauss", "int", doc="Gauss points per direction"),
-    Prop("far_tol", "float", doc="far-field quadrature tolerance")), doc="Quadrature settings."))
+    Prop("far_tol", "float", doc="far-field quadrature tolerance"),
+    Prop("backend", "str", doc="dense (LU, to ~25k unknowns) or hmat (H-matrix + GMRES, 20k-100k+)"),
+    Prop("eps", "float", doc="hmat: far-block compression tolerance (1e-5 design, 1e-6 verification)"),
+    Prop("gtol", "float", doc="hmat: GMRES relative residual"),
+    Prop("radius", "float", doc="hmat: near-field preconditioner radius, in element diameters"),
+    Prop("coarse", "int", doc="hmat: coarse-level aggregate size in points (0: off)")),
+    doc="Quadrature and solver settings."))
 
 register(NodeType("grade", "Grading", "grade", singleton=True, props=(
     Prop("faces", "ints", doc="CAD faces to grade towards"),

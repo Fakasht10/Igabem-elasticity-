@@ -6,7 +6,7 @@
 // {
 //   "geometry": "geo/step/bracket_exact_p3_h0.7_c3.dat",   // .faces next to it
 //   "material": {"E": 2000, "nu": 0.35},
-//   "solver": {"n_gauss": 12, "far_tol": 1e-10},
+//   "solver": {"n_gauss": 12, "far_tol": 1e-10},          // + "backend": "hmat", "eps": 1e-5 (20k-100k+ DOF)
 //   "grade": {"faces": [3], "inner": [1, 13], "h0": 0.025},   // mesh graded towards supports
 //   "names": {"clamp": {"face_id": 3}, "slot": {"face_ids": [8, 9]}},  // named surfaces
 //   "supports": [
@@ -140,6 +140,11 @@ struct CaseFile {
     if (J.has("solver")) {
       opt.n_gauss = int(J["solver"].get("n_gauss", double(opt.n_gauss)));
       opt.far_tol = J["solver"].get("far_tol", opt.far_tol);
+      model.hsolver.on = J["solver"].get("backend", std::string("dense")) == "hmat";
+      model.hsolver.o.h.eps = J["solver"].get("eps", model.hsolver.o.h.eps);
+      model.hsolver.o.gtol = J["solver"].get("gtol", model.hsolver.o.gtol);
+      model.hsolver.o.radius = J["solver"].get("radius", model.hsolver.o.radius);
+      model.hsolver.o.coarse = int(J["solver"].get("coarse", double(model.hsolver.o.coarse)));
     }
     if (J.has("output")) {
       vtu = J["output"].get("vtu", std::string());

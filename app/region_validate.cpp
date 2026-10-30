@@ -36,10 +36,12 @@ using namespace igabem;
 namespace {
 
 bool g_check = false;
+static BcModel::HSolver g_hsolver;  // --hmat eps
 int g_fail = 0;
 
 void check(const char* name, double got, double want, double tol) {
   if (!g_check) return;
+  if (g_hsolver.on) tol = std::max(tol, 1e-7 * std::max(1.0, std::abs(want)));  // float operator storage floor
   const bool ok = std::abs(got - want) <= tol;
   std::printf("  check %-38s %s  got %.8e  want %.8e  tol %.1e\n", name, ok ? "ok  " : "FAIL", got, want, tol);
   if (!ok) ++g_fail;
@@ -92,6 +94,7 @@ struct Composite {
       mr.add(model.mesh, model.ts, "core", core, m2, model.opt, model.popt, cache);
       model.regions = &mr;
     }
+    model.hsolver = g_hsolver;
     model.setupOn(host, std::move(sup), {}, cache);
     t_setup = now() - t0;
   }
@@ -305,6 +308,7 @@ int coupon(const std::string& host, const std::string& core, const std::vector<d
     }
     model.regions = rho > 0.0 ? &mr : nullptr;
     mr.t_condense = 0.0;
+    model.hsolver = g_hsolver;
     model.setupOn(host, sup, {}, cache);
     LoadCase lc;
     lc.name = "pull";
@@ -374,6 +378,12 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--contrast")) contrast = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--rho")) rhos = parseList(argv[++i]);
     else if (!std::strcmp(argv[i], "--check")) g_check = true;
+    else if (!std::strcmp(argv[i], "--hmat")) {  // hierarchical backend at tolerance eps
+      g_hsolver.on = true;
+      g_hsolver.o.full_g = true;  // the exact cases carry smooth traction data
+      g_hsolver.o.h.eps = std::atof(argv[++i]);
+      g_hsolver.o.h.tol = 1e-10;  // entry quadrature as the dense far_tol
+    } else if (!std::strcmp(argv[i], "--hmat-tol")) g_hsolver.o.h.tol = std::atof(argv[++i]);  // entry quadrature
     else if (!std::strcmp(argv[i], "--cache")) { cache = argv[++i]; if (cache == "none") cache.clear(); }
   }
   int rc = -1;
