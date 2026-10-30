@@ -23,6 +23,7 @@ curvature 16, focus sphere 1.5 L with element size min(0.15, rho / 6).
 from __future__ import annotations
 
 import contextlib
+import math
 import os
 import time
 
@@ -64,6 +65,20 @@ def _force_N(model, case):
 def weibull_params(n, material):
     """(m, S0, V0, source) of a weibull node; a card must agree with the material node, as in strength()."""
     p = n.props
+    if "orientation_card" in p:
+        from failure import aniso
+        c = aniso.load_card(p["orientation_card"])
+        if "weibull" not in c:
+            raise ModelError(f"{n.tag}: orientation card {p['orientation_card']} has no Weibull calibration "
+                             f"({c.get('domain', '')})")
+        for k, ck in (("E", "E_MPa"), ("nu", "nu")):
+            if abs(c[ck] - material[k]) > 1e-12 * abs(c[ck]):
+                raise ModelError(f"{n.tag}: card {p['orientation_card']} has {k} = {c[ck]:g}, the material node "
+                                 f"{material[k]:g}")
+        pr = aniso.Print(build_dir=tuple(p.get("build_dir", (0.0, 0.0, 1.0))),
+                         angles_deg=aniso.parse_layup(p.get("layup", "45/-45")),
+                         ref_dir=tuple(p.get("ref_dir", (1.0, 0.0, 0.0))))
+        return {"card": c, "print": pr, "source": f"orientation card {p['orientation_card']}"}
     if "card" in p:
         from failure import materials
         c = materials.card(p["card"])
@@ -79,8 +94,51 @@ def weibull_params(n, material):
     return p["m"], p["S0"], p.get("V0", 1.0), "m, S0 set"
 
 
+def _orient_rows(model, n, params, run, mesh, t_geo, log):
+    """Print-orientation weakest link (failure/aniso.py): competing modes, gradient support, and the failure load at
+    a probability from the card's physical scatter and model error (failure/prob.py), not from the hazard's m."""
+    from failure import aniso, prob
+    from failure.fields import tet10_gradient, tet10_quadrature
+    card, pr = params["card"], params["print"]
+    m = card["weibull"]["m"]
+    support = any("support_mm" in v for v in card["weibull"]["modes"].values())
+    P, w, _ = tet10_quadrature(mesh.points, mesh.cells, np.zeros((len(mesh.points), 1)))
+    on = np.zeros(len(mesh.points), bool)
+    on[np.unique(mesh.surface_tri6)] = True
+    sc = card.get("scatter")
+    rows = []
+    for case in n.props.get("cases") or run.cases:
+        t = time.perf_counter()
+        view = run.view(case)
+        sig, wind = view.stress(P)
+        grad = tet10_gradient(mesh.points, mesh.cells, view.stress(mesh.points, on)[0]) if support else None
+        lh = aniso.mode_hazards(sig, w, card["weibull"], pr, grad)
+        eta = aniso.characteristic_load(lh, m)
+        mean = eta * math.gamma(1.0 + 1.0 / m)
+        F, q = _force_N(model, case), n.props.get("probability")
+        row = {"weibull": n.props.get("label", n.tag), "case": case, "params": params["source"], "m": m,
+               "build_dir": list(pr.build_dir), "layup": list(pr.angles_deg), "log_hazard": lh,
+               "mode_shares": aniso.mode_shares(lh), "governing_mode": max(lh, key=lh.get),
+               "factor_characteristic": eta, "factor_mean": mean, "domain": card.get("domain"),
+               "gauss_points": int(len(P)), "volume_mm3": float(w.sum()), "points_outside": int((wind < 0.5).sum()),
+               "unknowns": _unknowns(run.report), "t_geometry_s": round(t_geo, 1), "t_solve_s": round(run.seconds, 1)}
+        if q and sc:
+            phys, full = prob.Scatter(sc["m_s"]), prob.Scatter(sc["m_s"], sc.get("bias", 0.0), sc.get("tau", 0.0))
+            row.update(probability=q, factor_at_probability=full.load_at(q, mean),
+                       factor_at_probability_physical=phys.load_at(q, mean), scatter=sc)
+        elif q:
+            row["probability_note"] = "the card has no scatter block: no load at a probability"
+        if F:
+            for k in ("characteristic", "mean") + (("at_probability", "at_probability_physical") if q and sc else ()):
+                row[f"failure_load_{k}_N"] = F * row[f"factor_{k}"]
+        row["t_assess_s"] = round(time.perf_counter() - t, 1)
+        rows.append(row)
+    return rows
+
+
 def _weibull_rows(model, n, params, run, mesh, t_geo, log):
-    import math
+    if isinstance(params, dict):
+        return _orient_rows(model, n, params, run, mesh, t_geo, log)
     from failure import weibull as W
     from failure.fields import tet10_quadrature
     m, S0, V0, src = params
@@ -94,7 +152,9 @@ def _weibull_rows(model, n, params, run, mesh, t_geo, log):
         F, q = _force_N(model, case), n.props.get("probability")
         row = {"weibull": n.props.get("label", n.tag), "case": case, "params": src, "m": m, "S0": S0, "V0": V0,
                "log_J": logJ, "factor_characteristic": eta, "factor_mean": eta * math.gamma(1.0 + 1.0 / m),
-               **({"probability": q, "factor_at_probability": eta * (-math.log1p(-q)) ** (1.0 / m)} if q else {}),
+               **({"probability": q, "factor_at_probability": eta * (-math.log1p(-q)) ** (1.0 / m),
+                   "probability_note": "uses the volume-law m as the scatter modulus; far too pessimistic for "
+                                       "calibrated PLA (failure/prob.py, orientation cards)"} if q else {}),
                "gauss_points": int(len(P)), "volume_mm3": float(w.sum()), "points_outside": int((wind < 0.5).sum()),
                "unknowns": _unknowns(run.report), "t_geometry_s": round(t_geo, 1), "t_solve_s": round(run.seconds, 1),
                "t_assess_s": round(time.perf_counter() - t, 1)}

@@ -14,6 +14,12 @@ TCD / Energy TCD / ASED, Weibull) running on IgBEM solutions. The criteria code 
 | `validate_cicero.py` | Cicero et al. 2020 ABS SENB, four radii, against measured loads |
 | `weibull_parity.py` | log J(m) of the PLA UB / US quarters against the NGSolve reductions the PLA cards were fitted on |
 | `test_failure.py` | fast unit checks (ctest `failure_layer_unit`) |
+| `aniso.py` | print orientation: ply frames (build direction + layup), modes F / T / L (Hashin form, tension only) and P (isotropic), competing-risk weakest link with optional gradient support, build-direction sweep, per-mode TCD point method, orientation cards. Pure numpy, vendorable |
+| `prob.py` | failure probability of a predicted load: physical scatter m_s from replicates, model error as a family random effect, P_f(F), load at P |
+| `pla_orient.py` | G3/G4: one PLA card for all rasters (Ahmed & Susmel 54 rows), three models, campaign split and leave-one-family-out, band coverage |
+| `cicero_orient.py` | G6: one per-mode TCD card for the three Cicero ABS layups, in sample and leave-one-layup-out |
+| `data/orientation_cards.json` | the fitted cards, their scatter blocks and domains (`*-demo-L` is a demonstration, not data) |
+| `test_aniso.py` | G1 (mode P bit-identical to `weibull.py`), G2 (off-axis bar closed form), G5 (PETG +-45), G8, kernels (ctest `failure_orientation_unit`) |
 
 ## Local changes to the vendored files
 
@@ -32,6 +38,29 @@ TCD / Energy TCD / ASED, Weibull) running on IgBEM solutions. The criteria code 
   treecode (`src/treecode.hpp`, ~1e-7 of max |sigma|), nearer than 0.05 h to the surface through the direct
   near-singular evaluator. Displacement inside the body is a harmonic extension for display only.
 
+## Print orientation and failure probability
+
+The isotropic IgBEM stress is kept; anisotropy is in the strength. A print is a build direction d and plies
+[theta, theta - 90] about d. Modes per ply (frame e1 filament, e2, e3 = d): F = sqrt(<s11>^2 + (X/S12)^2 (s12^2 +
+s13^2)), T = sqrt(<s22>^2 + (Y/S12)^2 s12^2), L = sqrt(<s33>^2 + (Z/S13)^2 (s13^2 + s23^2)). Their hazards add
+(one m), so the characteristic load stays closed form. The gradient support n = 1 + sqrt(l |grad s| / s) (Maede,
+Schmitz, Gottschalk & Beck 2017) lets m be the physical scatter modulus while the notch effect comes from l.
+
+Results (2026-10-30, `results/fig_orient_validation.png`):
+
+| gate | result |
+|---|---|
+| G1 mode P vs `weibull.py` | bit-identical log J |
+| G3 PLA, one card for 0/30/45 | leave-one-family-out RMSE 8.4 % (per-angle isotropic cards 9.7 %); campaign held-out 10.0 % (10.9 %) |
+| G4 PLA 90 % band | covers 89 % with scatter + model error (scatter alone 35 %) |
+| G6 Cicero ABS, one TCD card for 3 layups | -8.9 .. +7.5 % (rms 4.2 %), leave-one-layup-out rms 7.5 % (per-layup isotropic, recalibrated: 7.7 %) |
+| G5 out-of-plane | no build-tilt data found; in-plane PETG +-45 (Popa 2025): -3.2 % |
+
+Physical scatter: within-group log-std 0.034 (36 dof), m_s 37.5. The volume-law m (about 4.1) is not the scatter:
+with it the 1 % load is 0.36 of the mean, with m_s and the model error 0.83. The PLA support length (4.1 mm, the
+half-ligament is 7.5 mm) absorbs net-section yielding; it is not a material length. Shear sensitivity Y/S12 is
+1.8-2.1 across PLA, ABS and PETG. The model tree's weibull node takes `orientation_card`, `build_dir`, `layup`.
+
 ## Runs
 
 ```
@@ -41,4 +70,9 @@ python3 -m failure.validate_cicero --card ABS-M30-iso --sigma-uts 65   # cicero_
 python3 -m failure.weibull_parity       # ~2 min, card pla-raster-0-weibull, results/failure/weibull_parity.json
 python3 plot_failure.py                 # results/fig_failure.png
 python3 -m unittest failure.test_failure
+python3 -m failure.pla_orient           # fields ~3 min per family once (OS: --hmat), fit ~20 min with LOFO
+python3 -m failure.cicero_orient        # 4 solves ~1 min each once, fit seconds
+python3 -m igamodel.gate_orient         # weibull node with an orientation card = pla_orient (bitwise)
+python3 plot_orient.py                  # figures + VTU; the 1500-direction sweep ~5 min, cached
+python3 -m unittest failure.test_aniso
 ```

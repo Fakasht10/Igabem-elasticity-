@@ -179,6 +179,8 @@ register(NodeType("submodel", "Submodel", "sub", rule=submodel_rule, props=(
 def weibull_rule(props, region):
     if "card" in props and ("m" in props or "S0" in props):
         raise ModelError("a weibull check takes m and S0 from its card or from m and S0, not both")
+    if "orientation_card" in props and ({"card", "m", "S0"} & set(props)):
+        raise ModelError("an orientation card replaces card, m and S0")
 
 
 register(NodeType("weibull", "Weibull", "wb", rule=weibull_rule, props=(
@@ -189,6 +191,11 @@ register(NodeType("weibull", "Weibull", "wb", rule=weibull_rule, props=(
     Prop("S0", "float", "MPa", doc="scale stress at V0, without a card"),
     Prop("V0", "float", "mm^3", doc="reference volume; unset = the card's, or 1"),
     Prop("probability", "float", doc="also report the load at this failure probability (0 < P < 1)"),
+    Prop("orientation_card", "str", doc="print-orientation card (failure/data/orientation_cards.json): modes, "
+                                        "gradient support, scatter; replaces card, m and S0"),
+    Prop("build_dir", "vec3", doc="build direction in part coordinates; unset = z"),
+    Prop("layup", "str", doc="ply angles about the build direction, e.g. 45/-45; one angle = cross-ply; unset = 45/-45"),
+    Prop("ref_dir", "vec3", doc="in-plane reference axis of the layup angles; unset = x"),
     Prop("mesh_h", "float", "mm", doc="TET10 size of the integration mesh; unset = 2.5"),
     Prop("mesh_curvature", "int", doc="TET10 elements per radian; unset = 16"),
     Prop("focus_point", "vec3", "mm", doc="centre of a refinement sphere of the integration mesh"),

@@ -67,6 +67,8 @@ find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_FOUND)
   add_test(NAME failure_layer_unit COMMAND ${Python3_EXECUTABLE} -m unittest failure.test_failure
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
+  add_test(NAME failure_orientation_unit COMMAND ${Python3_EXECUTABLE} -m unittest failure.test_aniso
+           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
   add_test(NAME model_tree_unit COMMAND ${Python3_EXECUTABLE} -m unittest igamodel.test_igamodel
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
   add_test(NAME model_backends_unit COMMAND ${Python3_EXECUTABLE} -m unittest igamodel.test_backends

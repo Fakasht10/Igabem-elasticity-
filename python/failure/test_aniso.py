@@ -8,6 +8,7 @@ import unittest
 import numpy as np
 
 from . import aniso as A
+from . import prob
 from . import weibull as W
 from .fields import tet10_gradient, tet10_quadrature
 
@@ -39,6 +40,10 @@ class Frames(unittest.TestCase):
         np.testing.assert_allclose(R[0], np.eye(3), atol=1e-15)          # 0 deg: filament along x
         np.testing.assert_allclose(R[1][:, 0], [0, 1, 0], atol=1e-15)    # 90 deg: filament along y
 
+    def test_reference_parallel_to_build_direction(self):
+        R = A.ply_frames([[0, 1, 0], [1, 0, 0]], [0.0], ref_dir=(0, 1, 0))
+        self.assertLess(np.abs(np.einsum("dpia,dpib->dpab", R, R) - np.eye(3)).max(), 1e-12)
+
     def test_hemisphere(self):
         d = A.fibonacci_hemisphere(400)
         self.assertTrue(np.allclose(np.linalg.norm(d, axis=1), 1.0) and (d[:, 2] >= 0).all())
@@ -66,7 +71,7 @@ class G1IsotropicReduction(unittest.TestCase):
 
 class G2OffAxisBar(unittest.TestCase):
     """Uniform uniaxial stress at theta to the layer plane, unidirectional ply along its in-plane projection."""
-    card = {"m": 8.0, "modes": {"F": {"S0_MPa": 60.0}, "T": {"S0_MPa": 40.0, "shear_ratio": 1.3},
+    card = {"m": 8.0, "modes": {"F": {"S0_MPa": 60.0, "shear_ratio": 0.7}, "T": {"S0_MPa": 40.0, "shear_ratio": 1.3},
                                 "L": {"S0_MPa": 30.0, "shear_ratio": 1.6}}}
 
     def test_matches_closed_form(self):
@@ -133,7 +138,7 @@ class Gradients(unittest.TestCase):
         s0 = s0 + np.diag([80.0, 60.0, 70.0])                            # tensile normals: every mode active
         R = A.ply_frames([0.2, 0.1, 1.0], [20.0])[0]
         h = 1e-6
-        for k, r in (("P", 1.0), ("F", 1.0), ("T", 1.4), ("L", 0.8)):
+        for k, r in (("P", 1.0), ("F", 0.0), ("F", 1.9), ("T", 1.4), ("L", 0.8)):
             fd = np.array([(A.mode_stress(k, (s0 + h * ds[:, :, l])[None], R, r)
                             - A.mode_stress(k, (s0 - h * ds[:, :, l])[None], R, r)).ravel()[0] / (2 * h)
                            for l in range(3)])
@@ -148,6 +153,90 @@ class Gradients(unittest.TestCase):
         eff = s / A.support_factor(s, s / (2 * r), l)
         self.assertAlmostEqual(eff[0], K / math.sqrt(math.pi * l), delta=1e-3 * eff[0])
         self.assertTrue(np.all(np.diff(eff) < 0))
+
+
+class Probability(unittest.TestCase):
+    def test_physical_scatter_is_weibull(self):
+        sc = prob.Scatter(m_s=46.0)
+        g = math.gamma(1 + 1 / 46.0)
+        for F in (2500.0, 3000.0, 3200.0):
+            self.assertAlmostEqual(sc.cdf(F, 3100.0)[0], 1 - math.exp(-(F * g / 3100.0) ** 46.0), places=13)
+        self.assertAlmostEqual(sc.load_at(0.01, 3100.0) / 3100.0, (-math.log(0.99)) ** (1 / 46.0) / g, places=10)
+
+    def test_model_error_widens_band(self):
+        a, b = prob.Scatter(46.0), prob.Scatter(46.0, tau=0.08)
+        self.assertLess(b.load_at(0.01, 1.0), a.load_at(0.01, 1.0))
+        self.assertAlmostEqual(b.cdf(b.load_at(0.3, 1.0), 1.0)[0], 0.3, places=9)
+
+    def test_scatter_modulus_recovers_m(self):
+        g = np.random.default_rng(1)
+        groups = [3000.0 * g.weibull(40.0, 3) for _ in range(4000)]
+        m_s, s, dof = prob.scatter_modulus(groups)
+        self.assertEqual(dof, 8000)
+        self.assertAlmostEqual(m_s / 40.0, 1.0, delta=0.02)
+
+    def test_family_effects(self):
+        fam = np.repeat(["a", "b", "c", "d"], 3)
+        res = np.repeat([0.1, -0.1, 0.05, -0.05], 3)
+        b, tau, off = prob.family_effects(res, fam, 0.0)
+        self.assertAlmostEqual(b, 0.0, places=14)
+        self.assertAlmostEqual(tau, float(np.std([0.1, -0.1, 0.05, -0.05], ddof=1)), places=14)
+        self.assertAlmostEqual(off["a"], 0.1, places=14)
+
+
+class TcdPoint(unittest.TestCase):
+    def test_isotropic_mode_is_the_stress_point_method(self):
+        d = np.linspace(0, 2, 201)
+        sig = np.zeros((len(d), 3, 3))
+        sig[:, 0, 0] = 50.0 / np.sqrt(1 + d)
+        K, s0 = 120.0, 40.0
+        out, gov = A.tcd_point(sig, d, {"modes": {"P": {"K": K, "sigma_0": s0}}})
+        L = (K / s0) ** 2 / math.pi
+        self.assertEqual(gov, "P")
+        self.assertAlmostEqual(out["P"]["ratio"], float(np.interp(L / 2, d, sig[:, 0, 0])) / s0, places=12)
+
+    def test_weak_bond_governs_transverse_load(self):
+        d = np.linspace(0, 2, 201)
+        sig = np.zeros((len(d), 3, 3))
+        sig[:, 0, 0] = 30.0
+        card = {"modes": {"F": {"K": 150.0, "sigma_0": 60.0}, "T": {"K": 80.0, "sigma_0": 40.0}}}
+        out, gov = A.tcd_point(sig, d, card, A.Print(angles_deg=(90.0,)))   # filament along y, load along x
+        self.assertEqual(gov, "T")
+        self.assertAlmostEqual(out["T"]["ratio"], 0.75, places=12)
+        self.assertLess(out["F"]["ratio"], 1e-15)
+
+
+class G5PetgOffAxis(unittest.TestCase):
+    """In-plane off-axis check on literature data (out-of-plane build-tilt data was not found): Popa, Galatanu &
+    Marsavina, Frattura ed Integrita Strutturale 19(73) 153-165, 2025, PETG, uncontoured, Table 2 and text:
+    X 55.21, Y 48.89, S12 26.83 (0 deg shear) MPa; a +-45 deg laminate measured 48.62 MPa (Tsai-Hill: 48.9)."""
+
+    def test_pm45_laminate_strength(self):
+        X, Y, S12, measured = 55.21, 48.89, 26.83, 48.62
+        R = A.ply_frames([0, 0, 1], [45.0, -45.0])[0]
+        sig = np.diag([1.0, 0.0, 0.0])[None]                             # unit uniaxial stress along x
+        c, _ = A.components(sig, R)
+        ratio = max(float(A.mode_from_components("F", c, X / S12)[p, 0]) / X for p in range(2))
+        ratio = max(ratio, max(float(A.mode_from_components("T", c, Y / S12)[p, 0]) / Y for p in range(2)))
+        self.assertLess(abs(1.0 / ratio / measured - 1.0), 0.05)        # first-ply mode strength 47.05 MPa, -3.2 %
+
+
+class Cards(unittest.TestCase):
+    def test_cards_load_and_domain_is_explicit(self):
+        pla = A.load_card("pla-as2018-orient")
+        self.assertEqual(set(pla["weibull"]["modes"]), {"F", "T"})          # L is off: no data
+        demo = A.load_card("pla-as2018-orient-demo-L")
+        self.assertIn("L", demo["weibull"]["modes"])
+        self.assertIn("DEMONSTRATION", demo["name"])
+
+    def test_g8_abs_card_is_flagged_out_of_calibration(self):
+        abs_ = A.load_card("abs-cicero2020-orient")
+        self.assertNotIn("weibull", abs_)                                    # TCD only
+        self.assertIn("Ng-Susmel", abs_["domain"])
+
+    def test_layup(self):
+        self.assertEqual(A.parse_layup("30"), (30.0, -60.0))
+        self.assertEqual(A.parse_layup("45/-45"), (45.0, -45.0))
 
 
 if __name__ == "__main__":
