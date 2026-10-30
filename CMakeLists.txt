@@ -52,4 +52,6 @@ if(Python3_FOUND)
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
   add_test(NAME model_tree_unit COMMAND ${Python3_EXECUTABLE} -m unittest igamodel.test_igamodel
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
+  add_test(NAME model_backends_unit COMMAND ${Python3_EXECUTABLE} -m unittest igamodel.test_backends
+           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
 endif()

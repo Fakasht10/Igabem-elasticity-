@@ -182,6 +182,10 @@ class Solve:
 
     def stress(self, points, on_surface=None, case=None):
         """(n, 3, 3) stress tensors and (n,) winding numbers (1 inside, 0 outside, 0.5 surface)."""
+        return self.stress_all(points, on_surface)[case or self.cases[0]]
+
+    def stress_all(self, points, on_surface=None):
+        """{load case: (stress, winding)}: one evaluation gives every load case (they share the operator)."""
         P = np.atleast_2d(np.asarray(points, float))
         on = np.zeros(len(P), bool) if on_surface is None else np.broadcast_to(np.asarray(on_surface, bool), len(P))
         self.n += 1
@@ -191,17 +195,19 @@ class Solve:
         self.proc.stdin.write(f"points {src} {prefix}\n")
         self.proc.stdin.flush()
         self.last_report = self._until_ready()
-        name = case or self.cases[0]
-        d = np.loadtxt(f"{prefix}_{name}.txt", ndmin=2)
-        s = np.empty((len(d), 3, 3))
-        s[:, 0, 0], s[:, 1, 1], s[:, 2, 2] = d[:, 3], d[:, 4], d[:, 5]
-        s[:, 0, 1] = s[:, 1, 0] = d[:, 6]
-        s[:, 1, 2] = s[:, 2, 1] = d[:, 7]
-        s[:, 2, 0] = s[:, 0, 2] = d[:, 8]
+        out = {}
+        for name in self.cases:
+            d = np.loadtxt(f"{prefix}_{name}.txt", ndmin=2)
+            s = np.empty((len(d), 3, 3))
+            s[:, 0, 0], s[:, 1, 1], s[:, 2, 2] = d[:, 3], d[:, 4], d[:, 5]
+            s[:, 0, 1] = s[:, 1, 0] = d[:, 6]
+            s[:, 1, 2] = s[:, 2, 1] = d[:, 7]
+            s[:, 2, 0] = s[:, 0, 2] = d[:, 8]
+            out[name] = (s, d[:, 9])
         for path in [src] + [f"{prefix}_{c}.txt" for c in self.cases]:
             if os.path.exists(path):
                 os.unlink(path)
-        return s, d[:, 9]
+        return out
 
     def close(self):
         if self.proc.poll() is None:

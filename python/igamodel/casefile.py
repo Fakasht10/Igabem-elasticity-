@@ -1,7 +1,7 @@
 """Case files (src/case_io.hpp) <-> the model tree.
 
-`from_case` reads a case dict into a tree, `to_case` writes the tree back as
-the same dict; `read_case` / `write_case` do the same with files, keeping the
+`from_case` reads a case dict into a tree (`merge_case` into an existing one),
+`to_case` writes the tree back as the same dict; `read_case` / `write_case` do the same with files, keeping the
 comment block at the top of the file (the case's notes). Comments inside the
 JSON body are not kept. Every key a case file may hold is modelled; any other
 key is refused, never dropped, because bc_case would ignore it silently.
@@ -63,12 +63,21 @@ def _split(kind: str, entry: dict, what: str) -> dict:
 
 def from_case(case: dict, notes: str = "") -> Model:
     """A case dict into a new tree. Checks everything before returning."""
+    m = Model()
+    merge_case(m, case, notes)
+    to_case(m)            # the same completeness checks as on write
+    return m
+
+
+def merge_case(m: Model, case: dict, notes: str = "") -> Model:
+    """Add a case dict's settings, supports and load cases to a tree, each through
+    a checked operation. Completeness is left to to_case, so a tree can be built in
+    steps (cad first, geometry generated later)."""
     if not isinstance(case, dict):
         raise ModelError("a case file is a JSON object")
     unknown = set(case) - set(TOP)
     if unknown:
         raise ModelError(f"case file has keys the model does not hold: {sorted(unknown)}")
-    m = Model()
     root = m.root.tag
     props = {k: case[k] for k in ("geometry", "faces", "cache") if k in case}
     if notes:
@@ -88,7 +97,6 @@ def from_case(case: dict, notes: str = "") -> Model:
                       "props": {**({"name": c["name"]} if "name" in c else {}), **({"top": True} if top else {})}})
         for j, ld in enumerate(c.get("loads", [])):
             m.apply({"op": "add", "parent": lc, "kind": "load", **_split("load", ld, f"load {j} of case {i}")})
-    to_case(m)            # the same completeness checks as on write
     return m
 
 
