@@ -29,6 +29,7 @@
 
 #include "bc_model.hpp"
 #include "interior.hpp"
+#include "treecode.hpp"
 #include "loads.hpp"
 #include "problems/half_space.hpp"
 
@@ -389,9 +390,81 @@ int cantilever(const std::string& geo, const std::string& csv, const std::string
 
 }  // namespace
 
+// Rigid coupling (RBE2) and the treecode on the cantilever bar [0,10] x [-1/2,1/2]^2, clamped at x = 0: the tip
+// face moves with a master at (10, 0, 0) loaded by (a) a shear force F = 1, against Timoshenko (+0.27 %: the
+// clamp's root flexibility, as in the cantilever case) and (b) a torque T = 0.5, against Saint-Venant torsion of
+// the unit square (J = 0.140577 a^4; -0.22 %: the rigid end restrains warping). Then the treecode against the direct evaluation at 2,000
+// points inside the bar.
+int rbe2Tree(const std::string& geo) {
+  const double t0 = now();
+  Material mat;  // E = 2.5, G = 1, nu = 0.25
+  const double E = 2.5, G = 1.0, nu = 0.25, L = 10.0, I = 1.0 / 12.0, A = 1.0, F = 1.0, T = 0.5, J = 0.140577;
+  const double kappa = 10.0 * (1.0 + nu) / (12.0 + 11.0 * nu);
+  SolverOptions opt;
+  opt.n_gauss = 12;
+  opt.far_tol = 1e-10;
+  BcModel model;
+  model.mat = mat;
+  model.opt = opt;
+  model.mesh.build(loadDat(geo), model.popt);
+  model.ts.build(model.mesh);
+  model.setupOn(geo, {{"clamp", patchesOn(model.mesh, 0, 0.0), {true, true, true}, nullptr},
+                      {"tip", patchesOn(model.mesh, 0, L), {true, true, true}, nullptr}}, {}, "");
+  Rbe2 m;
+  m.label = "tip master";
+  m.support = 1;
+  m.ref = Vec3(L, 0.0, 0.0);
+  model.rbe2 = {m};
+  LoadCase shear, twist;
+  shear.name = "shear";
+  shear.master_wrench.push_back({0, (Vec6() << 0, 0, -F, 0, 0, 0).finished()});
+  twist.name = "torsion";
+  twist.master_wrench.push_back({0, (Vec6() << 0, 0, 0, T, 0, 0).finished()});
+  std::vector<CaseReport> rep;
+  const auto sol = model.solutions({shear, twist}, &rep);
+  std::printf("# %s: %zu elements, %d unknowns; operators %.2f s, LU %.2f s\n", geo.c_str(), model.mesh.elements.size(),
+              model.unknowns(), model.t_assemble, model.t_factor);
+  for (const auto& r : rep) printReport(r);
+  const double w = rep[0].master_motion[0].second(2), th = rep[1].master_motion[0].second(3);
+  const double wT = -(F * L * L * L / (3 * E * I) + F * L / (kappa * G * A)), thSV = T * L / (G * J);
+  std::printf("  tip deflection %.6f vs Timoshenko %.6f (%+.3f%%); twist %.6f vs Saint-Venant %.6f (%+.3f%%)\n", w, wT,
+              100 * (w / wT - 1), th, thSV, 100 * (th / thSV - 1));
+  std::printf("  master reaction on the bar: F_z %.8f (applied %.1f), M_x %.8f (applied %.1f)\n",
+              rep[0].reactions[1].second.F(2), -F, rep[1].reactions[1].second.M(0), T);
+  // treecode against the direct evaluation (torsion case)
+  std::vector<Vec3> X;
+  unsigned s = 12345;
+  auto rnd = [&]() { s = 1103515245u * s + 12345u; return double((s >> 8) & 0xffffff) / double(0xffffff); };
+  for (int i = 0; i < 2000; ++i) X.emplace_back(0.2 + 9.6 * rnd(), -0.45 + 0.9 * rnd(), -0.45 + 0.9 * rnd());
+  double ta = now();
+  TreeEvaluator tree(sol[1], opt);
+  const auto Ft = tree.eval(X);
+  const double t_tree = now() - ta;
+  InteriorEvaluator ev(sol[1], opt);
+  std::vector<Vec3> Y(X.begin(), X.begin() + 200);
+  ta = now();
+  const auto Fd = ev.eval(Y);
+  const double t_dir = now() - ta;
+  double emax = 0.0, smax = 0.0;
+  for (size_t i = 0; i < Y.size(); ++i) {
+    emax = std::max(emax, (Ft[i].stress - Fd[i].stress).norm());
+    smax = std::max(smax, Fd[i].stress.norm());
+  }
+  std::printf("  treecode: %zu points in %.2f s (setup %.2f s), direct %.2f ms/point; max error %.3e of max |sigma| %.3e\n",
+              X.size(), t_tree, tree.t_setup, 1e3 * t_dir / Y.size(), emax / smax, smax);
+  std::printf("# end to end %.2f s\n", now() - t0);
+  check("rbe2 tip deflection vs Timoshenko", w / wT - 1, 0.0, 6e-3);
+  check("rbe2 twist vs Saint-Venant", th / thSV - 1, 0.0, 6e-3);
+  check("rbe2 master equilibrium F_z", rep[0].reactions[1].second.F(2), -F, 1e-6);
+  check("rbe2 master equilibrium M_x", rep[1].reactions[1].second.M(0), T, 1e-6);
+  check("rbe2 torsion equilibrium residual", rep[1].residual(L), 0.0, 1e-6);
+  check("treecode vs direct, max |dsigma| / max |sigma|", emax / smax, 0.0, 1e-6);
+  return 0;
+}
+
 int main(int argc, char** argv) {
   if (argc < 3) {
-    std::cerr << "usage: bc_validate halfspace|bar|cantilever <geometry.dat> [--csv f] [--probe f] [--cache d]\n";
+    std::cerr << "usage: bc_validate halfspace|bar|cantilever|rbe2 <geometry.dat> [--csv f] [--probe f] [--cache d]\n";
     return 1;
   }
   const std::string what = argv[1], geo = argv[2];
@@ -406,6 +479,7 @@ int main(int argc, char** argv) {
   if (what == "halfspace") rc = halfspace(geo, csv, probe, cache);
   else if (what == "bar") rc = bar(geo, csv);
   else if (what == "cantilever") rc = cantilever(geo, csv, probe);
+  else if (what == "rbe2") rc = rbe2Tree(geo);
   if (rc >= 0) {
     if (g_check) std::printf("# %d check(s) failed\n", g_fail);
     return rc ? rc : (g_fail ? 2 : 0);

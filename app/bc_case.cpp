@@ -2,6 +2,7 @@
 // thin driver over BcModel. All cases share the cached operators and one LU.
 //
 // usage: bc_case <case.json> [--csv file] [--vtu prefix] [--sub 4] [--max-residual r]
+//                [--points file --points-out prefix] [--serve]
 //
 // Prints, per case: the applied resultant of every load, the reaction of every
 // support and spring, the global equilibrium residual |sum of all boundary
@@ -10,6 +11,16 @@
 // solution), max |u| and the peak von Mises and first principal stress on the
 // surface (sub x sub points per element). --max-residual: exit 4 when any case's
 // equilibrium residual is above r (regression tests).
+//
+// --points: stress at arbitrary points for post-processing (the failure layer).
+// One point per line, "x y z [s]": s = 1 takes the boundary recovery at the
+// closest surface point (surface nodes of a tetrahedral mesh), otherwise the
+// near-boundary-safe interior evaluation. Writes prefix_<case>.txt per case:
+// x y z sxx syy szz sxy syz szx winding gap, with x as given; winding is 1 inside,
+// 0 outside (0.5 for surface points) and gap is |x - projection| for surface points.
+// From 1,000 points on, interior points go through the treecode (src/treecode.hpp).
+// --serve: after the solve, read commands from stdin ("points <file> <prefix>", "quit"),
+// answering "ready" after each, so later probes reuse the solution without a new LU.
 
 #include <chrono>
 #include <cstdio>
@@ -18,6 +29,8 @@
 #include <iostream>
 
 #include "case_io.hpp"
+#include "interior.hpp"
+#include "treecode.hpp"
 #include "vtk.hpp"
 
 using namespace igabem;
@@ -28,13 +41,21 @@ int main(int argc, char** argv) {
     return 1;
   }
   int sub = 4;
-  std::string csv_arg, vtu_arg;
+  std::string csv_arg, vtu_arg, pts_arg, pts_out;
   double max_res = -1.0;
+  bool serve = false;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--csv")) csv_arg = argv[++i];
     else if (!std::strcmp(argv[i], "--vtu")) vtu_arg = argv[++i];
     else if (!std::strcmp(argv[i], "--sub")) sub = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--max-residual")) max_res = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--points")) pts_arg = argv[++i];
+    else if (!std::strcmp(argv[i], "--points-out")) pts_out = argv[++i];
+    else if (!std::strcmp(argv[i], "--serve")) serve = true;
+  }
+  if (!pts_arg.empty() && pts_out.empty()) {
+    std::cerr << "error: --points needs --points-out\n";
+    return 1;
   }
   const auto t0 = std::chrono::steady_clock::now();
   CaseFile cf;
@@ -85,6 +106,9 @@ int main(int argc, char** argv) {
     std::printf("case %s\n", r.name.c_str());
     for (const auto& [n, W] : r.loads) line(r.name, n, "load", W);
     for (const auto& [n, W] : r.reactions) line(r.name, n, "reaction", W);
+    for (const auto& [n, q] : r.master_motion)
+      std::printf("  master    %-22s u (%11.4e, %11.4e, %11.4e)  theta (%11.4e, %11.4e, %11.4e)\n", n.c_str(), q(0),
+                  q(1), q(2), q(3), q(4), q(5));
     std::printf("  equilibrium residual |sum of boundary tractions| / |applied| = %.3e\n", r.residual(cf.size));
     if (csv) csv << r.name << ",equilibrium,residual," << r.residual(cf.size) << ",,,,,\n";
     if (max_res >= 0 && r.residual(cf.size) > max_res) {
@@ -122,6 +146,59 @@ int main(int argc, char** argv) {
                  << r.name << ",peak,s1," << s1 << ',' << xs1(0) << ',' << xs1(1) << ',' << xs1(2) << ",,\n"
                  << r.name << ",peak,u_max," << umax << ",,,,,\n";
     if (!cf.vtu.empty()) surfaceVtu(sols[k], 3).write(cf.vtu + "_" + r.name + "_surface.vtu");
+  }
+  // Stress at the points of a file, for every case (see --points above).
+  auto points = [&](const std::string& in_path, const std::string& prefix) {
+    std::vector<Vec3> X;
+    std::vector<char> on;
+    std::ifstream in(in_path);
+    std::string row;
+    while (std::getline(in, row)) {
+      if (row.empty() || row[0] == '#') continue;
+      double v[4] = {0, 0, 0, 0};
+      const int n = std::sscanf(row.c_str(), "%lf %lf %lf %lf", v, v + 1, v + 2, v + 3);
+      if (n < 3) continue;
+      X.emplace_back(v[0], v[1], v[2]);
+      on.push_back(n == 4 && v[3] != 0.0);
+    }
+    for (size_t k = 0; k < cases.size(); ++k) {
+      const auto tp = std::chrono::steady_clock::now();
+      // many points: the treecode (src/treecode.hpp, ~1e-7 of the peak stress); few: direct
+      std::vector<FieldSample> F;
+      if (X.size() >= 1000) {
+        TreeEvaluator tree(sols[k], cf.opt);
+        F = tree.eval(X, on);
+      } else {
+        InteriorEvaluator ev(sols[k], cf.opt);
+        F = ev.eval(X, on);
+      }
+      std::ofstream o(prefix + "_" + rep[k].name + ".txt");
+      o.precision(12);
+      o << "# x y z sxx syy szz sxy syz szx winding gap\n";
+      for (size_t i = 0; i < X.size(); ++i) {
+        const auto& S = F[i].stress;
+        o << X[i](0) << ' ' << X[i](1) << ' ' << X[i](2) << ' ' << S(0, 0) << ' ' << S(1, 1) << ' ' << S(2, 2) << ' '
+          << S(0, 1) << ' ' << S(1, 2) << ' ' << S(2, 0) << ' ' << F[i].winding << ' '
+          << (on[i] ? (F[i].x - X[i]).norm() : 0.0) << '\n';
+      }
+      std::printf("# case %s: stress at %zu points in %.2f s\n", rep[k].name.c_str(), X.size(),
+                  std::chrono::duration<double>(std::chrono::steady_clock::now() - tp).count());
+    }
+    std::fflush(stdout);
+  };
+  if (!pts_arg.empty()) points(pts_arg, pts_out);
+  if (serve) {
+    // Keep the solution: "points <file> <prefix>" evaluates and answers "ready"; "quit" ends.
+    std::printf("ready\n");
+    std::fflush(stdout);
+    std::string cmd, a, b;
+    while (std::cin >> cmd) {
+      if (cmd == "quit") break;
+      if (cmd == "points" && (std::cin >> a >> b)) points(a, b);
+      else std::printf("# unknown command %s\n", cmd.c_str());
+      std::printf("ready\n");
+      std::fflush(stdout);
+    }
   }
   std::printf("# end to end %.2f s\n",
               std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());

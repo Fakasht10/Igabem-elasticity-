@@ -112,11 +112,28 @@ class InteriorEvaluator {
     return f;
   }
 
-  // Many points, in parallel.
-  std::vector<FieldSample> eval(const std::vector<Vec3>& xs) const {
+  // Boundary recovery at the closest boundary point to x (x itself need not lie on the
+  // spline surface, e.g. a node of a tetrahedral mesh on the CAD face). f.x is the
+  // projected point.
+  FieldSample evalSurface(const Vec3& x) const {
+    FieldSample f;
+    const SurfacePoint sp = locate(m_, x, [](int) { return true; });
+    f.x = sp.E.x;
+    f.u = s_.displacement(sp);
+    f.grad = s_.gradient(sp);
+    f.winding = 0.5;
+    f.on_boundary = true;
+    f.strain = strainOf(f.grad);
+    f.stress = s_.mat.stress(f.grad);
+    return f;
+  }
+
+  // Many points, in parallel; on_surface[i] (if given) takes the boundary recovery.
+  std::vector<FieldSample> eval(const std::vector<Vec3>& xs, const std::vector<char>& on_surface = {}) const {
     std::vector<FieldSample> out(xs.size());
 #pragma omp parallel for schedule(dynamic)
-    for (long i = 0; i < long(xs.size()); ++i) out[i] = eval(xs[i]);
+    for (long i = 0; i < long(xs.size()); ++i)
+      out[i] = (!on_surface.empty() && on_surface[i]) ? evalSurface(xs[i]) : eval(xs[i]);
     return out;
   }
 

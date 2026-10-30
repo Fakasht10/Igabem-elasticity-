@@ -38,9 +38,16 @@ add_test(NAME regression COMMAND test_regression ${CMAKE_SOURCE_DIR})
 add_test(NAME bc_bar COMMAND bc_validate bar ${CMAKE_SOURCE_DIR}/geo/bar_L4_p3_n8.dat --check)
 add_test(NAME bc_halfspace COMMAND bc_validate halfspace ${CMAKE_SOURCE_DIR}/geo/box_hs_q_p3_r0.dat --cache none --check)
 add_test(NAME bc_cantilever COMMAND bc_validate cantilever ${CMAKE_SOURCE_DIR}/geo/bar_L10_p3_n20.dat --check)
+add_test(NAME bc_rbe2_treecode COMMAND bc_validate rbe2 ${CMAKE_SOURCE_DIR}/geo/bar_L10_p3_n20.dat --check)
 add_test(NAME bc_plate_knots COMMAND bc_case ${CMAKE_SOURCE_DIR}/cases/plate_clamped_knots.json --max-residual 0.01)
 # two-region bodies (MultiRegion): exact patch / Lame / Eshelby fields, printed coupon
 add_test(NAME region_patch COMMAND region_validate patch ${CMAKE_SOURCE_DIR}/geo/regions/sph2_a0.5_r1_host.dat ${CMAKE_SOURCE_DIR}/geo/regions/sph2_a0.5_r1_core.dat --check)
 add_test(NAME region_lame COMMAND region_validate lame ${CMAKE_SOURCE_DIR}/geo/regions/sph2_a0.5_r1_host.dat ${CMAKE_SOURCE_DIR}/geo/regions/sph2_a0.5_r1_core.dat --check)
 add_test(NAME region_eshelby COMMAND region_validate eshelby ${CMAKE_SOURCE_DIR}/geo/regions/sph2_a0.5_r1_host.dat ${CMAKE_SOURCE_DIR}/geo/regions/sph2_a0.5_r1_core.dat --check)
 add_test(NAME region_coupon COMMAND region_validate coupon ${CMAKE_SOURCE_DIR}/geo/regions/coupon_w0.15_n2_host.dat ${CMAKE_SOURCE_DIR}/geo/regions/coupon_w0.15_n2_core.dat --rho 0,0.2,1 --check)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_FOUND)
+  add_test(NAME failure_layer_unit COMMAND ${Python3_EXECUTABLE} -m unittest failure.test_failure
+           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
+endif()

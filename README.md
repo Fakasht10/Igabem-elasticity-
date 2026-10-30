@@ -586,6 +586,33 @@ be fitted, not data.
 
 ![Two-region validation](results/fig_regions.png)
 
+### Failure layer (`python/failure`), treecode and RBE2
+
+nurb-fea-tcd's failure layer (material cards, hot spots, MATS / bisector path, CP-series regression, TCD / Energy
+TCD / ASED, Weibull) runs on IgBEM through `python/failure/igabem_backend.py`, which gives it the same result
+contract as bemkit's backend. See `python/failure/README.md`.
+
+- **Points and serve mode** (`bc_case --points`, `--serve`): exact stress at arbitrary points from one kept-alive LU.
+- **Treecode** (`src/treecode.hpp`, port of bemkit's BLTC): 0.34 ms per point against 3.2 ms direct at 20k points,
+  error 1e-8 to 1.5e-7 of max |sigma|; points nearer than 0.05 h to the surface use the direct evaluator.
+- **RBE2 masters** (`"rbe2"` supports, master wrenches or held DOFs): bar tip shear through the master -1616.13
+  against Timoshenko -1611.8 (+0.27 %), torsion 35.491 against Saint-Venant 35.568 (-0.22 %), master equilibrium
+  to 1e-8 (ctest `bc_rbe2_treecode`, 1.2 s).
+
+| check | IgBEM | reference |
+|---|---|---|
+| SENB rho = 1, sigma_1 at 0.2256 mm (MPa/N) | 0.6808 / 0.6811 / 0.6803 (p2, p3, focused) | bemkit 0.68385 |
+| Cicero 2020 ABS SENB 0/90, sigma_0 from K_mat | +48, +37, +57, +52 % (rho 0.25, 0.5, 1, 2) | TET10 in nurb-fea-tcd: ~+52 % |
+| same, sigma_0 calibrated on rho = 1 | -5.5, -12.9, 0, -3.2 % | measured loads |
+| PLA Weibull card parity, mean load at card m = 4.42 | UB x1.001, US x1.022 | NGSolve TET4 h 0.18 |
+
+![failure layer](results/fig_failure.png)
+
+The parity holds to 0.1-2 % at the card's m but opens at high m (US x1.15 at m = 10): there J is a peak-volume
+integral, and the TET4 h = 0.18 reference and our TET10 quadrature resolve the 0.5 mm root differently. The K_mat
+over-prediction is the material, not the solver: the paper's K_mat carries plastic work, and the TET10 run shows
+the same offset.
+
 ## Next steps
 
 1. Exterior Neumann (Eshelby) patch test; move geometry

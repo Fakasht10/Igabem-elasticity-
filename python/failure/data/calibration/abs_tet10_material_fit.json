@@ -1,0 +1,2445 @@
+{
+  "artifact_sha256": "0cd76ee15a3f1afad298553076e3a3430a34566565a3c6758b33cadce9d7c92d",
+  "campaign_status": "PASS",
+  "card_policy": {
+    "reason": "all declared final gates pass",
+    "solve_enabled": true
+  },
+  "cards": [
+    {
+      "E_MPa": 1590.0,
+      "fit_quality": {
+        "calibration_RMSE_percent": 20.316513016365178,
+        "holdout_RMSE_percent": 24.21091187815698,
+        "record_count": 18
+      },
+      "id": "abs-tet10-raster-0-weibull",
+      "mesh_qualification": {
+        "campaign": "production medium h=0.15 radial-only",
+        "dof_range": {
+          "maximum": 31299,
+          "minimum": 21846
+        },
+        "element_type": "TET10",
+        "families": [
+          "UB",
+          "UI",
+          "US",
+          "OB",
+          "OI",
+          "OS"
+        ]
+      },
+      "name": "ABS TET10 medium radial-only raster 0 Weibull",
+      "nu": 0.36,
+      "provenance": {
+        "restrictions": "Raster 0\u00b0 only; measured source process, conditioning, nominal tension geometries UB/UI/US/OB/OI/OS only. Isotropic nominal mechanics E=1590 MPa, nu=0.36; this is not constitutive orthotropy or generic ABS transfer.",
+        "source_process": "Ng--Susmel ABS nominal-tension source process"
+      },
+      "solve_enabled": true,
+      "source_records": {
+        "calibration_families": [
+          "UB",
+          "US"
+        ],
+        "count": 18,
+        "fit": "raster_0",
+        "holdout_families": [
+          "UI",
+          "OB",
+          "OI",
+          "OS"
+        ],
+        "table": "abs_tet10_material_fit_predictions.csv"
+      },
+      "status": "calibrated_production",
+      "weibull": {
+        "S0_MPa": 86.20923824296291,
+        "V0_mm3": 1.0,
+        "calibration_sha256": "0cd76ee15a3f1afad298553076e3a3430a34566565a3c6758b33cadce9d7c92d",
+        "m": 6.477416716189668
+      }
+    },
+    {
+      "E_MPa": 1590.0,
+      "fit_quality": {
+        "calibration_RMSE_percent": 4.808016853263925,
+        "holdout_RMSE_percent": 10.439018787810836,
+        "record_count": 18
+      },
+      "id": "abs-tet10-raster-30-weibull",
+      "mesh_qualification": {
+        "campaign": "production medium h=0.15 radial-only",
+        "dof_range": {
+          "maximum": 31299,
+          "minimum": 21846
+        },
+        "element_type": "TET10",
+        "families": [
+          "UB",
+          "UI",
+          "US",
+          "OB",
+          "OI",
+          "OS"
+        ]
+      },
+      "name": "ABS TET10 medium radial-only raster 30 Weibull",
+      "nu": 0.36,
+      "provenance": {
+        "restrictions": "Raster 30\u00b0 only; measured source process, conditioning, nominal tension geometries UB/UI/US/OB/OI/OS only. Isotropic nominal mechanics E=1590 MPa, nu=0.36; this is not constitutive orthotropy or generic ABS transfer.",
+        "source_process": "Ng--Susmel ABS nominal-tension source process"
+      },
+      "solve_enabled": true,
+      "source_records": {
+        "calibration_families": [
+          "UB",
+          "US"
+        ],
+        "count": 18,
+        "fit": "raster_30",
+        "holdout_families": [
+          "UI",
+          "OB",
+          "OI",
+          "OS"
+        ],
+        "table": "abs_tet10_material_fit_predictions.csv"
+      },
+      "status": "calibrated_production",
+      "weibull": {
+        "S0_MPa": 94.91216285041742,
+        "V0_mm3": 1.0,
+        "calibration_sha256": "0cd76ee15a3f1afad298553076e3a3430a34566565a3c6758b33cadce9d7c92d",
+        "m": 5.53750700221681
+      }
+    },
+    {
+      "E_MPa": 1590.0,
+      "fit_quality": {
+        "calibration_RMSE_percent": 8.35810706851847,
+        "holdout_RMSE_percent": 13.18951727384283,
+        "record_count": 18
+      },
+      "id": "abs-tet10-raster-45-weibull",
+      "mesh_qualification": {
+        "campaign": "production medium h=0.15 radial-only",
+        "dof_range": {
+          "maximum": 31299,
+          "minimum": 21846
+        },
+        "element_type": "TET10",
+        "families": [
+          "UB",
+          "UI",
+          "US",
+          "OB",
+          "OI",
+          "OS"
+        ]
+      },
+      "name": "ABS TET10 medium radial-only raster 45 Weibull",
+      "nu": 0.36,
+      "provenance": {
+        "restrictions": "Raster 45\u00b0 only; measured source process, conditioning, nominal tension geometries UB/UI/US/OB/OI/OS only. Isotropic nominal mechanics E=1590 MPa, nu=0.36; this is not constitutive orthotropy or generic ABS transfer.",
+        "source_process": "Ng--Susmel ABS nominal-tension source process"
+      },
+      "solve_enabled": true,
+      "source_records": {
+        "calibration_families": [
+          "UB",
+          "US"
+        ],
+        "count": 18,
+        "fit": "raster_45",
+        "holdout_families": [
+          "UI",
+          "OB",
+          "OI",
+          "OS"
+        ],
+        "table": "abs_tet10_material_fit_predictions.csv"
+      },
+      "status": "calibrated_production",
+      "weibull": {
+        "S0_MPa": 95.43829314635201,
+        "V0_mm3": 1.0,
+        "calibration_sha256": "0cd76ee15a3f1afad298553076e3a3430a34566565a3c6758b33cadce9d7c92d",
+        "m": 5.472186855632314
+      }
+    }
+  ],
+  "fits": {
+    "pooled": {
+      "S0_MPa": 90.68619312149723,
+      "bounded_grid": {
+        "inside": true,
+        "maximum": 120.0,
+        "minimum": 0.5
+      },
+      "calibration_RMSE_percent": 13.245803899640284,
+      "calibration_consistency": {
+        "pass": true,
+        "relative_error_percent": {
+          "UB": 4.440892098500626e-14,
+          "US": -1.6653345369377348e-13
+        }
+      },
+      "holdout_RMSE_percent": 16.702216633846927,
+      "m": 5.85348501172813,
+      "record_count": 54,
+      "roots": [
+        5.85348501172813
+      ],
+      "status": "fit"
+    },
+    "raster_0": {
+      "S0_MPa": 86.20923824296291,
+      "bounded_grid": {
+        "inside": true,
+        "maximum": 120.0,
+        "minimum": 0.5
+      },
+      "calibration_RMSE_percent": 20.316513016365178,
+      "calibration_consistency": {
+        "pass": true,
+        "relative_error_percent": {
+          "UB": -3.3306690738754696e-14,
+          "US": 0.0
+        }
+      },
+      "holdout_RMSE_percent": 24.21091187815698,
+      "m": 6.477416716189668,
+      "record_count": 18,
+      "roots": [
+        6.477416716189668
+      ],
+      "status": "fit"
+    },
+    "raster_30": {
+      "S0_MPa": 94.91216285041742,
+      "bounded_grid": {
+        "inside": true,
+        "maximum": 120.0,
+        "minimum": 0.5
+      },
+      "calibration_RMSE_percent": 4.808016853263925,
+      "calibration_consistency": {
+        "pass": true,
+        "relative_error_percent": {
+          "UB": 1.0680345496894006e-11,
+          "US": -8.282263763703668e-12
+        }
+      },
+      "holdout_RMSE_percent": 10.439018787810836,
+      "m": 5.53750700221681,
+      "record_count": 18,
+      "roots": [
+        5.53750700221681
+      ],
+      "status": "fit"
+    },
+    "raster_45": {
+      "S0_MPa": 95.43829314635201,
+      "bounded_grid": {
+        "inside": true,
+        "maximum": 120.0,
+        "minimum": 0.5
+      },
+      "calibration_RMSE_percent": 8.35810706851847,
+      "calibration_consistency": {
+        "pass": true,
+        "relative_error_percent": {
+          "UB": 1.4632739464559563e-11,
+          "US": -1.283417816466681e-11
+        }
+      },
+      "holdout_RMSE_percent": 13.18951727384283,
+      "m": 5.472186855632314,
+      "record_count": 18,
+      "roots": [
+        5.472186855632314
+      ],
+      "status": "fit"
+    }
+  },
+  "gates": {
+    "artifact_hash": {
+      "algorithm": "sha256-canonical-json",
+      "pass": true
+    },
+    "calibration_consistency": {
+      "fits": {
+        "pooled": {
+          "pass": true,
+          "relative_error_percent": {
+            "UB": 4.440892098500626e-14,
+            "US": -1.6653345369377348e-13
+          }
+        },
+        "raster_0": {
+          "pass": true,
+          "relative_error_percent": {
+            "UB": -3.3306690738754696e-14,
+            "US": 0.0
+          }
+        },
+        "raster_30": {
+          "pass": true,
+          "relative_error_percent": {
+            "UB": 1.0680345496894006e-11,
+            "US": -8.282263763703668e-12
+          }
+        },
+        "raster_45": {
+          "pass": true,
+          "relative_error_percent": {
+            "UB": 1.4632739464559563e-11,
+            "US": -1.283417816466681e-11
+          }
+        }
+      },
+      "pass": true
+    },
+    "coarse_to_medium_drift": {
+      "baseline": "independently fit coarse production TET10; never a promoted material value",
+      "fits": {
+        "pooled": {
+          "maximum_absolute_percent": 0.18404412961802175,
+          "pass": true,
+          "record_count": 54,
+          "rows": [
+            {
+              "drift_percent": -0.00010027986977467762,
+              "family": "UB",
+              "id": "UB_0_1",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.00023638684223392659,
+              "family": "UB",
+              "id": "UB_0_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.00012444870669536812,
+              "family": "UB",
+              "id": "UB_0_3",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.00012444870669536812,
+              "family": "UB",
+              "id": "UB_30_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.00032615451668327466,
+              "family": "UB",
+              "id": "UB_30_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.00021307320416941167,
+              "family": "UB",
+              "id": "UB_30_3",
+              "pass": true
+            },
+            {
+              "drift_percent": 1.2226949719362779e-05,
+              "family": "UB",
+              "id": "UB_45_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.00010027986977467762,
+              "family": "UB",
+              "id": "UB_45_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.00023638684223392659,
+              "family": "UB",
+              "id": "UB_45_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.07380277911122057,
+              "family": "UI",
+              "id": "UI_0_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.07369092372829789,
+              "family": "UI",
+              "id": "UI_0_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.07391491790579297,
+              "family": "UI",
+              "id": "UI_0_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.07436633617009525,
+              "family": "UI",
+              "id": "UI_30_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.07425304921648834,
+              "family": "UI",
+              "id": "UI_30_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.07459378374441439,
+              "family": "UI",
+              "id": "UI_30_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.07346805749143259,
+              "family": "UI",
+              "id": "UI_45_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.0730256637876292,
+              "family": "UI",
+              "id": "UI_45_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.07369092372829789,
+              "family": "UI",
+              "id": "UI_45_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.0004886298792250443,
+              "family": "US",
+              "id": "US_0_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.00037554875039758073,
+              "family": "US",
+              "id": "US_0_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.00029694132073210255,
+              "family": "US",
+              "id": "US_0_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.00015024896259374643,
+              "family": "US",
+              "id": "US_30_1",
+              "pass": true
+            },
+            {
+              "drift_percent": 7.391056568994969e-05,
+              "family": "US",
+              "id": "US_30_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.00018556632874755508,
+              "family": "US",
+              "id": "US_30_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.00015024896259374643,
+              "family": "US",
+              "id": "US_45_1",
+              "pass": true
+            },
+            {
+              "drift_percent": 7.391056568994969e-05,
+              "family": "US",
+              "id": "US_45_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.0005188546160939111,
+              "family": "US",
+              "id": "US_45_3",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.011177708319820567,
+              "family": "OB",
+              "id": "OB_0_1",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.011403608951110478,
+              "family": "OB",
+              "id": "OB_0_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.01207447975815068,
+              "family": "OB",
+              "id": "OB_0_3",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.012185310352252898,
+              "family": "OB",
+              "id": "OB_30_1",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.01207447975815068,
+              "family": "OB",
+              "id": "OB_30_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.012295864337907858,
+              "family": "OB",
+              "id": "OB_30_3",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.012516147983610004,
+              "family": "OB",
+              "id": "OB_45_1",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.012295864337907858,
+              "family": "OB",
+              "id": "OB_45_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.011290802641128472,
+              "family": "OB",
+              "id": "OB_45_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.0696670353600437,
+              "family": "OI",
+              "id": "OI_0_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.06999760113254316,
+              "family": "OI",
+              "id": "OI_0_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.07010834065392935,
+              "family": "OI",
+              "id": "OI_0_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.07033065439800978,
+              "family": "OI",
+              "id": "OI_30_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.07055409044520733,
+              "family": "OI",
+              "id": "OI_30_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.06977694985689231,
+              "family": "OI",
+              "id": "OI_30_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.07010834065392935,
+              "family": "OI",
+              "id": "OI_45_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.0696670353600437,
+              "family": "OI",
+              "id": "OI_45_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.06988713799231938,
+              "family": "OI",
+              "id": "OI_45_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.18315136899562656,
+              "family": "OS",
+              "id": "OS_0_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.18359549582054324,
+              "family": "OS",
+              "id": "OS_0_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.18348404513481853,
+              "family": "OS",
+              "id": "OS_0_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.18404412961802175,
+              "family": "OS",
+              "id": "OS_30_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.18381924363665147,
+              "family": "OS",
+              "id": "OS_30_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.18381924363665147,
+              "family": "OS",
+              "id": "OS_30_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.18304103093617075,
+              "family": "OS",
+              "id": "OS_45_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.1832619831232951,
+              "family": "OS",
+              "id": "OS_45_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.18315136899562656,
+              "family": "OS",
+              "id": "OS_45_3",
+              "pass": true
+            }
+          ],
+          "threshold_percent": 2.0
+        },
+        "raster_0": {
+          "maximum_absolute_percent": 0.3201618528853589,
+          "pass": true,
+          "record_count": 18,
+          "rows": [
+            {
+              "drift_percent": -0.00014499686993296734,
+              "family": "UB",
+              "id": "UB_0_1",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.00011534510939714693,
+              "family": "UB",
+              "id": "UB_0_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 2.878416558438346e-05,
+              "family": "UB",
+              "id": "UB_0_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.058187584063074116,
+              "family": "UI",
+              "id": "UI_0_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.05810107351184035,
+              "family": "UI",
+              "id": "UI_0_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.05827431383095272,
+              "family": "UI",
+              "id": "UI_0_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.00023342017149152738,
+              "family": "US",
+              "id": "US_0_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.00014597505259006383,
+              "family": "US",
+              "id": "US_0_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.00037405797568279553,
+              "family": "US",
+              "id": "US_0_3",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.023789166844512266,
+              "family": "OB",
+              "id": "OB_0_1",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.023963876327814937,
+              "family": "OB",
+              "id": "OB_0_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.024482721150431708,
+              "family": "OB",
+              "id": "OB_0_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.0853019083872919,
+              "family": "OI",
+              "id": "OI_0_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.08555749286662806,
+              "family": "OI",
+              "id": "OI_0_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.08564311370050648,
+              "family": "OI",
+              "id": "OI_0_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.31981888253839186,
+              "family": "OS",
+              "id": "OS_0_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.3201618528853589,
+              "family": "OS",
+              "id": "OS_0_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.3200757867154014,
+              "family": "OS",
+              "id": "OS_0_3",
+              "pass": true
+            }
+          ],
+          "threshold_percent": 2.0
+        },
+        "raster_30": {
+          "maximum_absolute_percent": 0.12072096524299303,
+          "pass": true,
+          "record_count": 18,
+          "rows": [
+            {
+              "drift_percent": 0.00033499501717049185,
+              "family": "UB",
+              "id": "UB_30_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.00024108323856131264,
+              "family": "UB",
+              "id": "UB_30_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -9.651335692861807e-05,
+              "family": "UB",
+              "id": "UB_30_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.06303421665559972,
+              "family": "UI",
+              "id": "UI_30_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.06288936756856378,
+              "family": "UI",
+              "id": "UI_30_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.06332503176558202,
+              "family": "UI",
+              "id": "UI_30_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.0002390955318287702,
+              "family": "US",
+              "id": "US_30_1",
+              "pass": true
+            },
+            {
+              "drift_percent": 4.748289914591197e-05,
+              "family": "US",
+              "id": "US_30_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.00019023011401664291,
+              "family": "US",
+              "id": "US_30_3",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.005174772550353701,
+              "family": "OB",
+              "id": "OB_30_1",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.005033090218042879,
+              "family": "OB",
+              "id": "OB_30_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.005316101318664224,
+              "family": "OB",
+              "id": "OB_30_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.05089181804713849,
+              "family": "OI",
+              "id": "OI_30_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.05117752718083457,
+              "family": "OI",
+              "id": "OI_30_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.050183791665314725,
+              "family": "OI",
+              "id": "OI_30_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.12072096524299303,
+              "family": "OS",
+              "id": "OS_30_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.12043327542223814,
+              "family": "OS",
+              "id": "OS_30_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.12043327542223814,
+              "family": "OS",
+              "id": "OS_30_3",
+              "pass": true
+            }
+          ],
+          "threshold_percent": 2.0
+        },
+        "raster_45": {
+          "maximum_absolute_percent": 0.11234041405924211,
+          "pass": true,
+          "record_count": 18,
+          "rows": [
+            {
+              "drift_percent": -4.725334934452263e-05,
+              "family": "UB",
+              "id": "UB_45_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.0001887233369246566,
+              "family": "UB",
+              "id": "UB_45_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.00023461321732032303,
+              "family": "UB",
+              "id": "UB_45_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.0613055779766114,
+              "family": "UI",
+              "id": "UI_45_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.06074922831220686,
+              "family": "UI",
+              "id": "UI_45_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.06158585196959221,
+              "family": "UI",
+              "id": "UI_45_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.0003762017954822561,
+              "family": "US",
+              "id": "US_45_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -9.433615602016943e-05,
+              "family": "US",
+              "id": "US_45_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.0004651517599096877,
+              "family": "US",
+              "id": "US_45_3",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.004701121963845978,
+              "family": "OB",
+              "id": "OB_45_1",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.004424151164772461,
+              "family": "OB",
+              "id": "OB_45_2",
+              "pass": true
+            },
+            {
+              "drift_percent": 0.0031604518041739027,
+              "family": "OB",
+              "id": "OB_45_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.048811705669338235,
+              "family": "OI",
+              "id": "OI_45_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.04825667405865541,
+              "family": "OI",
+              "id": "OI_45_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.04853349818702002,
+              "family": "OI",
+              "id": "OI_45_3",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.11206238340487618,
+              "family": "OS",
+              "id": "OS_45_1",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.11234041405924211,
+              "family": "OS",
+              "id": "OS_45_2",
+              "pass": true
+            },
+            {
+              "drift_percent": -0.11220122505944952,
+              "family": "OS",
+              "id": "OS_45_3",
+              "pass": true
+            }
+          ],
+          "threshold_percent": 2.0
+        }
+      },
+      "maximum_absolute_percent": 0.3201618528853589,
+      "pass": true,
+      "threshold_percent": 2.0
+    },
+    "dataset_provenance": {
+      "dataset_path": "incoming\\fracture_screening_work_handoff_2026-09-09\\fracture_screening_work_handoff_2026-09-09\\fracture_handoff_validation\\baseline\\kwon_test\\experimental_data.json",
+      "pass": true,
+      "selected_record_count": 54,
+      "selection": "UB/UI/US/OB/OI/OS nominal tension families only",
+      "source_record_count": 108,
+      "source_sha256": "b96f0dffbf7410065fa333579255fdb9eefd4ef540faa8794b7aa5b62f291229"
+    },
+    "explicit_predictions": {
+      "pass": true,
+      "prediction_count": 108,
+      "rows_per_fit": {
+        "pooled": 54,
+        "raster_0": 18,
+        "raster_30": 18,
+        "raster_45": 18
+      }
+    },
+    "fixed_split": {
+      "calibration_families": [
+        "UB",
+        "US"
+      ],
+      "holdout_families": [
+        "UI",
+        "OB",
+        "OI",
+        "OS"
+      ],
+      "pass": true
+    },
+    "medium_qualification": {
+      "dof_range": {
+        "maximum": 31299,
+        "minimum": 21846
+      },
+      "families": [
+        {
+          "cells": 4379,
+          "checks": {
+            "dof_range": true,
+            "mechanics_pass": true,
+            "pardiso_no_fallback": true,
+            "positive_midside_nodes": true,
+            "production_tet10": true,
+            "radial_only": true,
+            "refinement_pass": true,
+            "status_pass": true
+          },
+          "displacement_dofs": 24369,
+          "family": "UB",
+          "mechanics": {
+            "corner_volume_mm3": 586.5165944737844,
+            "expected_volume_mm3": 586.5,
+            "fallbacks": [],
+            "force_equilibrium_N": 6.983302824892235e-14,
+            "jacobian_warning": null,
+            "midside_nodes": 6802,
+            "pass": true,
+            "quadrature_volume_mm3": 586.5000109720949,
+            "residual": 6.233062597104161e-13,
+            "solver": "pardiso_spd",
+            "surface_load_N": 1.0,
+            "volume_relative_error": 1.8707749127599982e-08
+          },
+          "mesh_sha256": "027c08271b0a56ba6b798f515c55087d3a4021b5e7631db4deb5a4879b3c6ab3",
+          "nodes": 8123,
+          "pass": true,
+          "refinement": {
+            "far_edge_mm": 1.6004275903490464,
+            "far_ratio": 10.669517268993642,
+            "local_bound_ratio": 2.5,
+            "local_edge_mm": 0.19579067288746968,
+            "local_ratio": 1.3052711525831313,
+            "pass": true,
+            "requested_first_size_mm": 0.15
+          }
+        },
+        {
+          "cells": 5147,
+          "checks": {
+            "dof_range": true,
+            "mechanics_pass": true,
+            "pardiso_no_fallback": true,
+            "positive_midside_nodes": true,
+            "production_tet10": true,
+            "radial_only": true,
+            "refinement_pass": true,
+            "status_pass": true
+          },
+          "displacement_dofs": 28026,
+          "family": "UI",
+          "mechanics": {
+            "corner_volume_mm3": 570.1693830084923,
+            "expected_volume_mm3": 570.1666666666666,
+            "fallbacks": [],
+            "force_equilibrium_N": 4.18554080283684e-14,
+            "jacobian_warning": null,
+            "midside_nodes": 7846,
+            "pass": true,
+            "quadrature_volume_mm3": 570.1666680155677,
+            "residual": 5.792614447645354e-13,
+            "solver": "pardiso_spd",
+            "surface_load_N": 1.0,
+            "volume_relative_error": 2.365801332615547e-09
+          },
+          "mesh_sha256": "c0f870c2f90d8b30acfb58093a194a185c2f7c8e14aa17a72c196b19b2f5e56b",
+          "nodes": 9342,
+          "pass": true,
+          "refinement": {
+            "far_edge_mm": 1.5310056270148094,
+            "far_ratio": 10.206704180098729,
+            "local_bound_ratio": 2.5,
+            "local_edge_mm": 0.19376525900138872,
+            "local_ratio": 1.2917683933425914,
+            "pass": true,
+            "requested_first_size_mm": 0.15
+          }
+        },
+        {
+          "cells": 5855,
+          "checks": {
+            "dof_range": true,
+            "mechanics_pass": true,
+            "pardiso_no_fallback": true,
+            "positive_midside_nodes": true,
+            "production_tet10": true,
+            "radial_only": true,
+            "refinement_pass": true,
+            "status_pass": true
+          },
+          "displacement_dofs": 31299,
+          "family": "US",
+          "mechanics": {
+            "corner_volume_mm3": 566.2937213005517,
+            "expected_volume_mm3": 566.2916666666666,
+            "fallbacks": [],
+            "force_equilibrium_N": 5.0182080713057076e-14,
+            "jacobian_warning": null,
+            "midside_nodes": 8784,
+            "pass": true,
+            "quadrature_volume_mm3": 566.2916679133393,
+            "residual": 5.96969150528297e-13,
+            "solver": "pardiso_spd",
+            "surface_load_N": 1.0,
+            "volume_relative_error": 2.201467452778161e-09
+          },
+          "mesh_sha256": "4198fb06f040961c070e2c2cf2afbf922f4423865ccc2d75cafd520893fcd682",
+          "nodes": 10433,
+          "pass": true,
+          "refinement": {
+            "far_edge_mm": 1.5098676540136577,
+            "far_ratio": 10.065784360091053,
+            "local_bound_ratio": 2.5,
+            "local_edge_mm": 0.19302188844122814,
+            "local_ratio": 1.2868125896081877,
+            "pass": true,
+            "requested_first_size_mm": 0.15
+          }
+        },
+        {
+          "cells": 3986,
+          "checks": {
+            "dof_range": true,
+            "mechanics_pass": true,
+            "pardiso_no_fallback": true,
+            "positive_midside_nodes": true,
+            "production_tet10": true,
+            "radial_only": true,
+            "refinement_pass": true,
+            "status_pass": true
+          },
+          "displacement_dofs": 21846,
+          "family": "OB",
+          "mechanics": {
+            "corner_volume_mm3": 435.5670117380848,
+            "expected_volume_mm3": 435.6113569132328,
+            "fallbacks": [],
+            "force_equilibrium_N": 1.8824941605544154e-12,
+            "jacobian_warning": null,
+            "midside_nodes": 6109,
+            "pass": true,
+            "quadrature_volume_mm3": 435.56593304294717,
+            "residual": 1.2292369035896961e-11,
+            "solver": "pardiso_spd",
+            "surface_load_N": 1.0,
+            "volume_relative_error": 0.00010427613872943109
+          },
+          "mesh_sha256": "db23bbb24011023631c3ccf5e3640ff579f6bfdbab811f86540b8ba6f44544bf",
+          "nodes": 7282,
+          "pass": true,
+          "refinement": {
+            "far_edge_mm": 1.555566905773923,
+            "far_ratio": 10.37044603849282,
+            "local_bound_ratio": 2.5,
+            "local_edge_mm": 0.19638804833099446,
+            "local_ratio": 1.3092536555399632,
+            "pass": true,
+            "requested_first_size_mm": 0.15
+          }
+        },
+        {
+          "cells": 4280,
+          "checks": {
+            "dof_range": true,
+            "mechanics_pass": true,
+            "pardiso_no_fallback": true,
+            "positive_midside_nodes": true,
+            "production_tet10": true,
+            "radial_only": true,
+            "refinement_pass": true,
+            "status_pass": true
+          },
+          "displacement_dofs": 23175,
+          "family": "OI",
+          "mechanics": {
+            "corner_volume_mm3": 437.57613646793055,
+            "expected_volume_mm3": 437.58029218383706,
+            "fallbacks": [],
+            "force_equilibrium_N": 3.197442310920451e-14,
+            "jacobian_warning": null,
+            "midside_nodes": 6491,
+            "pass": true,
+            "quadrature_volume_mm3": 437.57524516384655,
+            "residual": 4.595649296855298e-13,
+            "solver": "pardiso_spd",
+            "surface_load_N": 1.0,
+            "volume_relative_error": 1.1533928928386672e-05
+          },
+          "mesh_sha256": "a770158b806b764b9e9caa48109e7acf8f09a58b71574e06d0279f921b82c346",
+          "nodes": 7725,
+          "pass": true,
+          "refinement": {
+            "far_edge_mm": 1.5419269485036602,
+            "far_ratio": 10.279512990024402,
+            "local_bound_ratio": 2.5,
+            "local_edge_mm": 0.19342043827811142,
+            "local_ratio": 1.2894695885207428,
+            "pass": true,
+            "requested_first_size_mm": 0.15
+          }
+        },
+        {
+          "cells": 4302,
+          "checks": {
+            "dof_range": true,
+            "mechanics_pass": true,
+            "pardiso_no_fallback": true,
+            "positive_midside_nodes": true,
+            "production_tet10": true,
+            "radial_only": true,
+            "refinement_pass": true,
+            "status_pass": true
+          },
+          "displacement_dofs": 23283,
+          "family": "OS",
+          "mechanics": {
+            "corner_volume_mm3": 438.07504964974686,
+            "expected_volume_mm3": 438.0756804394869,
+            "fallbacks": [],
+            "force_equilibrium_N": -1.687538997430238e-14,
+            "jacobian_warning": null,
+            "midside_nodes": 6521,
+            "pass": true,
+            "quadrature_volume_mm3": 438.0744188937756,
+            "residual": 4.675727277460878e-13,
+            "solver": "pardiso_spd",
+            "surface_load_N": 1.0,
+            "volume_relative_error": 2.879743769446108e-06
+          },
+          "mesh_sha256": "06b9ed6449098315a5348668512211ae7c79b7c93ba3002c51f09a2798a59b90",
+          "nodes": 7761,
+          "pass": true,
+          "refinement": {
+            "far_edge_mm": 1.548652221575556,
+            "far_ratio": 10.32434814383704,
+            "local_bound_ratio": 2.5,
+            "local_edge_mm": 0.19319193333473048,
+            "local_ratio": 1.2879462222315365,
+            "pass": true,
+            "requested_first_size_mm": 0.15
+          }
+        }
+      ],
+      "pass": true,
+      "qualification": "all six production-medium TET10 radial-only mechanics/mesh/refinement records",
+      "required_families": [
+        "UB",
+        "UI",
+        "US",
+        "OB",
+        "OI",
+        "OS"
+      ]
+    },
+    "unique_bounded_fits": {
+      "fits": {
+        "pooled": {
+          "bounded_grid": {
+            "inside": true,
+            "maximum": 120.0,
+            "minimum": 0.5
+          },
+          "roots": [
+            5.85348501172813
+          ]
+        },
+        "raster_0": {
+          "bounded_grid": {
+            "inside": true,
+            "maximum": 120.0,
+            "minimum": 0.5
+          },
+          "roots": [
+            6.477416716189668
+          ]
+        },
+        "raster_30": {
+          "bounded_grid": {
+            "inside": true,
+            "maximum": 120.0,
+            "minimum": 0.5
+          },
+          "roots": [
+            5.53750700221681
+          ]
+        },
+        "raster_45": {
+          "bounded_grid": {
+            "inside": true,
+            "maximum": 120.0,
+            "minimum": 0.5
+          },
+          "roots": [
+            5.472186855632314
+          ]
+        }
+      },
+      "pass": true
+    }
+  },
+  "material": {
+    "E_MPa": 1590.0,
+    "nu": 0.36
+  },
+  "numerical_status": "PASS",
+  "pooled_card_policy": {
+    "reason": "Pooled UI semantics are unsafe: it would erase raster-angle restriction; evidence fit retained only.",
+    "solve_enabled": false
+  },
+  "predictions": [
+    {
+      "angle_deg": 0,
+      "family": "UB",
+      "fit": "raster_0",
+      "id": "UB_0_1",
+      "observed_N": 1670.0,
+      "predicted_N": 1515.5676940186297,
+      "relative_error_percent": -9.247443471938343,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UB",
+      "fit": "raster_0",
+      "id": "UB_0_2",
+      "observed_N": 1679.0,
+      "predicted_N": 1525.345079905089,
+      "relative_error_percent": -9.151573561340731,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UB",
+      "fit": "raster_0",
+      "id": "UB_0_3",
+      "observed_N": 1214.0,
+      "predicted_N": 1522.08722607628,
+      "relative_error_percent": 25.377860467568382,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UI",
+      "fit": "raster_0",
+      "id": "UI_0_1",
+      "observed_N": 1758.0,
+      "predicted_N": 1353.1786986940344,
+      "relative_error_percent": -23.027377776221027,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UI",
+      "fit": "raster_0",
+      "id": "UI_0_2",
+      "observed_N": 1839.0,
+      "predicted_N": 1356.0750231155776,
+      "relative_error_percent": -26.26019450159992,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UI",
+      "fit": "raster_0",
+      "id": "UI_0_3",
+      "observed_N": 1781.0,
+      "predicted_N": 1350.2812420451305,
+      "relative_error_percent": -24.184096460127424,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "US",
+      "fit": "raster_0",
+      "id": "US_0_1",
+      "observed_N": 902.0,
+      "predicted_N": 1191.8017174514962,
+      "relative_error_percent": 32.128793509035056,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "US",
+      "fit": "raster_0",
+      "id": "US_0_2",
+      "observed_N": 1106.0,
+      "predicted_N": 1194.3787240585477,
+      "relative_error_percent": 7.990843043268336,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "US",
+      "fit": "raster_0",
+      "id": "US_0_3",
+      "observed_N": 1588.0,
+      "predicted_N": 1209.819558489956,
+      "relative_error_percent": -23.814889263856664,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OB",
+      "fit": "raster_0",
+      "id": "OB_0_1",
+      "observed_N": 1262.0,
+      "predicted_N": 1555.228212115336,
+      "relative_error_percent": 23.23519905826752,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OB",
+      "fit": "raster_0",
+      "id": "OB_0_2",
+      "observed_N": 963.0,
+      "predicted_N": 1561.9525594046195,
+      "relative_error_percent": 62.196527456346786,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OB",
+      "fit": "raster_0",
+      "id": "OB_0_3",
+      "observed_N": 1404.0,
+      "predicted_N": 1582.0940382870501,
+      "relative_error_percent": 12.684760561755715,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OI",
+      "fit": "raster_0",
+      "id": "OI_0_1",
+      "observed_N": 1529.0,
+      "predicted_N": 1553.2628832632086,
+      "relative_error_percent": 1.5868465181954505,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OI",
+      "fit": "raster_0",
+      "id": "OI_0_2",
+      "observed_N": 1415.0,
+      "predicted_N": 1543.4795844105752,
+      "relative_error_percent": 9.079829286966445,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OI",
+      "fit": "raster_0",
+      "id": "OI_0_3",
+      "observed_N": 1532.0,
+      "predicted_N": 1540.2159708781846,
+      "relative_error_percent": 0.5362905272966456,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OS",
+      "fit": "raster_0",
+      "id": "OS_0_1",
+      "observed_N": 1366.0,
+      "predicted_N": 1513.6235311212893,
+      "relative_error_percent": 10.8069934935058,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OS",
+      "fit": "raster_0",
+      "id": "OS_0_2",
+      "observed_N": 1373.0,
+      "predicted_N": 1500.8141478645357,
+      "relative_error_percent": 9.309114920942152,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OS",
+      "fit": "raster_0",
+      "id": "OS_0_3",
+      "observed_N": 1261.0,
+      "predicted_N": 1504.0183587557676,
+      "relative_error_percent": 19.271876189989513,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UB",
+      "fit": "raster_30",
+      "id": "UB_30_1",
+      "observed_N": 1309.0,
+      "predicted_N": 1385.0430112370225,
+      "relative_error_percent": 5.809244555922266,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UB",
+      "fit": "raster_30",
+      "id": "UB_30_2",
+      "observed_N": 1474.0,
+      "predicted_N": 1373.5395724206373,
+      "relative_error_percent": -6.815497122073455,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UB",
+      "fit": "raster_30",
+      "id": "UB_30_3",
+      "observed_N": 1352.0,
+      "predicted_N": 1376.417416342782,
+      "relative_error_percent": 1.8060219188448245,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UI",
+      "fit": "raster_30",
+      "id": "UI_30_1",
+      "observed_N": 1474.0,
+      "predicted_N": 1292.9757860529412,
+      "relative_error_percent": -12.281154270492456,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UI",
+      "fit": "raster_30",
+      "id": "UI_30_2",
+      "observed_N": 1290.0,
+      "predicted_N": 1295.6917771740268,
+      "relative_error_percent": 0.4412230367462744,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UI",
+      "fit": "raster_30",
+      "id": "UI_30_3",
+      "observed_N": 1440.0,
+      "predicted_N": 1287.5400262539285,
+      "relative_error_percent": -10.587498176810517,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "US",
+      "fit": "raster_30",
+      "id": "US_30_1",
+      "observed_N": 1191.0,
+      "predicted_N": 1217.1170504758263,
+      "relative_error_percent": 2.192867378322938,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "US",
+      "fit": "raster_30",
+      "id": "US_30_2",
+      "observed_N": 1297.0,
+      "predicted_N": 1222.1772825597113,
+      "relative_error_percent": -5.768906510430893,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "US",
+      "fit": "raster_30",
+      "id": "US_30_3",
+      "observed_N": 1176.0,
+      "predicted_N": 1224.7056669641584,
+      "relative_error_percent": 4.141638347292376,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OB",
+      "fit": "raster_30",
+      "id": "OB_30_1",
+      "observed_N": 1193.0,
+      "predicted_N": 1440.2064198027924,
+      "relative_error_percent": 20.72140987450062,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OB",
+      "fit": "raster_30",
+      "id": "OB_30_2",
+      "observed_N": 1359.0,
+      "predicted_N": 1437.2554423500533,
+      "relative_error_percent": 5.758310695368163,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OB",
+      "fit": "raster_30",
+      "id": "OB_30_3",
+      "observed_N": 1302.0,
+      "predicted_N": 1443.1560652866658,
+      "relative_error_percent": 10.841479668714737,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OI",
+      "fit": "raster_30",
+      "id": "OI_30_1",
+      "observed_N": 1397.0,
+      "predicted_N": 1420.32966811607,
+      "relative_error_percent": 1.6699834012934955,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OI",
+      "fit": "raster_30",
+      "id": "OI_30_2",
+      "observed_N": 1455.0,
+      "predicted_N": 1414.4638368476894,
+      "relative_error_percent": -2.7859905946605146,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OI",
+      "fit": "raster_30",
+      "id": "OI_30_3",
+      "observed_N": 1379.0,
+      "predicted_N": 1434.9709786279038,
+      "relative_error_percent": 4.058809182589118,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OS",
+      "fit": "raster_30",
+      "id": "OS_30_1",
+      "observed_N": 1223.0,
+      "predicted_N": 1396.913760567159,
+      "relative_error_percent": 14.220258427404664,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OS",
+      "fit": "raster_30",
+      "id": "OS_30_2",
+      "observed_N": 1358.0,
+      "predicted_N": 1402.7511252701427,
+      "relative_error_percent": 3.295370049347768,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OS",
+      "fit": "raster_30",
+      "id": "OS_30_3",
+      "observed_N": 1220.0,
+      "predicted_N": 1402.7511252701427,
+      "relative_error_percent": 14.979600431978902,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UB",
+      "fit": "raster_45",
+      "id": "UB_45_1",
+      "observed_N": 1397.0,
+      "predicted_N": 1366.7227822572904,
+      "relative_error_percent": -2.16730263011522,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UB",
+      "fit": "raster_45",
+      "id": "UB_45_2",
+      "observed_N": 1495.0,
+      "predicted_N": 1363.8871883195554,
+      "relative_error_percent": -8.770087737822374,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UB",
+      "fit": "raster_45",
+      "id": "UB_45_3",
+      "observed_N": 1211.0,
+      "predicted_N": 1372.3900294237544,
+      "relative_error_percent": 13.327004906998718,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UI",
+      "fit": "raster_45",
+      "id": "UI_45_1",
+      "observed_N": 1468.0,
+      "predicted_N": 1304.7600640099806,
+      "relative_error_percent": -11.119886647821486,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UI",
+      "fit": "raster_45",
+      "id": "UI_45_2",
+      "observed_N": 1101.0,
+      "predicted_N": 1315.4670977883964,
+      "relative_error_percent": 19.479300434913394,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UI",
+      "fit": "raster_45",
+      "id": "UI_45_3",
+      "observed_N": 1410.0,
+      "predicted_N": 1299.3991806466606,
+      "relative_error_percent": -7.844029741371584,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "US",
+      "fit": "raster_45",
+      "id": "US_45_1",
+      "observed_N": 1122.0,
+      "predicted_N": 1212.3020591606823,
+      "relative_error_percent": 8.048311868153512,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "US",
+      "fit": "raster_45",
+      "id": "US_45_2",
+      "observed_N": 1182.0,
+      "predicted_N": 1217.3289859807137,
+      "relative_error_percent": 2.988915903613676,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "US",
+      "fit": "raster_45",
+      "id": "US_45_3",
+      "observed_N": 1353.0,
+      "predicted_N": 1227.3689548581349,
+      "relative_error_percent": -9.285369190086112,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OB",
+      "fit": "raster_45",
+      "id": "OB_45_1",
+      "observed_N": 1491.0,
+      "predicted_N": 1432.7999446665692,
+      "relative_error_percent": -3.9034242343011893,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OB",
+      "fit": "raster_45",
+      "id": "OB_45_2",
+      "observed_N": 1301.0,
+      "predicted_N": 1426.9860547769533,
+      "relative_error_percent": 9.683785916752763,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OB",
+      "fit": "raster_45",
+      "id": "OB_45_3",
+      "observed_N": 1444.0,
+      "predicted_N": 1400.7574882105175,
+      "relative_error_percent": -2.994633780435074,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OI",
+      "fit": "raster_45",
+      "id": "OI_45_1",
+      "observed_N": 1237.0,
+      "predicted_N": 1411.5027977496266,
+      "relative_error_percent": 14.106935953890588,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OI",
+      "fit": "raster_45",
+      "id": "OI_45_2",
+      "observed_N": 1361.0,
+      "predicted_N": 1423.0567729141237,
+      "relative_error_percent": 4.5596453280032145,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OI",
+      "fit": "raster_45",
+      "id": "OI_45_3",
+      "observed_N": 1161.0,
+      "predicted_N": 1417.2824180118973,
+      "relative_error_percent": 22.074282343832664,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OS",
+      "fit": "raster_45",
+      "id": "OS_45_1",
+      "observed_N": 1285.0,
+      "predicted_N": 1409.2872844318022,
+      "relative_error_percent": 9.672162212591617,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OS",
+      "fit": "raster_45",
+      "id": "OS_45_2",
+      "observed_N": 1225.0,
+      "predicted_N": 1403.5402680002512,
+      "relative_error_percent": 14.574715755122547,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OS",
+      "fit": "raster_45",
+      "id": "OS_45_3",
+      "observed_N": 1174.0,
+      "predicted_N": 1406.4144326061291,
+      "relative_error_percent": 19.796800051629404,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UB",
+      "fit": "pooled",
+      "id": "UB_0_1",
+      "observed_N": 1670.0,
+      "predicted_N": 1419.6731873503068,
+      "relative_error_percent": -14.989629499981627,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UB",
+      "fit": "pooled",
+      "id": "UB_0_2",
+      "observed_N": 1679.0,
+      "predicted_N": 1428.6531355424995,
+      "relative_error_percent": -14.910474357206704,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UB",
+      "fit": "pooled",
+      "id": "UB_0_3",
+      "observed_N": 1214.0,
+      "predicted_N": 1425.661115097855,
+      "relative_error_percent": 17.435017718109957,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UB",
+      "fit": "pooled",
+      "id": "UB_30_1",
+      "observed_N": 1309.0,
+      "predicted_N": 1425.661115097855,
+      "relative_error_percent": 8.912231863854458,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UB",
+      "fit": "pooled",
+      "id": "UB_30_2",
+      "observed_N": 1474.0,
+      "predicted_N": 1413.6800513707233,
+      "relative_error_percent": -4.092262457888518,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UB",
+      "fit": "pooled",
+      "id": "UB_30_3",
+      "observed_N": 1352.0,
+      "predicted_N": 1416.6772723317754,
+      "relative_error_percent": 4.783821918030728,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UB",
+      "fit": "pooled",
+      "id": "UB_45_1",
+      "observed_N": 1397.0,
+      "predicted_N": 1422.6678003161858,
+      "relative_error_percent": 1.8373514900634103,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UB",
+      "fit": "pooled",
+      "id": "UB_45_2",
+      "observed_N": 1495.0,
+      "predicted_N": 1419.6731873503068,
+      "relative_error_percent": -5.038582785932655,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UB",
+      "fit": "pooled",
+      "id": "UB_45_3",
+      "observed_N": 1211.0,
+      "predicted_N": 1428.6531355424995,
+      "relative_error_percent": 17.973008715317885,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UI",
+      "fit": "pooled",
+      "id": "UI_0_1",
+      "observed_N": 1758.0,
+      "predicted_N": 1320.5586151240436,
+      "relative_error_percent": -24.882900163592513,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UI",
+      "fit": "pooled",
+      "id": "UI_0_2",
+      "observed_N": 1839.0,
+      "predicted_N": 1323.3300580237344,
+      "relative_error_percent": -28.040779879079146,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UI",
+      "fit": "pooled",
+      "id": "UI_0_3",
+      "observed_N": 1781.0,
+      "predicted_N": 1317.7859733083628,
+      "relative_error_percent": -26.008648326313143,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UI",
+      "fit": "pooled",
+      "id": "UI_30_1",
+      "observed_N": 1474.0,
+      "predicted_N": 1306.683345318163,
+      "relative_error_percent": -11.35119773960902,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UI",
+      "fit": "pooled",
+      "id": "UI_30_2",
+      "observed_N": 1290.0,
+      "predicted_N": 1309.4608186311323,
+      "relative_error_percent": 1.5085905915606324,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UI",
+      "fit": "pooled",
+      "id": "UI_30_3",
+      "observed_N": 1440.0,
+      "predicted_N": 1301.1247442317115,
+      "relative_error_percent": -9.644114983908924,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UI",
+      "fit": "pooled",
+      "id": "UI_45_1",
+      "observed_N": 1468.0,
+      "predicted_N": 1328.8693612319012,
+      "relative_error_percent": -9.477563948780576,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UI",
+      "fit": "pooled",
+      "id": "UI_45_2",
+      "observed_N": 1101.0,
+      "predicted_N": 1339.9337353042747,
+      "relative_error_percent": 21.701520009470897,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UI",
+      "fit": "pooled",
+      "id": "UI_45_3",
+      "observed_N": 1410.0,
+      "predicted_N": 1323.3300580237344,
+      "relative_error_percent": -6.146804395479832,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "US",
+      "fit": "pooled",
+      "id": "US_0_1",
+      "observed_N": 902.0,
+      "predicted_N": 1201.96913427601,
+      "relative_error_percent": 33.256001582706205,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "US",
+      "fit": "pooled",
+      "id": "US_0_2",
+      "observed_N": 1106.0,
+      "predicted_N": 1204.5174952579007,
+      "relative_error_percent": 8.907549299991025,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "US",
+      "fit": "pooled",
+      "id": "US_0_3",
+      "observed_N": 1588.0,
+      "predicted_N": 1219.7844585800947,
+      "relative_error_percent": -23.18737666372199,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "US",
+      "fit": "pooled",
+      "id": "US_30_1",
+      "observed_N": 1191.0,
+      "predicted_N": 1209.6108894302918,
+      "relative_error_percent": 1.5626271561957727,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "US",
+      "fit": "pooled",
+      "id": "US_30_2",
+      "observed_N": 1297.0,
+      "predicted_N": 1214.6998685054004,
+      "relative_error_percent": -6.345422628727803,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "US",
+      "fit": "pooled",
+      "id": "US_30_3",
+      "observed_N": 1176.0,
+      "predicted_N": 1217.2427105479142,
+      "relative_error_percent": 3.507033209856636,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "US",
+      "fit": "pooled",
+      "id": "US_45_1",
+      "observed_N": 1122.0,
+      "predicted_N": 1209.6108894302918,
+      "relative_error_percent": 7.808457168475202,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "US",
+      "fit": "pooled",
+      "id": "US_45_2",
+      "observed_N": 1182.0,
+      "predicted_N": 1214.6998685054004,
+      "relative_error_percent": 2.766486337174312,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "US",
+      "fit": "pooled",
+      "id": "US_45_3",
+      "observed_N": 1353.0,
+      "predicted_N": 1224.8646854666777,
+      "relative_error_percent": -9.470459315101431,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OB",
+      "fit": "pooled",
+      "id": "OB_0_1",
+      "observed_N": 1262.0,
+      "predicted_N": 1455.0868825054513,
+      "relative_error_percent": 15.300069929116589,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OB",
+      "fit": "pooled",
+      "id": "OB_0_2",
+      "observed_N": 963.0,
+      "predicted_N": 1461.2555580416931,
+      "relative_error_percent": 51.73993333766285,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OB",
+      "fit": "pooled",
+      "id": "OB_0_3",
+      "observed_N": 1404.0,
+      "predicted_N": 1479.729546680414,
+      "relative_error_percent": 5.393842356154832,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OB",
+      "fit": "pooled",
+      "id": "OB_30_1",
+      "observed_N": 1193.0,
+      "predicted_N": 1482.8039138794222,
+      "relative_error_percent": 24.292029662985936,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OB",
+      "fit": "pooled",
+      "id": "OB_30_2",
+      "observed_N": 1359.0,
+      "predicted_N": 1479.729546680414,
+      "relative_error_percent": 8.883704685828842,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OB",
+      "fit": "pooled",
+      "id": "OB_30_3",
+      "observed_N": 1302.0,
+      "predicted_N": 1485.8769683073906,
+      "relative_error_percent": 14.12265501592862,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OB",
+      "fit": "pooled",
+      "id": "OB_45_1",
+      "observed_N": 1491.0,
+      "predicted_N": 1492.0191541583818,
+      "relative_error_percent": 0.06835373295652758,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OB",
+      "fit": "pooled",
+      "id": "OB_45_2",
+      "observed_N": 1301.0,
+      "predicted_N": 1485.8769683073906,
+      "relative_error_percent": 14.210374197339792,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OB",
+      "fit": "pooled",
+      "id": "OB_45_3",
+      "observed_N": 1444.0,
+      "predicted_N": 1458.171892370427,
+      "relative_error_percent": 0.9814329896417506,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OI",
+      "fit": "pooled",
+      "id": "OI_0_1",
+      "observed_N": 1529.0,
+      "predicted_N": 1473.2154751733892,
+      "relative_error_percent": -3.6484319703473322,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OI",
+      "fit": "pooled",
+      "id": "OI_0_2",
+      "observed_N": 1415.0,
+      "predicted_N": 1464.1163730951303,
+      "relative_error_percent": 3.471121773507435,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OI",
+      "fit": "pooled",
+      "id": "OI_0_3",
+      "observed_N": 1532.0,
+      "predicted_N": 1461.0807516546677,
+      "relative_error_percent": -4.6291937562227385,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OI",
+      "fit": "pooled",
+      "id": "OI_30_1",
+      "observed_N": 1397.0,
+      "predicted_N": 1455.005604855755,
+      "relative_error_percent": 4.15215496462098,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OI",
+      "fit": "pooled",
+      "id": "OI_30_2",
+      "observed_N": 1455.0,
+      "predicted_N": 1448.925227226309,
+      "relative_error_percent": -0.41751015626741994,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OI",
+      "fit": "pooled",
+      "id": "OI_30_3",
+      "observed_N": 1379.0,
+      "predicted_N": 1470.1837310807869,
+      "relative_error_percent": 6.612308272718415,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OI",
+      "fit": "pooled",
+      "id": "OI_45_1",
+      "observed_N": 1237.0,
+      "predicted_N": 1461.0807516546677,
+      "relative_error_percent": 18.114854620425834,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OI",
+      "fit": "pooled",
+      "id": "OI_45_2",
+      "observed_N": 1361.0,
+      "predicted_N": 1473.2154751733892,
+      "relative_error_percent": 8.24507532501022,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OI",
+      "fit": "pooled",
+      "id": "OI_45_3",
+      "observed_N": 1161.0,
+      "predicted_N": 1467.1506983091972,
+      "relative_error_percent": 26.369569191145324,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OS",
+      "fit": "pooled",
+      "id": "OS_0_1",
+      "observed_N": 1366.0,
+      "predicted_N": 1450.233286655108,
+      "relative_error_percent": 6.166419228045972,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OS",
+      "fit": "pooled",
+      "id": "OS_0_2",
+      "observed_N": 1373.0,
+      "predicted_N": 1438.1981973224572,
+      "relative_error_percent": 4.74859412399542,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OS",
+      "fit": "pooled",
+      "id": "OS_0_3",
+      "observed_N": 1261.0,
+      "predicted_N": 1441.2089088047253,
+      "relative_error_percent": 14.290952323927453,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OS",
+      "fit": "pooled",
+      "id": "OS_30_1",
+      "observed_N": 1223.0,
+      "predicted_N": 1426.1423214400982,
+      "relative_error_percent": 16.61016528537189,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OS",
+      "fit": "pooled",
+      "id": "OS_30_2",
+      "observed_N": 1358.0,
+      "predicted_N": 1432.1728731071528,
+      "relative_error_percent": 5.461919963707862,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OS",
+      "fit": "pooled",
+      "id": "OS_30_3",
+      "observed_N": 1220.0,
+      "predicted_N": 1432.1728731071528,
+      "relative_error_percent": 17.391219107143673,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OS",
+      "fit": "pooled",
+      "id": "OS_45_1",
+      "observed_N": 1285.0,
+      "predicted_N": 1453.2388397032403,
+      "relative_error_percent": 13.092516708423375,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OS",
+      "fit": "pooled",
+      "id": "OS_45_2",
+      "observed_N": 1225.0,
+      "predicted_N": 1447.226449671695,
+      "relative_error_percent": 18.140934667077136,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OS",
+      "fit": "pooled",
+      "id": "OS_45_3",
+      "observed_N": 1174.0,
+      "predicted_N": 1450.233286655108,
+      "relative_error_percent": 23.529240771303918,
+      "split": "holdout"
+    }
+  ],
+  "schema_version": 1,
+  "scope": "final ABS production TET10 medium radial-only material fit",
+  "source_provenance": {
+    "selected_record_count": 54,
+    "selection": "UB/UI/US/OB/OI/OS nominal tension families only",
+    "source_record_count": 108,
+    "source_sha256": "b96f0dffbf7410065fa333579255fdb9eefd4ef540faa8794b7aa5b62f291229"
+  },
+  "split": {
+    "calibration_families": [
+      "UB",
+      "US"
+    ],
+    "holdout_families": [
+      "UI",
+      "OB",
+      "OI",
+      "OS"
+    ],
+    "pass": true
+  }
+}

@@ -1,0 +1,196 @@
+{
+ "scope": "ASA FRADDCO SENB screening-fit cards",
+ "schema_version": 1,
+ "contact": "strips",
+ "cards": [
+  {
+   "id": "asa-fraddco-generic",
+   "name": "ASA FRADDCO (all rasters, screening fit)",
+   "E_MPa": 2200.0,
+   "nu": 0.35,
+   "solve_enabled": true,
+   "status": "screening_fit",
+   "E_status": "provisional (generic ASA; not measured in this dataset)",
+   "tcd": {
+    "K_Ic_MPa_sqrt_m": 1.5933223068907347,
+    "K_Ic_MPa_sqrt_mm": 50.38527536528517,
+    "sigma_uts_MPa": 25.138559794249833,
+    "L_mm": 1.2787234042553193,
+    "status": "screening-fit",
+    "provisional": true,
+    "angle_fitted": false,
+    "qualification": "least-squares point-method fit to measured SENB failure loads",
+    "note": "sigma_uts_MPa here is the fitted inherent strength sigma_0, not the tensile strength; K_Ic is sigma_0 sqrt(pi L), chosen so the tool's L = (K/sigma)^2/pi reproduces the fitted L."
+   },
+   "weibull": {
+    "m": 10.5,
+    "S0_MPa": 59.81026328177983,
+    "V0_mm3": 1.0,
+    "status": "probability-only",
+    "provisional": true,
+    "note": "m from within-group load scatter (CoV ~ 1.2/m); S0 least squares on notched groups. Mean-load prediction NOT validated (RMS 25 % on notched SENB): use for scatter / probability of failure only."
+   },
+   "ductility": {
+    "class": "orientation-dependent (0/90 brittle ... 45/-45 ductile)",
+    "evidence": "see the per-raster cards"
+   },
+   "fit_quality": {
+    "tcd_rms_percent": 15.233739616798522,
+    "notch_blind_control_rms_percent": 12.3,
+    "records": 71
+   },
+   "use_note": "Screening fit for single-edge-notch bend geometry. In these tests a notch-blind constant load per raster fits as well (RMS 12.3 %), so L and sigma_0 are NOT identified as transferable material constants: use for screening, not design. Peak load is weakly notch-sensitive; failure MODE is not (sharper notch and 0/90 raster: more brittle). Calibrated on the bare specimen with imprinted contact strips (roller supports, RBE3 load) -- no added material at the rig contacts.",
+   "provenance": {
+    "dataset": "Arrieta, Cicero et al., Notch Effect in ASA: Tensile and Fracture Tests - FRADDCO project",
+    "doi": "10.5281/zenodo.14065523",
+    "license": "CC-BY-4.0",
+    "records": "71 SENB (r = 0, 0.5, 1, 2 mm; one sheet without data) + 9 tensile, 3 rasters",
+    "method": "bench/asa_tcd_calibrate.py (contact = strips; one FE model per raster x radius, group-mean geometry) + bench/asa_build_cards.py",
+    "verification": "Opus verifier 2026-10-07 (pads calibration): numbers reproduced; flagged non-identifiability",
+    "restrictions": "FDM ASA as printed in the source study; raster orientation as named; screening only"
+   }
+  },
+  {
+   "id": "asa-fraddco-raster-0-90",
+   "name": "ASA FRADDCO raster 0/90 (screening fit)",
+   "E_MPa": 2200.0,
+   "nu": 0.35,
+   "solve_enabled": true,
+   "status": "screening_fit",
+   "E_status": "provisional (generic ASA; not measured in this dataset)",
+   "tcd": {
+    "K_Ic_MPa_sqrt_m": 1.4851383138183576,
+    "K_Ic_MPa_sqrt_mm": 46.96419712047928,
+    "sigma_uts_MPa": 23.43169247251016,
+    "L_mm": 1.2787234042553193,
+    "status": "screening-fit",
+    "provisional": true,
+    "angle_fitted": true,
+    "qualification": "least-squares point-method fit to measured SENB failure loads",
+    "note": "sigma_uts_MPa here is the fitted inherent strength sigma_0, not the tensile strength; K_Ic is sigma_0 sqrt(pi L), chosen so the tool's L = (K/sigma)^2/pi reproduces the fitted L."
+   },
+   "weibull": {
+    "m": 9.25,
+    "S0_MPa": 55.88667947564829,
+    "V0_mm3": 1.0,
+    "status": "probability-only",
+    "provisional": true,
+    "note": "m from within-group load scatter (CoV ~ 1.2/m); S0 least squares on notched groups. Mean-load prediction NOT validated (RMS 26 % on notched SENB): use for scatter / probability of failure only."
+   },
+   "ductility": {
+    "class": "brittle",
+    "evidence": "energy to 50 % load drop ~117 N.mm at every radius"
+   },
+   "fit_quality": {
+    "tcd_rms_percent_shared_L_fit": 14.251121474258271,
+    "notch_blind_control_rms_percent": 12.3,
+    "records": 23
+   },
+   "use_note": "Screening fit for single-edge-notch bend geometry. In these tests a notch-blind constant load per raster fits as well (RMS 12.3 %), so L and sigma_0 are NOT identified as transferable material constants: use for screening, not design. Peak load is weakly notch-sensitive; failure MODE is not (sharper notch and 0/90 raster: more brittle). Calibrated on the bare specimen with imprinted contact strips (roller supports, RBE3 load) -- no added material at the rig contacts.",
+   "provenance": {
+    "dataset": "Arrieta, Cicero et al., Notch Effect in ASA: Tensile and Fracture Tests - FRADDCO project",
+    "doi": "10.5281/zenodo.14065523",
+    "license": "CC-BY-4.0",
+    "records": "71 SENB (r = 0, 0.5, 1, 2 mm; one sheet without data) + 9 tensile, 3 rasters",
+    "method": "bench/asa_tcd_calibrate.py (contact = strips; one FE model per raster x radius, group-mean geometry) + bench/asa_build_cards.py",
+    "verification": "Opus verifier 2026-10-07 (pads calibration): numbers reproduced; flagged non-identifiability",
+    "restrictions": "FDM ASA as printed in the source study; raster orientation as named; screening only"
+   }
+  },
+  {
+   "id": "asa-fraddco-raster-30-60",
+   "name": "ASA FRADDCO raster 30/60 (screening fit)",
+   "E_MPa": 2200.0,
+   "nu": 0.35,
+   "solve_enabled": true,
+   "status": "screening_fit",
+   "E_status": "provisional (generic ASA; not measured in this dataset)",
+   "tcd": {
+    "K_Ic_MPa_sqrt_m": 1.6274793103971892,
+    "K_Ic_MPa_sqrt_mm": 51.46541465655271,
+    "sigma_uts_MPa": 25.677470139837737,
+    "L_mm": 1.2787234042553193,
+    "status": "screening-fit",
+    "provisional": true,
+    "angle_fitted": true,
+    "qualification": "least-squares point-method fit to measured SENB failure loads",
+    "note": "sigma_uts_MPa here is the fitted inherent strength sigma_0, not the tensile strength; K_Ic is sigma_0 sqrt(pi L), chosen so the tool's L = (K/sigma)^2/pi reproduces the fitted L."
+   },
+   "weibull": {
+    "m": 12.0,
+    "S0_MPa": 58.69456044770999,
+    "V0_mm3": 1.0,
+    "status": "probability-only",
+    "provisional": true,
+    "note": "m from within-group load scatter (CoV ~ 1.2/m); S0 least squares on notched groups. Mean-load prediction NOT validated (RMS 29 % on notched SENB): use for scatter / probability of failure only."
+   },
+   "ductility": {
+    "class": "intermediate",
+    "evidence": "~147 N.mm; r = 2 mm notch 222 N.mm"
+   },
+   "fit_quality": {
+    "tcd_rms_percent_shared_L_fit": 14.251121474258271,
+    "notch_blind_control_rms_percent": 12.3,
+    "records": 24
+   },
+   "use_note": "Screening fit for single-edge-notch bend geometry. In these tests a notch-blind constant load per raster fits as well (RMS 12.3 %), so L and sigma_0 are NOT identified as transferable material constants: use for screening, not design. Peak load is weakly notch-sensitive; failure MODE is not (sharper notch and 0/90 raster: more brittle). Calibrated on the bare specimen with imprinted contact strips (roller supports, RBE3 load) -- no added material at the rig contacts.",
+   "provenance": {
+    "dataset": "Arrieta, Cicero et al., Notch Effect in ASA: Tensile and Fracture Tests - FRADDCO project",
+    "doi": "10.5281/zenodo.14065523",
+    "license": "CC-BY-4.0",
+    "records": "71 SENB (r = 0, 0.5, 1, 2 mm; one sheet without data) + 9 tensile, 3 rasters",
+    "method": "bench/asa_tcd_calibrate.py (contact = strips; one FE model per raster x radius, group-mean geometry) + bench/asa_build_cards.py",
+    "verification": "Opus verifier 2026-10-07 (pads calibration): numbers reproduced; flagged non-identifiability",
+    "restrictions": "FDM ASA as printed in the source study; raster orientation as named; screening only"
+   }
+  },
+  {
+   "id": "asa-fraddco-raster-45-45",
+   "name": "ASA FRADDCO raster 45/-45 (screening fit)",
+   "E_MPa": 2200.0,
+   "nu": 0.35,
+   "solve_enabled": true,
+   "status": "screening_fit",
+   "E_status": "provisional (generic ASA; not measured in this dataset)",
+   "tcd": {
+    "K_Ic_MPa_sqrt_m": 1.6898486535831352,
+    "K_Ic_MPa_sqrt_mm": 53.43770646291563,
+    "sigma_uts_MPa": 26.66149920679256,
+    "L_mm": 1.2787234042553193,
+    "status": "screening-fit",
+    "provisional": true,
+    "angle_fitted": true,
+    "qualification": "least-squares point-method fit to measured SENB failure loads",
+    "note": "sigma_uts_MPa here is the fitted inherent strength sigma_0, not the tensile strength; K_Ic is sigma_0 sqrt(pi L), chosen so the tool's L = (K/sigma)^2/pi reproduces the fitted L."
+   },
+   "weibull": {
+    "m": 10.25,
+    "S0_MPa": 66.43109644936197,
+    "V0_mm3": 1.0,
+    "status": "probability-only",
+    "provisional": true,
+    "note": "m from within-group load scatter (CoV ~ 1.2/m); S0 least squares on notched groups. Mean-load prediction NOT validated (RMS 13 % on notched SENB): use for scatter / probability of failure only."
+   },
+   "ductility": {
+    "class": "ductile",
+    "evidence": "184 N.mm (crack) rising to 291 N.mm (r = 2 mm); ranks with root triaxiality"
+   },
+   "fit_quality": {
+    "tcd_rms_percent_shared_L_fit": 14.251121474258271,
+    "notch_blind_control_rms_percent": 12.3,
+    "records": 24
+   },
+   "use_note": "Screening fit for single-edge-notch bend geometry. In these tests a notch-blind constant load per raster fits as well (RMS 12.3 %), so L and sigma_0 are NOT identified as transferable material constants: use for screening, not design. Peak load is weakly notch-sensitive; failure MODE is not (sharper notch and 0/90 raster: more brittle). Calibrated on the bare specimen with imprinted contact strips (roller supports, RBE3 load) -- no added material at the rig contacts.",
+   "provenance": {
+    "dataset": "Arrieta, Cicero et al., Notch Effect in ASA: Tensile and Fracture Tests - FRADDCO project",
+    "doi": "10.5281/zenodo.14065523",
+    "license": "CC-BY-4.0",
+    "records": "71 SENB (r = 0, 0.5, 1, 2 mm; one sheet without data) + 9 tensile, 3 rasters",
+    "method": "bench/asa_tcd_calibrate.py (contact = strips; one FE model per raster x radius, group-mean geometry) + bench/asa_build_cards.py",
+    "verification": "Opus verifier 2026-10-07 (pads calibration): numbers reproduced; flagged non-identifiability",
+    "restrictions": "FDM ASA as printed in the source study; raster orientation as named; screening only"
+   }
+  }
+ ],
+ "cards_sha256": "d48dac7666a2d86146d7766e4047b2dbe2391b827095f59371825f824b5ed939"
+}
