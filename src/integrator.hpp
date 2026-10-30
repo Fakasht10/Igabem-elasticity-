@@ -42,9 +42,10 @@ class ElementIntegrator {
  public:
   // cache = false: no far-field point cache (adaptive mode then splits far
   // elements into cells instead), for short-lived integrators on small meshes,
-  // e.g. the sub-cells of a loaded region (regions.hpp).
-  ElementIntegrator(const Mesh& m, const SolverOptions& o, bool cache = true)
-      : mesh_(m), opt_(o), g_(gaussLegendre(o.n_gauss)) {
+  // e.g. the sub-cells of a loaded region (regions.hpp). max_order: highest cached
+  // rule order (callers whose tolerance never asks for more save the memory).
+  ElementIntegrator(const Mesh& m, const SolverOptions& o, bool cache = true, int max_order = 10)
+      : mesh_(m), opt_(o), g_(gaussLegendre(o.n_gauss)), max_order_(max_order) {
     for (int k = 1; k <= o.n_gauss; ++k) rules_.push_back(gaussLegendre(k));
     // Bounding spheres of elements and cells, for cheap far-field tests.
     elem_ball_.resize(m.elements.size());
@@ -118,6 +119,19 @@ class ElementIntegrator {
     r = {&cx_[p0], &cnj_[p0], &cw_[p0], &cr_[roff_[p0]], m * m, nloc_[ie], eidx_[ie].data()};
   }
   int maxCachedOrder() const { return max_cached_; }
+  // Drop the far-field cache (farRuleOrder then returns 0: exact rules only).
+  void releaseCache() {
+    max_cached_ = 0;
+    std::vector<Vec3>().swap(cx_);
+    std::vector<Vec3>().swap(cnj_);
+    std::vector<double>().swap(cw_);
+    std::vector<long>().swap(roff_);
+    std::vector<double>().swap(cr_);
+  }
+  // Bytes held by the far-field cache.
+  double cacheBytes() const {
+    return 48.0 * cx_.size() + 8.0 * (cw_.size() + roff_.size() + cr_.size());
+  }
 
   // Order of farRule's rule, 0 if none qualifies.
   int farRuleOrder(size_t ie, double d, double tol, int min_order) const {
@@ -184,7 +198,7 @@ class ElementIntegrator {
   std::vector<Ball> elem_ball_;
   std::vector<std::vector<Ball>> cell_ball_;
   // Far-field cache: element-wide m x m Gauss rules, m = 2..max_cached_.
-  int max_cached_ = 0;
+  int max_cached_ = 0, max_order_ = 10;
   std::vector<int> min_order_;               // per element: max degree + 2
   std::vector<char> rational_;               // per element: weights not all equal
   std::vector<std::vector<long>> first_;     // per element, per order: first point id
@@ -199,7 +213,7 @@ class ElementIntegrator {
   // (n_loc = (p + 1)(q + 1) basis values each), filled in parallel.
   void buildCache() {
     const size_t ne = mesh_.elements.size();
-    max_cached_ = std::min(opt_.n_gauss, 10);
+    max_cached_ = std::min(opt_.n_gauss, max_order_);
     min_order_.assign(ne, 2);
     rational_.assign(ne, 0);
     first_.assign(ne, {});
