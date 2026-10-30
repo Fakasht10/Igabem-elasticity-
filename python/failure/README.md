@@ -36,8 +36,9 @@ TCD / Energy TCD / ASED, Weibull) running on IgBEM solutions. The criteria code 
 
 ```
 cd python
-python3 -m failure.validate_cicero      # ~5 min, results/failure/cicero.json
-python3 -m failure.weibull_parity       # ~2 min, results/failure/weibull_parity.json
+python3 -m failure.validate_cicero      # ~5 min, results/failure/cicero.json (paper's K_mat, L)
+python3 -m failure.validate_cicero --card ABS-M30-iso --sigma-uts 65   # cicero_card.json
+python3 -m failure.weibull_parity       # ~2 min, card pla-raster-0-weibull, results/failure/weibull_parity.json
 python3 plot_failure.py                 # results/fig_failure.png
 python3 -m unittest failure.test_failure
 ```
