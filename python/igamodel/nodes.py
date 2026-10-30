@@ -13,6 +13,7 @@ that app/bc_case reads (src/case_io.hpp).
       cad       (one)     the STEP the geometry is made from (step_auto.py) and the TET10 mesh of assessments
       assessment (many)   TCD failure check of one feature point (python/failure/assess.py)
       submodel  (many)    a box of the part meshed finer, driven by the global solve (igamodel/submodel.py)
+      weibull   (many)    weakest-link failure load of the whole part (python/failure/weibull.py)
 
 Prop keys are the case file's keys, so nothing is renamed between the tree,
 the file and the solver. cad and assessment are not part of the case file
@@ -70,7 +71,7 @@ def load_rule(props, region):
 
 
 register(NodeType("case", "Model", "case", children=("material", "solver", "grade", "selection", "support", "loadcase", "output",
-                                                     "cad", "assessment", "submodel"),
+                                                     "cad", "assessment", "submodel", "weibull"),
                   props=(
     Prop("geometry", "str", doc="the .dat surface (step_auto.py / geomio), relative to the case file"),
     Prop("faces", "str", doc="CAD face map; unset = next to the geometry (python/face_ids.py)"),
@@ -167,3 +168,24 @@ register(NodeType("submodel", "Submodel", "sub", rule=submodel_rule, props=(
     Prop("curvature", "int", doc="knot spans per radian on curved edges; unset = 6"),
     Prop("degree", "int", doc="unset = 2"),
 ), doc="The part inside a box, meshed at its own h, its cut faces driven by the global displacement."))
+
+
+def weibull_rule(props, region):
+    if "card" in props and ("m" in props or "S0" in props):
+        raise ModelError("a weibull check takes m and S0 from its card or from m and S0, not both")
+
+
+register(NodeType("weibull", "Weibull", "wb", rule=weibull_rule, props=(
+    Prop("label", "str"),
+    Prop("cases", "names", doc="load cases to assess; unset = all"),
+    Prop("card", "str", doc="material card (failure/materials.py) giving m, S0 and V0"),
+    Prop("m", "float", doc="Weibull modulus, without a card"),
+    Prop("S0", "float", "MPa", doc="scale stress at V0, without a card"),
+    Prop("V0", "float", "mm^3", doc="reference volume; unset = the card's, or 1"),
+    Prop("probability", "float", doc="also report the load at this failure probability (0 < P < 1)"),
+    Prop("mesh_h", "float", "mm", doc="TET10 size of the integration mesh; unset = 2.5"),
+    Prop("mesh_curvature", "int", doc="TET10 elements per radian; unset = 16"),
+    Prop("focus_point", "vec3", "mm", doc="centre of a refinement sphere of the integration mesh"),
+    Prop("focus_radius", "float", "mm"), Prop("focus_h", "float", "mm"),
+), doc="Stress weakest-link volume law over the whole part: J = sum w max(s1, 0)^m / V0 at every TET10 Gauss "
+       "point, evaluated exactly; the characteristic (63.2 %) and mean failure loads per load case."))

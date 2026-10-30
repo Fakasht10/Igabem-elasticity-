@@ -66,6 +66,39 @@ class Nodes(unittest.TestCase):
             run.strength(m.find(a.tag), {"E": 2241.0, "nu": c["nu"]})
 
 
+class Weibull(unittest.TestCase):
+    def test_weibull_parameters_from_a_card_or_the_node(self):
+        from failure import materials
+        c = materials.card("pla-raster-0-weibull")
+        mat = {"E": c["E_MPa"], "nu": c["nu"]}
+        m = senb_like()
+        tag = m.apply({"op": "add", "parent": "root", "kind": "weibull", "props": {"card": "pla-raster-0-weibull"}})
+        self.assertEqual(run.weibull_params(m.find(tag), mat)[:3],
+                         (c["weibull"]["m"], c["weibull"]["S0_MPa"], c["weibull"]["V0_mm3"]))
+        with self.assertRaisesRegex(ModelError, "card pla-raster-0-weibull has E"):
+            run.weibull_params(m.find(tag), {"E": 1.0, "nu": c["nu"]})
+        with self.assertRaisesRegex(ModelError, "not both"):
+            m.apply({"op": "set", "tag": tag, "key": "m", "value": 5.0})
+        m.apply({"op": "set", "tag": tag, "key": "card", "value": None})
+        with self.assertRaisesRegex(ModelError, "needs a card, or m and S0"):
+            run.weibull_params(m.find(tag), mat)
+        m.apply({"op": "batch", "ops": [{"op": "set", "tag": tag, "key": "m", "value": 5.0},
+                                        {"op": "set", "tag": tag, "key": "S0", "value": 100.0}]})
+        self.assertEqual(run.weibull_params(m.find(tag), mat), (5.0, 100.0, 1.0, "m, S0 set"))
+
+    def test_weibull_refusals_before_any_work(self):
+        m = from_case(copy.deepcopy(ALL_FORMS))
+        m.apply({"op": "add", "parent": "root", "kind": "cad", "props": {"step": "x.step"}})
+        tag = m.apply({"op": "add", "parent": "root", "kind": "weibull",
+                       "props": {"m": 5.0, "S0": 100.0, "probability": 1.0}})
+        with self.assertRaisesRegex(ModelError, "strictly between 0 and 1"):
+            run.assess(m, ".", "/nonexistent")
+        m.apply({"op": "batch", "ops": [{"op": "set", "tag": tag, "key": "probability", "value": 0.1},
+                                        {"op": "set", "tag": tag, "key": "focus_point", "value": [0, 0, 0]}]})
+        with self.assertRaisesRegex(ModelError, "focus_point, focus_radius and focus_h"):
+            run.assess(m, ".", "/nonexistent")
+
+
 class Capabilities(unittest.TestCase):
     def test_features_name_what_the_model_uses(self):
         f = backends.features(senb_like())

@@ -8,12 +8,13 @@ failure layer when they are imported.
 | File | Lines | What |
 |---|---|---|
 | `model.py` | 423 | `Prop` and `NodeType` schemas (JSON schema per type, for forms and agent tools); regions in case-file keys (`face_id`, `face_ids`, `patches`, `select`); `Node` and `Model` with plain-dict operations (`add`, `set`, `select`, `remove`), each checked before anything changes; snapshot undo and redo; versioned model file |
-| `nodes.py` | 142 | case, material, solver, grade, support (fixed, symmetry, spring, rbe2), loadcase, load (force and moment, pressure, traction, bearing, rbe2 master), output; cad and assessment, which live in the model file only |
+| `nodes.py` | 191 | case, material, solver, grade, support (fixed, symmetry, spring, rbe2), loadcase, load (force and moment, pressure, traction, bearing, rbe2 master), output; cad and assessment, which live in the model file only |
 | `casefile.py` | 193 | case file to tree and back (`merge_case` into an existing tree); the comment block at the top is kept; unknown keys are refused, never dropped |
 | `backends.py` | 155 | capability words; `features(model)` says what a model asks for, so a backend refuses a model before any work; `Run` keeps one operator alive and answers each point query for every load case at once; the IgBEM backend (`bc_case --serve`) |
-| `run.py` | 163 | `assess(model, base, workdir)`: geometry from the cad node, one solve, the failure layer's Assess chain at each assessment point for each load case |
+| `run.py` | 229 | `assess(model, base, workdir)`: geometry from the cad node, one solve, the failure layer's Assess chain at each assessment point for each load case |
 | `submodel.py` | 166 | a box of the part (STEP ∩ box), meshed at its own h; its cut faces driven exactly by the global solve; ill-posed boxes refused |
-| `gate_cicero.py` | 103 | phase-1 gate: Cicero 2020 failure loads through the tree against `failure/validate_cicero.py` |
+| `gate_weibull.py` | 85 | Weibull gate: log J through the tree against `failure/weibull_parity.py` |
+| `gate_cicero.py` | 128 | phase-1 gate: Cicero 2020 failure loads through the tree against `failure/validate_cicero.py` |
 
 ```python
 import igamodel as im
@@ -74,7 +75,24 @@ rows = run.assess(m, base=".", workdir="cache/failure")  # one row per assessmen
   rather than mixing two materials.
 - Every load case shares one operator. bc_case answers each point query for all load cases at once, and the per-case
   views share that answer, so a second load case adds no stress evaluation.
-- Not yet an assessment method: Weibull (`failure/weibull_parity.py` is still a driver).
+- A `weibull` node gives the weakest-link load factors of the whole part, characteristic (63.2 %) and mean, and
+  optionally the factor at a failure probability, per load case. It takes m and S0 from a card or from the node.
+  The stress at every TET10 Gauss point is evaluated exactly. Weibull nodes share the assessments' solve.
+
+## Weibull gate
+
+`gate_weibull.py` builds the PLA quarter specimens of `failure/weibull_parity.py` as trees and compares them with
+that script run on the same machine (4 cores, about 4 min per specimen):
+
+| specimen | log J at m = 4.0789, tree / parity | at the card's m 4.1316: exact / parity interpolated | mean-load effect |
+|---|---|---|---|
+| UB | −3.470022342077 / −3.470022342077 | −3.589272 / −3.588324 | ×1.00023 |
+| US | −3.470364227175 / −3.470364227175 | −3.581527 / −3.578563 | ×1.00072 |
+
+- At the grid point the two are bit-identical.
+- At the card's own m, the tree gives the exact J, while weibull_parity interpolates log J over its m grid. That
+  interpolation moved its mean loads by 0.02 % and 0.07 %.
+- The parity against the NGSolve reductions (mean load ×1.0008 UB, ×1.0145 US) is unchanged.
 
 ## Submodels
 

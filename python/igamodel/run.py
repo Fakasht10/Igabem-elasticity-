@@ -4,7 +4,10 @@ solve for every load case, then the failure layer's Assess chain
 
     rows = run.assess(model, base="cases/", workdir="cache/failure")
 
-Each row gives the load factor at failure: the multiple of the load case, as
+A weibull node gives the weakest-link (stress volume law) load factors of the whole
+part instead: characteristic (63.2 %) and mean, optionally at a failure probability.
+
+Each assessment row gives the load factor at failure: the multiple of the load case, as
 applied, at which the point method (s1 at L/2 = sigma_0) or the energy point
 method (W at R0 = W_c) is met. Linear elasticity, so one solve gives every
 factor. A load case of one force_N load also gets the failure load in N.
@@ -58,6 +61,52 @@ def _force_N(model, case):
     return None
 
 
+def weibull_params(n, material):
+    """(m, S0, V0, source) of a weibull node; a card must agree with the material node, as in strength()."""
+    p = n.props
+    if "card" in p:
+        from failure import materials
+        c = materials.card(p["card"])
+        for k, ck in (("E", "E_MPa"), ("nu", "nu")):
+            if abs(c[ck] - material[k]) > 1e-12 * abs(c[ck]):
+                raise ModelError(f"{n.tag}: card {p['card']} has {k} = {c[ck]:g}, the material node {material[k]:g}")
+        w = c.get("weibull") or {}
+        if "m" not in w or "S0_MPa" not in w:
+            raise ModelError(f"{n.tag}: card {p['card']} has no Weibull m and S0")
+        return w["m"], w["S0_MPa"], p.get("V0", w.get("V0_mm3", 1.0)), f"card {p['card']}"
+    if "m" not in p or "S0" not in p:
+        raise ModelError(f"{n.tag}: a weibull check needs a card, or m and S0")
+    return p["m"], p["S0"], p.get("V0", 1.0), "m, S0 set"
+
+
+def _weibull_rows(model, n, params, run, mesh, t_geo, log):
+    import math
+    from failure import weibull as W
+    from failure.fields import tet10_quadrature
+    m, S0, V0, src = params
+    P, w, _ = tet10_quadrature(mesh.points, mesh.cells, np.zeros((len(mesh.points), 1)))
+    rows = []
+    for case in n.props.get("cases") or run.cases:
+        t = time.perf_counter()
+        sig, wind = run.view(case).stress(P)
+        logJ = W.log_stress_power_integral(sig, w, m, V0)
+        eta = W.characteristic_failure_load_from_log_j(logJ, S0, m, 1.0)
+        F, q = _force_N(model, case), n.props.get("probability")
+        row = {"weibull": n.props.get("label", n.tag), "case": case, "params": src, "m": m, "S0": S0, "V0": V0,
+               "log_J": logJ, "factor_characteristic": eta, "factor_mean": eta * math.gamma(1.0 + 1.0 / m),
+               **({"probability": q, "factor_at_probability": eta * (-math.log1p(-q)) ** (1.0 / m)} if q else {}),
+               "gauss_points": int(len(P)), "volume_mm3": float(w.sum()), "points_outside": int((wind < 0.5).sum()),
+               "unknowns": _unknowns(run.report), "t_geometry_s": round(t_geo, 1), "t_solve_s": round(run.seconds, 1),
+               "t_assess_s": round(time.perf_counter() - t, 1)}
+        if F:
+            for k in ("characteristic", "mean") + (("at_probability",) if q else ()):
+                row[f"failure_load_{k}_N"] = F * row[f"factor_{k}"]
+        if row["points_outside"]:
+            log(f"{n.tag}: {row['points_outside']} Gauss points lie outside the spline surface")
+        rows.append(row)
+    return rows
+
+
 def _region_faces(model):
     """CAD faces the supports and loads act on; a submodel box must not reach them."""
     faces = []
@@ -83,9 +132,9 @@ def assess(model, base, workdir, backend="igabem", log=print) -> list[dict]:
 
     b = backends.get(backend)
     backends.check(b, model)
-    items = model.of_kind("assessment")
-    if not items:
-        raise ModelError("the model has no assessment")
+    items, wbs = model.of_kind("assessment"), model.of_kind("weibull")
+    if not items and not wbs:
+        raise ModelError("the model has no assessment or weibull check")
     if not model.of_kind("cad"):
         raise ModelError("an assessment meshes the part's CAD (TET10); the model has no cad")
     step = backends._abs(model.of_kind("cad")[0].props["step"], base)
@@ -106,6 +155,15 @@ def assess(model, base, workdir, backend="igabem", log=print) -> list[dict]:
             check_box(step, n["lo"], n["hi"], a.props["point"], _region_faces(model),
                       1e-6 * float(np.linalg.norm(np.subtract(n["hi"], n["lo"]))))
         plans.append((a, K, s, src, sub))
+    wplans = []
+    for n in wbs:
+        q = n.props.get("probability")
+        if q is not None and not 0.0 < q < 1.0:
+            raise ModelError(f"{n.tag}: probability is strictly between 0 and 1")
+        f = [k for k in ("focus_point", "focus_radius", "focus_h") if k in n.props]
+        if f and len(f) < 3:
+            raise ModelError(f"{n.tag}: a refinement sphere needs focus_point, focus_radius and focus_h")
+        wplans.append((n, weibull_params(n, mat)))
     t0 = time.perf_counter()
     if "geometry" not in model.root.props:
         b.geometry(model, base, workdir, log=log)
@@ -156,6 +214,13 @@ def assess(model, base, workdir, backend="igabem", log=print) -> list[dict]:
                     "t_geometry_s": round(t_geo, 1), "t_solve_s": round(glob.seconds, 1),
                     **({"t_submodel_solve_s": round(run.seconds, 1)} if sub else {}),
                     "t_assess_s": round(time.perf_counter() - t, 1)})
+        for n, params in wplans:
+            p = {**MESH_DEFAULTS, **n.props}
+            focus = ((*p["focus_point"], p["focus_radius"], p["focus_h"]),) if "focus_point" in p else ()
+            key = (step, p["mesh_h"], p["mesh_curvature"], focus)
+            if key not in meshes:
+                meshes[key] = fea_mesh(step, h=p["mesh_h"], curvature=p["mesh_curvature"], focus=list(focus))
+            rows += _weibull_rows(model, n, params, glob, meshes[key], t_geo, log)
     return rows
 
 
