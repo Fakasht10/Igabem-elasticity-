@@ -1,0 +1,61 @@
+#ifndef HTOOL_WRAPPER_MPI_HPP
+#define HTOOL_WRAPPER_MPI_HPP
+
+#include "htool/misc/misc.hpp" // for underlying_type
+#include <climits>             // for UCHAR_MAX, UINT_MAX, ULONG_MAX, USHRT...
+#include <complex>             // for complex
+#include <cstdint>             // for SIZE_MAX
+
+#if defined(__clang__)
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wold-style-cast"
+#elif defined(__GNUC__) || defined(__GNUG__)
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
+
+#include <mpi.h> // for MPI_Datatype, MPI_C_COMPLEX, MPI_C_DO...
+
+#if defined(__clang__)
+#    pragma clang diagnostic pop
+#elif defined(__GNUC__) || defined(__GNUG__)
+#    pragma GCC diagnostic pop
+#endif
+
+namespace htool {
+template <typename T>
+struct wrapper_mpi {
+    static MPI_Datatype mpi_type();
+    static MPI_Datatype mpi_underlying_type() {
+        return wrapper_mpi<underlying_type<T>>::mpi_type();
+    }
+};
+
+template <>
+inline MPI_Datatype wrapper_mpi<int>::mpi_type() { return MPI_INT; }
+template <>
+inline MPI_Datatype wrapper_mpi<float>::mpi_type() { return MPI_FLOAT; }
+template <>
+inline MPI_Datatype wrapper_mpi<double>::mpi_type() { return MPI_DOUBLE; }
+template <>
+inline MPI_Datatype wrapper_mpi<std::complex<float>>::mpi_type() { return MPI_C_COMPLEX; }
+template <>
+inline MPI_Datatype wrapper_mpi<std::complex<double>>::mpi_type() { return MPI_C_DOUBLE_COMPLEX; }
+
+// https: //stackoverflow.com/questions/40807833/sending-size-t-type-data-with-mpi
+#if SIZE_MAX == UCHAR_MAX
+#    define my_MPI_SIZE_T MPI_UNSIGNED_CHAR
+#elif SIZE_MAX == USHRT_MAX
+#    define my_MPI_SIZE_T MPI_UNSIGNED_SHORT
+#elif SIZE_MAX == UINT_MAX
+#    define my_MPI_SIZE_T MPI_UNSIGNED
+#elif SIZE_MAX == ULONG_MAX
+#    define my_MPI_SIZE_T MPI_UNSIGNED_LONG
+#elif SIZE_MAX == ULLONG_MAX
+#    define my_MPI_SIZE_T MPI_UNSIGNED_LONG_LONG
+#else
+#    error "what is happening here?"
+#endif
+
+} // namespace htool
+#endif
