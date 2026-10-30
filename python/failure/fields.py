@@ -78,6 +78,16 @@ def tet10_quadrature(points, cells, nodal):
     return P, w.ravel(), V
 
 
+def tet10_gradient(points, cells, nodal):
+    """Spatial gradient of a nodal field at the Gauss points of tet10_quadrature (same order): (n_cells * 4, ..., 3)."""
+    _, dN = _tet10_shape(_TET_RULE)
+    X = np.asarray(points, float)[np.asarray(cells)]                     # (nc, 10, 3)
+    J = np.einsum("qkr,ckx->cqxr", dN, X)                                # dx/dL
+    G = np.einsum("qkr,cqrx->cqkx", dN, np.linalg.inv(J))                # dN_k/dx
+    V = np.asarray(nodal, float)[np.asarray(cells)]                      # (nc, 10, ...)
+    g = np.einsum("cqkx,ck...->cq...x", G, V)
+    return g.reshape((-1,) + g.shape[2:])
+
 def kinked_edge_nodes(mesh, min_angle_deg=EDGE_KINK_DEG):
     """Surface nodes where two CAD faces meet at a kink of at least `min_angle_deg` (a sharp edge, convex or
     re-entrant). Faces that meet tangentially (a fillet running into a flat) are not a kink. Orientation-free: the
