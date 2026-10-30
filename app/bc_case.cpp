@@ -1,3 +1,4 @@
+#include <sys/resource.h>
 // Any part with local supports and loads from a JSON case file (src/case_io.hpp):
 // thin driver over BcModel. All cases share the cached operators and one LU.
 //
@@ -122,6 +123,18 @@ int main(int argc, char** argv) {
   }
   const double t_solve = std::chrono::duration<double>(std::chrono::steady_clock::now() - t1).count();
   std::printf("# %zu case(s) solved in %.2f s (region right-hand sides included)\n", cases.size(), t_solve);
+  if (const HMixed* h = model.hmat()) {
+    const auto& st = h->st;
+    const auto& hs = h->op().stats();
+    std::printf("# hmat eps %g: operator %.2f s (near %.2f GB, far %.2f GB, rank mean %.1f), preconditioner %.2f s "
+                "(%ld nonzeros, coarse %d), GMRES %.2f s (products %.2f, preconditioner %.2f), iterations", h->options().h.eps,
+                st.t_build, hs.bytes_near / 1e9, hs.bytes_far / 1e9, hs.rank_mean, st.t_precond, st.nnz,
+                st.coarse_dim, st.t_solve, st.t_matvec, st.t_pc);
+    for (size_t k = 0; k < st.iterations.size(); ++k) std::printf(" %d (%.1e)", st.iterations[k], st.residuals[k]);
+    rusage u;
+    getrusage(RUSAGE_SELF, &u);
+    std::printf("; peak RSS %.2f GB\n", u.ru_maxrss / 1048576.0);
+  }
 
   std::ofstream csv;
   if (!cf.csv.empty()) {

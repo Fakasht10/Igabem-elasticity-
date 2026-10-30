@@ -21,6 +21,10 @@
 // columns (cost ~ spring area) and one LU are redone, and each load is one
 // right-hand side (cost ~ loaded area).
 //
+// Backends: dense rows + LU (default), or the hierarchical operator + GMRES
+// (hmat/h_mixed.hpp, `hsolver.on`) for 20k-100k+ unknowns: same unknowns, rows,
+// springs, free modes and right-hand sides; no row cache.
+//
 // Rigid modes: the six rigid motions are tested against the supports (fixed
 // components) and springs; the ones left free (e.g. none held at all, or a
 // translation along a symmetry plane) are bordered out of the LU. Loads must not
@@ -38,6 +42,7 @@
 #include <string>
 #include <vector>
 
+#include "hmat/h_mixed.hpp"
 #include "multi_region.hpp"
 #include "operators.hpp"
 #include "regions.hpp"
@@ -151,6 +156,12 @@ class BcModel {
   // tractions are filled in every solution. Supports, springs and loads belong on
   // the outer (non-interface) patches.
   const MultiRegion* regions = nullptr;
+  // Hierarchical backend (set before setupOn): on = false keeps the dense rows and LU.
+  struct HSolver {
+    bool on = false;
+    HMixedOptions o;
+  } hsolver;
+  const HMixed* hmat() const { return hm_.get(); }
 
   void setup(const std::string& geometry_file, const Material& m, const SolverOptions& o,
              std::vector<FixedSupport> fixed, std::vector<SpringSupport> spr, const std::string& cache_dir = "cache",
@@ -183,11 +194,6 @@ class BcModel {
 
     // Rows: free displacement components at the dof collocation points, then
     // the fixed components at the traction points of each supported patch.
-    OperatorRows main =
-        cachedOperatorRows(mesh, ts, mat, opt, popt, geometry_file, cache_dir, "sbie_hg", mesh.colloc);
-    from_cache = main.from_cache;
-    t_assemble = main.t_assemble;
-    t_load = main.t_load;
     rowpts.clear();
     rowsel.clear();
     t_free.clear();
@@ -201,16 +207,8 @@ class BcModel {
         mainrows.push_back(k);
       }
     }
-    const int nmain = int(mainrows.size());
-    std::vector<OperatorRows> tp(np);
-    int ntp = 0;
     for (int p = 0; p < np; ++p) {
       if (!(dir[p][0] || dir[p][1] || dir[p][2])) continue;
-      tp[p] = cachedOperatorRows(mesh, ts, mat, opt, popt, geometry_file, cache_dir,
-                                 "sbie_hg_tpatch" + std::to_string(p), tractionCollocation(mesh, ts, p));
-      from_cache = from_cache && tp[p].from_cache;
-      t_assemble += tp[p].t_assemble;
-      t_load += tp[p].t_load;
       const std::vector<Collocation> pts = tractionCollocation(mesh, ts, p);
       for (size_t i = 0; i < pts.size(); ++i) {
         const int base = int(rowpts.size());
@@ -219,33 +217,23 @@ class BcModel {
           if (dir[p][c]) {
             rowsel.push_back(3 * base + c);
             t_free.push_back(3 * (ts.offset[p] + int(i)) + c);
-            ++ntp;
           }
       }
     }
-    const int nr = nmain + ntp;
-    if (nr != int(u_free.size() + t_free.size())) throw std::logic_error("BcModel: rows != unknowns");
-    H_.resize(nr, 3 * mesh.ndof);
-    G_.resize(nr, 3 * ts.ndof);
-    H_.topRows(nmain) = main.H(mainrows, Eigen::all);
-    G_.topRows(nmain) = main.G(mainrows, Eigen::all);
-    main = OperatorRows();
-    int r = nmain;
-    for (int p = 0; p < np; ++p) {
-      if (tp[p].H.size() == 0) continue;
-      std::vector<int> sel;
-      for (int i = 0; i < int(tp[p].H.rows()) / 3; ++i)
-        for (int c = 0; c < 3; ++c) if (dir[p][c]) sel.push_back(3 * i + c);
-      H_.middleRows(r, sel.size()) = tp[p].H(sel, Eigen::all);
-      G_.middleRows(r, sel.size()) = tp[p].G(sel, Eigen::all);
-      r += int(sel.size());
-      tp[p] = OperatorRows();
-    }
-    if (regions && !regions->empty()) {
+    if (rowsel.size() != u_free.size() + t_free.size()) throw std::logic_error("BcModel: rows != unknowns");
+    if (regions && !regions->empty())
       for (int p = 0; p < np; ++p)
         if (regions->onInterface(p) && (dir[p][0] || dir[p][1] || dir[p][2]))
           throw std::runtime_error("BcModel: a support on an interface patch");
-      regions->condense(H_, G_);
+    hm_.reset();
+    if (hsolver.on) {
+      const auto th = std::chrono::steady_clock::now();
+      hm_ = std::make_unique<HMixed>(mesh, ts, mat, opt, rowpts, rowsel, u_free, t_free, regions, hsolver.o);
+      from_cache = false;
+      t_assemble = std::chrono::duration<double>(std::chrono::steady_clock::now() - th).count();
+      t_load = 0.0;
+    } else {
+      assembleRows(geometry_file, cache_dir, mainrows);
     }
 
     // Springs: S (rows x spring dofs) = sum_s int_R U k N_B.
@@ -324,6 +312,7 @@ class BcModel {
   std::vector<int> spring_col_;  // 3 ndof -> column of S_ (-1: none)
   Eigen::PartialPivLU<Eigen::MatrixXd> lu_;
   std::vector<int> ufree_col_;   // 3 ndof -> unknown index (-1: fixed)
+  std::unique_ptr<HMixed> hm_;   // hierarchical backend
 
   std::vector<BoundarySolution> solveAll(const std::vector<LoadCase>& cases) const {
     std::vector<BoundarySolution> out;
@@ -394,6 +383,38 @@ class BcModel {
         fin[k].support_values.push_back({rbe2[i].support, rigidMotion(rbe2[i].ref, q[k * nm + i])});
     }
     return fin;
+  }
+
+  // Dense rows of the system (cached per row set): H_, G_ on rowsel, condensed for inclusions.
+  void assembleRows(const std::string& geometry_file, const std::string& cache_dir, const std::vector<int>& mainrows) {
+    const int np = int(mesh.patches.size());
+    OperatorRows main =
+        cachedOperatorRows(mesh, ts, mat, opt, popt, geometry_file, cache_dir, "sbie_hg", mesh.colloc);
+    from_cache = main.from_cache;
+    t_assemble = main.t_assemble;
+    t_load = main.t_load;
+    const int nmain = int(mainrows.size()), nr = int(rowsel.size());
+    H_.resize(nr, 3 * mesh.ndof);
+    G_.resize(nr, 3 * ts.ndof);
+    H_.topRows(nmain) = main.H(mainrows, Eigen::all);
+    G_.topRows(nmain) = main.G(mainrows, Eigen::all);
+    main = OperatorRows();
+    int r = nmain;
+    for (int p = 0; p < np; ++p) {
+      if (!(dir[p][0] || dir[p][1] || dir[p][2])) continue;
+      OperatorRows tp = cachedOperatorRows(mesh, ts, mat, opt, popt, geometry_file, cache_dir,
+                                           "sbie_hg_tpatch" + std::to_string(p), tractionCollocation(mesh, ts, p));
+      from_cache = from_cache && tp.from_cache;
+      t_assemble += tp.t_assemble;
+      t_load += tp.t_load;
+      std::vector<int> sel;
+      for (int i = 0; i < int(tp.H.rows()) / 3; ++i)
+        for (int c = 0; c < 3; ++c) if (dir[p][c]) sel.push_back(3 * i + c);
+      H_.middleRows(r, sel.size()) = tp.H(sel, Eigen::all);
+      G_.middleRows(r, sel.size()) = tp.G(sel, Eigen::all);
+      r += int(sel.size());
+    }
+    if (regions && !regions->empty()) regions->condense(H_, G_);
   }
 
   void buildSprings() {
@@ -503,6 +524,10 @@ class BcModel {
     const int n = unknowns(), m = freeModes();
     ufree_col_.assign(3 * mesh.ndof, -1);
     for (size_t j = 0; j < u_free.size(); ++j) ufree_col_[u_free[j]] = int(j);
+    if (hm_) {
+      hm_->factor(S_, spring_dofs, free_modes(u_free, Eigen::all));
+      return;
+    }
     Eigen::MatrixXd A(n + m, n + m);
     A.setZero();
     A.topLeftCorner(n, u_free.size()) = H_(Eigen::all, u_free);
@@ -579,7 +604,11 @@ class BcModel {
     Eigen::MatrixXd tk = TC, uk = Eigen::MatrixXd::Zero(3 * mesh.ndof, K);
     for (int j : t_free) tk.row(j).setZero();
     for (int j : u_fixed) uk.row(j) = UC.row(j);
-    Eigen::MatrixXd rhs = G_ * tk - H_ * uk;
+    if (regions && !regions->empty())
+      for (int j : regions->t_interface) tk.row(j).setZero();  // condensed (dense: G columns zeroed)
+    if (hm_ && tk.cwiseAbs().maxCoeff() > 0.0 && !hm_->fullG())
+      throw std::runtime_error("BcModel: smooth traction data on the hierarchical backend needs hsolver.o.full_g");
+    Eigen::MatrixXd rhs = hm_ ? hm_->data(uk, tk) : Eigen::MatrixXd(G_ * tk - H_ * uk);
     if (S_.size()) {
       Eigen::MatrixXd us(S_.cols(), K);
       for (size_t i = 0; i < spring_dofs.size(); ++i) us.middleRows(3 * i, 3) = uk.middleRows(3 * spring_dofs[i], 3);
@@ -610,7 +639,7 @@ class BcModel {
     }
     Eigen::MatrixXd bb = Eigen::MatrixXd::Zero(n + m, K);
     bb.topRows(n) = rhs;
-    const Eigen::MatrixXd X = lu_.solve(bb);
+    const Eigen::MatrixXd X = hm_ ? hm_->solve(bb) : Eigen::MatrixXd(lu_.solve(bb));
     for (size_t j = 0; j < u_free.size(); ++j) UC.row(u_free[j]) = X.row(j);
     for (size_t j = 0; j < t_free.size(); ++j) TC.row(t_free[j]) = X.row(u_free.size() + j);
     if (regions && !regions->empty()) regions->complete(UC, TC);

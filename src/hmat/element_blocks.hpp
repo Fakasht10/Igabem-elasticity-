@@ -5,7 +5,7 @@
 //
 //   H(3k + i, 3l + j) = int_e T_ij(x_k, y) R_l(y) dS,   G(3k + i, 3l + j) = int_e U_ij(x_k, y) R_l(y) dS
 //
-// for the points x_k = colloc[pts[k]] and the element's n_loc basis functions
+// for the points x_k = rows[pts[k]] (rows: mesh.colloc by default) and the element's n_loc basis functions
 // R_l (local control points idx[l] of its patch). Separated pairs take the
 // cached Gauss rule of order farRuleOrder(tol) (grouped by order, one kernel
 // call per group, vectorized over points, contracted with the basis by GEMM:
@@ -26,8 +26,10 @@ namespace igabem {
 
 class ElementBlocks {
  public:
-  ElementBlocks(const Mesh& m, const Material& mat, const SolverOptions& o, double tol, int min_order = -1)
-      : mesh_(m), K_(mat), quad_(m, o, true, maxOrder(o, tol)), tol_(tol), min_order_(min_order) {}
+  ElementBlocks(const Mesh& m, const Material& mat, const SolverOptions& o, double tol, int min_order = -1,
+                const std::vector<Collocation>* rows = nullptr)
+      : mesh_(m), rows_(rows ? *rows : m.colloc), K_(mat), quad_(m, o, true, maxOrder(o, tol)), tol_(tol),
+        min_order_(min_order) {}
   // Highest far-rule order farRuleOrder can ask for: the closest far pair (d = 1.5 r).
   static int maxOrder(const SolverOptions& o, double tol) {
     const double rho = 1.5 + std::sqrt(1.25);
@@ -50,7 +52,7 @@ class ElementBlocks {
   }
   // Rule order of the pair (point a, element ie): 0 = exact (close or own) quadrature.
   int order(int a, int ie) const {
-    const Collocation& p = mesh_.colloc[a];
+    const Collocation& p = rows_[a];
     const Element& e = mesh_.elements[ie];
     if (e.patch == p.patch && e.rect.contains(p.xi, 1e-14)) return 0;
     return quad_.farRuleOrder(ie, (quad_.elementCentre(ie) - p.x).norm(), tol_, min_order_);
@@ -89,7 +91,7 @@ class ElementBlocks {
       const int n = r.n;
       w.X.resize(gg); w.Y.resize(gg); w.Z.resize(gg);
       for (int k = 0; k < gg; ++k) {
-        const Vec3& x = mesh_.colloc[pts[P[k]]].x;
+        const Vec3& x = rows_[pts[P[k]]].x;
         w.X[k] = x(0); w.Y[k] = x(1); w.Z[k] = x(2);
       }
       w.yq.resize(3 * n); w.nq.resize(3 * n); w.wq.resize(n);
@@ -162,7 +164,7 @@ class ElementBlocks {
     // Close and own pairs: the exact quadrature, both kernels from one call.
     const Element& e = mesh_.elements[ie];
     for (int k : w.near) {
-      const Collocation& p = mesh_.colloc[pts[k]];
+      const Collocation& p = rows_[pts[k]];
       const SourcePoint src{p.patch, p.xi, p.x};
       quad_.integrate(src, e, [&](const QPoint& E, double wq) {
         const Vec3 nJ = E.normal() * mesh_.normal_sign;
@@ -191,7 +193,7 @@ class ElementBlocks {
     ElementIntegrator::RuleData r;
     quad_.ruleData(ie, m, r);
     const int n = r.n, nl = r.n_loc;
-    const Vec3& x = mesh_.colloc[a].x;
+    const Vec3& x = rows_[a].x;
     const double b = 1.0 - 2.0 * K_.nu, aa = 3.0 - 4.0 * K_.nu, sg = mesh_.normal_sign;
     w.KT.resize(9 * size_t(n));
     if (G) w.KU.resize(6 * size_t(n));
@@ -241,6 +243,7 @@ class ElementBlocks {
 
  private:
   const Mesh& mesh_;
+  const std::vector<Collocation>& rows_;
   Kelvin K_;
   ElementIntegrator quad_;
   double tol_;

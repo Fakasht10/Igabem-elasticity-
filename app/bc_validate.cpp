@@ -38,11 +38,13 @@ using namespace igabem;
 namespace {
 
 bool g_check = false;
+static BcModel::HSolver g_hsolver;  // --hmat eps
 int g_fail = 0;
 
 // |got - want| <= tol, reported only in --check mode
 void check(const char* name, double got, double want, double tol) {
   if (!g_check) return;
+  if (g_hsolver.on) tol = std::max(tol, 1e-7 * std::max(1.0, std::abs(want)));  // float operator storage floor
   const bool ok = std::abs(got - want) <= tol;
   std::printf("  check %-34s %s  got %.8e  want %.8e  tol %.1e\n", name, ok ? "ok  " : "FAIL", got, want, tol);
   if (!ok) ++g_fail;
@@ -152,7 +154,8 @@ int halfspace(const std::string& geo, const std::string& csv, const std::string&
   const double t_region = now() - t_r0;
   std::vector<FixedSupport> fixed = {{"symmetry x", patchesOn(mesh, 0, 0.0), {true, false, false}, nullptr},
                                      {"symmetry y", patchesOn(mesh, 1, 0.0), {false, true, false}, nullptr}};
-  model.setupOn(geo, fixed, {}, cache);
+  model.hsolver = g_hsolver;
+    model.setupOn(geo, fixed, {}, cache);
   LoadCase lc;
   lc.name = "disk";
   lc.loads.push_back(pressureLoad("pressure", RM, hs.p));
@@ -254,6 +257,7 @@ int bar(const std::string& geo, const std::string& csv) {
     std::vector<SpringSupport> springs;
     const double k = E / L, s0 = 1.0, sig = s0 / (1.0 + k * L / E);
     if (pass == 1) springs.push_back({"end spring", end, springNT(k, 0.0)});
+    model.hsolver = g_hsolver;
     model.setupOn(geo, fixed, springs, "");
     std::vector<LoadCase> cases;
     std::vector<std::function<Vec3(const Vec3&)>> uex;
@@ -333,7 +337,8 @@ int cantilever(const std::string& geo, const std::string& csv, const std::string
   model.mesh.build(loadDat(geo), model.popt);
   model.ts.build(model.mesh);
   auto end = std::make_shared<RegionMesh>(model.mesh, planeRegion(0, L, "tip"));
-  model.setupOn(geo, {{"clamp", patchesOn(model.mesh, 0, 0.0), {true, true, true}, nullptr}}, {}, "");
+  model.hsolver = g_hsolver;
+    model.setupOn(geo, {{"clamp", patchesOn(model.mesh, 0, 0.0), {true, true, true}, nullptr}}, {}, "");
   LoadCase lc;
   lc.name = "tip shear";
   lc.loads.push_back(forceLoad("tip force", end, Vec3(0, 0, -F)));
@@ -408,7 +413,8 @@ int rbe2Tree(const std::string& geo) {
   model.opt = opt;
   model.mesh.build(loadDat(geo), model.popt);
   model.ts.build(model.mesh);
-  model.setupOn(geo, {{"clamp", patchesOn(model.mesh, 0, 0.0), {true, true, true}, nullptr},
+  model.hsolver = g_hsolver;
+    model.setupOn(geo, {{"clamp", patchesOn(model.mesh, 0, 0.0), {true, true, true}, nullptr},
                       {"tip", patchesOn(model.mesh, 0, L), {true, true, true}, nullptr}}, {}, "");
   Rbe2 m;
   m.label = "tip master";
@@ -473,6 +479,12 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[i], "--csv")) csv = argv[++i];
     else if (!std::strcmp(argv[i], "--probe")) probe = argv[++i];
     else if (!std::strcmp(argv[i], "--check")) g_check = true;
+    else if (!std::strcmp(argv[i], "--hmat")) {  // hierarchical backend at tolerance eps
+      g_hsolver.on = true;
+      g_hsolver.o.full_g = true;  // the exact cases carry smooth traction data
+      g_hsolver.o.h.eps = std::atof(argv[++i]);
+      g_hsolver.o.h.tol = 1e-10;  // entry quadrature as the dense far_tol
+    } else if (!std::strcmp(argv[i], "--hmat-tol")) g_hsolver.o.h.tol = std::atof(argv[++i]);  // entry quadrature
     else if (!std::strcmp(argv[i], "--cache")) { cache = argv[++i]; if (cache == "none") cache.clear(); }
   }
   int rc = -1;
