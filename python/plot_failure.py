@@ -3,7 +3,8 @@
   (a) Cicero SENB: first principal stress per newton along the extraction path from the notch root (exact IgBEM
       line), the four root radii, with the probe distance L/2 of the 0/90 raster
   (b) Cicero SENB: failure loads, measured (Table 2) against the TCD point method on IgBEM with sigma_0 from the
-      paper's K_mat and with sigma_0 calibrated on rho = 1 mm
+      paper's K_mat and with the material card's K_Ic and sigma_uts (results/failure/cicero_card.json; without it,
+      sigma_0 calibrated on rho = 1 mm)
   (c) Weibull card parity: log J(m) of the PLA UB and US quarter specimens on IgBEM against the NGSolve TET4
       reductions the frozen PLA cards were fitted on; the card's m marked
 
@@ -60,19 +61,30 @@ def main():
     w = 0.26
     meas = [r["measured_N"] for r in cic["rows"]]
     pred = [r["predicted_N"] for r in cic["rows"]]
-    cal = [r.get("predicted_cal_N", np.nan) for r in cic["rows"]]
+    card_path = os.path.join(D, "cicero_card.json")
+    if os.path.exists(card_path):    # third bar: the material card's K_Ic and sigma_uts, no calibration
+        cc = json.load(open(card_path))
+        p = cc["props"]
+        third = [r["predicted_N"] for r in cc["rows"]]
+        third_err = [r["error_pct"] for r in cc["rows"]]
+        third_label = (f"TCD PM, {p['source'].split(',')[0]} ($K_{{Ic}}$ {p['K']:g} MPa$\\sqrt{{mm}}$, "
+                       f"$\\sigma_0$ {p['sigma_0']:g} MPa)")
+    else:                            # third bar: sigma_0 calibrated on one radius
+        third = [r.get("predicted_cal_N", np.nan) for r in cic["rows"]]
+        third_err = [r.get("error_cal_pct", np.nan) for r in cic["rows"]]
+        third_label = f"TCD PM, $\\sigma_0$ calibrated on $\\rho$ = {cic['calibrate_on']:g}"
     b.bar(xs - w, meas, w, color=MUTED, label="measured (Cicero 2020, Table 2)")
     b.bar(xs, pred, w, color=C[1], label="TCD PM, $\\sigma_0$ from the paper's $K_{mat}$")
-    b.bar(xs + w, cal, w, color=C[0], label=f"TCD PM, $\\sigma_0$ calibrated on $\\rho$ = {cic['calibrate_on']:g}")
+    b.bar(xs + w, third, w, color=C[0], label=third_label)
     for i, r in enumerate(cic["rows"]):
-        b.text(xs[i] + w, cal[i] + 2, f"{r['error_cal_pct']:+.0f}%", ha="center", fontsize=7, color=C[0])
+        b.text(xs[i] + w, third[i] + 2, f"{third_err[i]:+.0f}%", ha="center", fontsize=7, color=C[0])
         b.text(xs[i], pred[i] + 2, f"{r['error_pct']:+.0f}%", ha="center", fontsize=7, color=C[1])
     b.set_xticks(xs, [f"{v:g}" for v in rho])
     b.set_xlabel("notch root radius $\\rho$ (mm)", fontsize=9)
     b.set_ylabel("failure load (N)", fontsize=9)
     b.set_title(f"(b) SENB {cic['orientation']}: failure load, IgBEM", fontsize=9, loc="left")
     b.legend(fontsize=7, frameon=False, loc="upper left")
-    b.set_ylim(0, 1.25 * max(pred))
+    b.set_ylim(0, 1.35 * max(pred))
     style(b)
 
     if par:

@@ -608,10 +608,12 @@ contract as bemkit's backend. See `python/failure/README.md`.
 
 ![failure layer](results/fig_failure.png)
 
-The parity holds to 0.1-2 % at the card's m but opens at high m (US x1.15 at m = 10): there J is a peak-volume
+The parity holds to 0.1-1.5 % at the card's m but opens at high m (US x1.15 at m = 10): there J is a peak-volume
 integral, and the TET4 h = 0.18 reference and our TET10 quadrature resolve the 0.5 mm root differently. The K_mat
 over-prediction is the material, not the solver: the paper's K_mat carries plastic work, and the TET10 run shows
-the same offset.
+the same offset. The project's ABS card, with no fit to these tests, lands within -8 to +6 %
+(`python3 -m failure.validate_cicero --card ABS-M30-iso --sigma-uts 65`; the card's own 63 MPa gives -0.2 to +4.9 %,
+-8.4 % at rho = 0.5).
 
 ## Next steps
 

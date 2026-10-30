@@ -5,10 +5,13 @@ failure layer: SENB 44 x 10 x 4 mm, span 40, a0 = 5 mm, pads 1 mm high and 2 mm 
 geo/step/), left pad pinned, right pad held in y and z, 1 N down on the top pad. L from the paper's calibration
 (Table 3), sigma_0 = K_mat / sqrt(pi L). With sigma_0 from the paper's K_mat the TET10 run over-predicts by a uniform
 ~52 % (K_mat carries plastic work); so sigma_0 is also calibrated on one radius and the other three are predictions.
+With --card the elastic constants, K_Ic and sigma_uts come from a material card instead (materials.py), sigma_0 =
+sigma_uts and L = (K_Ic / sigma_uts)^2 / pi, as the Assess chain uses them.
 
 Source: Cicero, Martinez-Mata, Alonso-Estebanez, Castanon-Jano, Arroyo, Materials 13(21) 4919, 2020 (open access).
 
-usage: python3 -m failure.validate_cicero [--orientation 0/90] [--radii 0.25 0.5 1 2] [--calibrate-on 1]
+usage: python3 -m failure.validate_cicero [--orientation 0/90] [--card ABS-M30-iso [--sigma-uts 65]]
+                                          [--radii 0.25 0.5 1 2] [--calibrate-on 1]
                                           [--h 3] [--out results/failure/cicero.json]
 """
 import argparse
@@ -19,7 +22,9 @@ import time
 
 import numpy as np
 
+from . import materials
 from .assess import assess
+from .fracture import L_tcd
 from .igabem_backend import ROOT, Solve, fea_mesh, feakit_face_map, fields, igabem_geometry
 
 ORIENTATIONS = {   # Table 1 (E), Table 3 (calibrated L), Table 2 cracked reference (K_mat)
@@ -45,12 +50,25 @@ def case_for(step):
                                                   "direction": [0, -1, 0]}]}]}
 
 
-def run_one(rho, name, h, workdir, log):
-    props = ORIENTATIONS[name]
+def paper_props(name):
+    """E, nu, K (MPa sqrt(mm)), sigma_0 and L from the paper's tables for one raster orientation."""
+    p = ORIENTATIONS[name]
+    K = p["K_mat"] * math.sqrt(1000.0)
+    return {"source": f"Cicero 2020, {name}", "E": p["E"], "nu": p["nu"], "K": K, "L": p["L_pm"],
+            "sigma_0": K / math.sqrt(math.pi * p["L_pm"])}
+
+
+def card_props(card_id, sigma_uts=None):
+    """The same from a material card: sigma_0 = sigma_uts (optionally overridden), L = L_tcd(K_Ic, sigma_0)."""
+    c = materials.card(card_id)
+    K, s = c["tcd"]["K_Ic_MPa_sqrt_mm"], sigma_uts or c["tcd"]["sigma_uts_MPa"]
+    return {"source": f"card {card_id}" + (f", sigma_uts {sigma_uts:g}" if sigma_uts else ""), "E": c["E_MPa"],
+            "nu": c["nu"], "K": K, "L": L_tcd(K, s), "sigma_0": s}
+
+
+def run_one(rho, props, name, h, workdir, log):
     step = os.path.join(ROOT, "geo", "step", STEP[rho])
-    L = props["L_pm"]
-    K = props["K_mat"] * math.sqrt(1000.0)
-    sigma_0 = K / math.sqrt(math.pi * L)
+    L, K, sigma_0 = props["L"], props["K"], props["sigma_0"]
     t0 = time.perf_counter()
     dat, ginfo = igabem_geometry(step, workdir, h=h, curvature=6, degree=2, log=log)
     t_geo = time.perf_counter() - t0
@@ -80,16 +98,21 @@ def run_one(rho, name, h, workdir, log):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--orientation", default="0/90", choices=list(ORIENTATIONS))
+    ap.add_argument("--card", help="material card id (materials.py) instead of the paper's tables")
+    ap.add_argument("--sigma-uts", type=float, help="override the card's sigma_uts (MPa)")
     ap.add_argument("--radii", type=float, nargs="*", default=[0.25, 0.5, 1.0, 2.0])
     ap.add_argument("--calibrate-on", type=float, default=1.0)
     ap.add_argument("--h", type=float, default=3.0, help="IgBEM knot span (mm); notch arcs follow the curvature rule")
     ap.add_argument("--work", default=os.path.join(ROOT, "cache", "failure"))
-    ap.add_argument("--out", default=os.path.join(ROOT, "results", "failure", "cicero.json"))
+    ap.add_argument("--out", help="default results/failure/cicero.json, or cicero_card.json with --card")
     a = ap.parse_args()
-    props = ORIENTATIONS[a.orientation]
+    a.out = a.out or os.path.join(ROOT, "results", "failure", "cicero_card.json" if a.card else "cicero.json")
+    props = card_props(a.card, a.sigma_uts) if a.card else paper_props(a.orientation)
+    print(f"{props['source']}: E {props['E']:g}, nu {props['nu']:g}, K {props['K']:.1f} MPa sqrt(mm), "
+          f"sigma_0 {props['sigma_0']:.1f} MPa, L {props['L']:.3f} mm", flush=True)
     rows = []
     for rho in a.radii:
-        r = run_one(rho, a.orientation, a.h, a.work, log=print)
+        r = run_one(rho, props, a.orientation, a.h, a.work, log=print)
         r["error_pct"] = 100 * (r["predicted_N"] / r["measured_N"] - 1)
         print(f"rho={rho:<5} s1(L/2)={r['s1_L2_per_N']:.5f} MPa/N  predicted={r['predicted_N']:7.1f} N  "
               f"measured={r['measured_N']:6.2f} N  err={r['error_pct']:+6.1f}%  ({r['unknowns']} unknowns, "
