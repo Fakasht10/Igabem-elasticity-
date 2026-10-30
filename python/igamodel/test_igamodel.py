@@ -14,7 +14,7 @@ import sys
 import tempfile
 import unittest
 
-from . import History, Model, ModelError, from_case, node_type, read_case, to_case, write_case
+from . import History, Model, ModelError, from_case, node_type, read_case, rename, resolve, to_case, write_case
 from .casefile import strip_comments
 from .model import REGISTRY
 
@@ -168,6 +168,68 @@ class Operations(unittest.TestCase):
         fresh.replay(copy.deepcopy(self.h.log))
         self.assertEqual(fresh.snapshot(), s2, "tags are deterministic, so a journal replays to the same tree")
         self.assertEqual(to_case(fresh)["cases"][-1], {"name": "new", "loads": [{"face_id": 7, "force_N": 2.0}]})
+
+
+NAMED = {
+    "geometry": "g.dat", "names": {"clamp": {"face_id": 3}, "slot": {"face_ids": [8, 9], "select": BOX}},
+    "supports": [{"label": "fixed", "name": "clamp", "fix": ["ux", "uy", "uz"]}],
+    "cases": [{"name": "a", "loads": [{"name": "slot", "pressure": 1.0}, {"name": "clamp", "force_N": 2.0}]}],
+}
+
+
+class Names(unittest.TestCase):
+    def setUp(self):
+        self.m = from_case(copy.deepcopy(NAMED))
+        self.h = History(self.m)
+
+    def test_named_surfaces_round_trip(self):
+        self.assertEqual(to_case(self.m), NAMED)
+        self.assertEqual(resolve(self.m, {"name": "slot"}), NAMED["names"]["slot"])
+
+    def test_rename_updates_every_reference_in_one_undo_step(self):
+        s0 = self.m.snapshot()
+        self.h.do(rename(self.m, "clamp", "base"))
+        c = to_case(self.m)
+        self.assertEqual(list(c["names"]), ["base", "slot"])
+        self.assertEqual(c["supports"][0]["name"], "base")
+        self.assertEqual(c["cases"][0]["loads"][1]["name"], "base")
+        self.assertEqual(c["cases"][0]["loads"][0]["name"], "slot")
+        self.assertTrue(self.h.undo())
+        self.assertEqual(self.m.snapshot(), s0)
+        self.assertFalse(self.h.undo(), "a rename is one step")
+
+    def test_name_refusals(self):
+        bad = {
+            "unknown name": lambda c: c["supports"][0].update(name="clmp"),
+            "name with a face": lambda c: c["supports"][0].update(face_id=3),
+            "nested name": lambda c: c["names"].update(other={"name": "clamp"}),
+            "empty name": lambda c: c["supports"][0].update(name=""),
+            "names not an object": lambda c: c.update(names=[]),
+        }
+        for why, edit in bad.items():
+            c = copy.deepcopy(NAMED)
+            edit(c)
+            with self.subTest(why), self.assertRaises(ModelError):
+                from_case(c)
+        for args in (("nope", "x"), ("clamp", "slot")):
+            with self.subTest(args), self.assertRaises(ModelError):
+                rename(self.m, *args)
+
+    def test_a_refused_batch_changes_nothing(self):
+        sel = self.m.of_kind("selection")[0].tag
+        before = self.m.snapshot()
+        with self.assertRaises(ModelError):
+            self.h.do({"op": "batch", "ops": [{"op": "set", "tag": sel, "key": "name", "value": "x"},
+                                              {"op": "remove", "tag": "nope"}]})
+        self.assertEqual(self.m.snapshot(), before)
+        sup = self.m.of_kind("support")[0].tag
+        self.h.do({"op": "set", "tag": sel, "key": "name", "value": "x"})   # leaves a dangling reference
+        with self.assertRaisesRegex(ModelError, f"{sup} refers to 'clamp'"):
+            to_case(self.m)
+        self.m.apply({"op": "add", "parent": "root", "kind": "selection", "props": {"name": "x"},
+                      "region": {"face_id": 1}})
+        with self.assertRaisesRegex(ModelError, "two surfaces are named 'x'"):
+            to_case(self.m)
 
 
 class Core(unittest.TestCase):

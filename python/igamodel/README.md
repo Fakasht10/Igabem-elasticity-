@@ -36,6 +36,22 @@ im.write_case(m, "cases/bracket_bolted_side.json")
   tree-written copy, and requires byte-identical CSV and VTU. All six cases pass. Each run takes 0.9 to 84 s;
   `bracket_clamped_graded` is the slowest.
 
+## Named surfaces
+
+A `selection` node names a region, which can be CAD faces, patches or a geometric selection. Supports and loads refer
+to it as `{"name": "clamp"}`. The case file holds the names as `"names": {"clamp": {"face_id": 3}}`, and bc_case reads
+them (`case_io.hpp`), so a hand-edited case can use them too.
+
+```python
+h.do(im.rename(m, "clamp", "base"))     # the surface and every reference to it: one batch, one undo step
+```
+
+- Names do not nest, and a name stands alone in a region.
+- Duplicate or dangling names are refused when the case is written.
+- `test_bc_case.py` checks that a named case gives byte-identical bc_case results to the same case with its regions
+  written out.
+- `batch` is a general operation: all of its operations apply, or none do.
+
 ## Assessments (phase 1)
 
 ```python
@@ -87,7 +103,7 @@ How it works:
 
 Checks:
 
-- `test_field.py` (ctest `field_patch`): uniform tension prescribed as a field on every face of a cube gives the uniform
+- `test_bc_case.py` (ctest `model_bc_case`): uniform tension prescribed as a field on every face of a cube gives the uniform
   stress inside to 1e-5.
 - `test_backends.py`: the box refusals and the cut-face detection.
 - `gate_cicero.py --submodel` gives the same digits as the hand-run study below.

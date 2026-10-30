@@ -8,6 +8,7 @@
 //   "material": {"E": 2000, "nu": 0.35},
 //   "solver": {"n_gauss": 12, "far_tol": 1e-10},
 //   "grade": {"faces": [3], "inner": [1, 13], "h0": 0.025},   // mesh graded towards supports
+//   "names": {"clamp": {"face_id": 3}, "slot": {"face_ids": [8, 9]}},  // named surfaces
 //   "supports": [
 //     {"face_id": 3, "fix": ["ux", "uy", "uz"]},             // or "dofs": {"ux": true, ...}
 //     {"select": {"box": [[x0,y0,z0], [x1,y1,z1]]}, "fix": ["uz"], "value": [0, 0, -0.01]},
@@ -32,8 +33,10 @@
 // {"half": {"point", "normal"}}, {"cylinder": {"point", "axis", "radius", "tol"}},
 // {"ball": {"center", "radius"}}, {"normal": {"direction", "angle_deg"}},
 // {"faces": [...]}, {"patches": [...]}; keys in one object are ANDed, a list of
-// objects is ORed. A support needs whole patches (it sets which traction
-// components are unknown); "snap": true takes the patches covered at least half.
+// objects is ORed. {"name": "clamp"} in a support or load stands for that entry
+// of "names" (a region in any of the forms above; names do not nest). A support
+// needs whole patches (it sets which traction components are unknown); "snap":
+// true takes the patches covered at least half.
 //
 // "field" (a support) and a case's "fields" ({support label: file}, overriding the support's own) prescribe a
 // displacement that varies over the support: lines "x y z ux uy uz", read at exactly the points the support's
@@ -111,6 +114,7 @@ struct CaseFile {
   std::string vtu, csv;
   double size = 1.0;  // bounding-box diagonal (default tolerances)
   std::vector<int> face_of_patch;
+  std::map<std::string, Json> names;  // "names": named regions
 
   // Builds the mesh, regions, supports and load cases into model and cases.
   void load(const std::string& path, BcModel& model, std::vector<LoadCase>& cases) {
@@ -149,6 +153,11 @@ struct CaseFile {
     Vec3 lo = Vec3::Constant(1e300), hi = Vec3::Constant(-1e300);
     for (const Vec3& P : model.mesh.dof_point) { lo = lo.cwiseMin(P); hi = hi.cwiseMax(P); }
     size = (hi - lo).norm();
+    if (J.has("names"))
+      for (const auto& [n, r] : J["names"].obj) {
+        if (r.has("name")) throw std::runtime_error("names: " + n + " refers to another name; names do not nest");
+        names[n] = r;
+      }
 
     std::vector<FixedSupport> fixed;
     std::vector<SpringSupport> springs;
@@ -299,6 +308,12 @@ struct CaseFile {
   }
 
   Region region(const Json& e, const std::string& label) const {
+    if (e.has("name")) {
+      const std::string n = e["name"].asString();
+      const auto it = names.find(n);
+      if (it == names.end()) throw std::runtime_error(label + ": no surface named " + n + " in \"names\"");
+      return region(it->second, label + " (" + n + ")");
+    }
     Region R;
     R.label = label;
     R.face_of_patch = face_of_patch;
@@ -320,7 +335,7 @@ struct CaseFile {
       if (e["select"].isArray()) for (const Json& s : e["select"].arr) add(s);
       else add(e["select"]);
     } else {
-      throw std::runtime_error(label + ": no face_id, face_ids, patches or select");
+      throw std::runtime_error(label + ": no face_id, face_ids, patches, select or name");
     }
     if ((e.has("face_id") || e.has("face_ids")) && face_of_patch.empty())
       throw std::runtime_error(label + ": face ids need the face map " + faces + " (python/face_ids.py)");
@@ -434,7 +449,7 @@ struct CaseFile {
   }
 
   static std::string regionKey(const Json& L) {
-    std::string k;
+    std::string k = L.has("name") ? "name@" + L["name"].asString() : "";
     for (const char* f : {"face_id", "face_ids", "patches"})
       if (L.has(f)) for (double v : L[f].asNumbers()) k += std::string(f) + std::to_string(v) + ",";
     if (L.has("select")) k += "select@" + std::to_string(reinterpret_cast<std::uintptr_t>(&L["select"]));

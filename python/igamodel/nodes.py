@@ -5,6 +5,7 @@ that app/bc_case reads (src/case_io.hpp).
       material  (one)     E, nu
       solver    (one)     n_gauss, far_tol
       grade     (one)     mesh graded towards supports (python/grade_dat.py)
+      selection (many)    a named surface: a region supports and loads refer to by {"name": ...}
       support   (many)    fixed | symmetry | spring | rbe2, on a region
       loadcase  (many)    a named load case; all share one operator
         load    (many)    force/moment | pressure | traction | bearing | on an rbe2 master
@@ -46,6 +47,11 @@ def support_rule(props, region):
             raise ModelError(f"{k} applies to a symmetry support only")
 
 
+def selection_rule(props, region):
+    if region is not None and "name" in region:
+        raise ModelError("a named surface is a region, not another name")
+
+
 def assessment_rule(props, region):
     if "card" in props and "K_Ic" in props:
         raise ModelError("an assessment takes K_Ic from its card or from K_Ic, not both")
@@ -63,7 +69,7 @@ def load_rule(props, region):
             raise ModelError("a load on an rbe2 master acts about the master's ref; about does not apply")
 
 
-register(NodeType("case", "Model", "case", children=("material", "solver", "grade", "support", "loadcase", "output",
+register(NodeType("case", "Model", "case", children=("material", "solver", "grade", "selection", "support", "loadcase", "output",
                                                      "cad", "assessment", "submodel"),
                   props=(
     Prop("geometry", "str", doc="the .dat surface (step_auto.py / geomio), relative to the case file"),
@@ -84,6 +90,11 @@ register(NodeType("grade", "Grading", "grade", singleton=True, props=(
     Prop("inner", "ints", doc="faces graded from both sides"),
     Prop("h0", "float", doc="first knot span"), Prop("growth", "float")),
     doc="Refine the surface towards the supports by knot insertion."))
+
+register(NodeType("selection", "Named surface", "sel", region=True, rule=selection_rule, props=(
+    Prop("name", "str", doc="what supports and loads call it"),
+), doc="A name for a region (CAD faces, patches or a geometric selection), so supports and loads can refer to "
+       "it and survive a re-pick."))
 
 register(NodeType("support", "Support", "sup", region=True, rule=support_rule, props=(
     Prop("label", "str"),

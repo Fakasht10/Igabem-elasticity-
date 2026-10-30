@@ -26,6 +26,7 @@ import time
 import numpy as np
 
 from . import backends
+from .casefile import resolve
 from .model import ModelError
 
 MESH_DEFAULTS = {"mesh_h": 2.5, "mesh_curvature": 16}
@@ -61,7 +62,7 @@ def _region_faces(model):
     """CAD faces the supports and loads act on; a submodel box must not reach them."""
     faces = []
     for n in model.of_kind("support") + model.of_kind("load"):
-        r = n.region or {}
+        r = resolve(model, n.region) or {}
         if "select" in r or "patches" in r:
             raise ModelError(f"{n.tag} acts on a selection or patches; with a submodel, put supports and loads on CAD "
                              "faces so the box can be checked against them")
