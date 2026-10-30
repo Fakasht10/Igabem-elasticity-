@@ -14,7 +14,7 @@ import pathlib
 from . import nodes  # noqa: F401
 from .model import REGION_KEYS, Model, ModelError, node_type
 
-TOP = ("geometry", "faces", "cache", "material", "solver", "grade", "supports", "cases", "loads", "output")
+TOP = ("geometry", "faces", "cache", "material", "solver", "grade", "names", "supports", "cases", "loads", "output")
 SECTIONS = ("material", "solver", "grade", "output")
 
 
@@ -87,6 +87,11 @@ def merge_case(m: Model, case: dict, notes: str = "") -> Model:
     for sec in SECTIONS:
         if sec in case:
             m.apply({"op": "add", "parent": root, "kind": sec, **_split(sec, case[sec], sec)})
+    names = case.get("names", {})
+    if not isinstance(names, dict):
+        raise ModelError("names is an object {name: region}")
+    for name, region in names.items():
+        m.apply({"op": "add", "parent": root, "kind": "selection", "props": {"name": name}, "region": region})
     for i, s in enumerate(case.get("supports", [])):
         m.apply({"op": "add", "parent": root, "kind": "support", **_split("support", s, f"support {i}")})
     cases = [(c, False) for c in case.get("cases", [])] + ([({"loads": case["loads"]}, True)] if "loads" in case else [])
@@ -129,6 +134,19 @@ def to_case(model: Model) -> dict:
         for n in kids:
             if n.kind == sec:
                 out[sec] = dict(n.props)
+    names = {}
+    for n in kids:
+        if n.kind == "selection":
+            if "name" not in n.props or n.region is None:
+                raise ModelError(f"named surface {n.tag} needs a name and a region")
+            if n.props["name"] in names:
+                raise ModelError(f"two surfaces are named {n.props['name']!r}")
+            names[n.props["name"]] = dict(n.region)
+    if names:
+        out["names"] = names
+    for n in model.nodes():
+        if n.region and "name" in n.region and n.region["name"] not in names:
+            raise ModelError(f"{n.tag} refers to {n.region['name']!r}; no surface has that name")
     sups = [n for n in kids if n.kind == "support"]
     for i, n in enumerate(sups):
         if not any(k in n.props for k in nodes.SUPPORT_KINDS):
@@ -191,3 +209,27 @@ def write_case(model: Model, path) -> pathlib.Path:
     p = pathlib.Path(path)
     p.write_text(dumps(to_case(model), model.root.props.get("notes", "")), encoding="utf-8")
     return p
+
+
+def rename(model: Model, old: str, new: str) -> dict:
+    """The operation that renames a named surface and every support and load that
+    refers to it, as one batch (one undo step)."""
+    sel = [n for n in model.of_kind("selection") if n.props.get("name") == old]
+    if not sel:
+        raise ModelError(f"no surface named {old!r}")
+    if any(n.props.get("name") == new for n in model.of_kind("selection")):
+        raise ModelError(f"a surface is already named {new!r}")
+    ops = [{"op": "set", "tag": sel[0].tag, "key": "name", "value": new}]
+    ops += [{"op": "select", "tag": n.tag, "region": {"name": new}}
+            for n in model.nodes() if n.region and n.region.get("name") == old]
+    return {"op": "batch", "ops": ops}
+
+
+def resolve(model: Model, region: dict) -> dict:
+    """A region with its name replaced by the named surface's region."""
+    if not region or "name" not in region:
+        return region
+    for n in model.of_kind("selection"):
+        if n.props.get("name") == region["name"]:
+            return dict(n.region)
+    raise ModelError(f"no surface named {region['name']!r}")

@@ -54,4 +54,7 @@ if(Python3_FOUND)
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
   add_test(NAME model_backends_unit COMMAND ${Python3_EXECUTABLE} -m unittest igamodel.test_backends
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
+  add_test(NAME model_bc_case COMMAND ${Python3_EXECUTABLE} -m unittest igamodel.test_bc_case
+           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
+  set_tests_properties(model_bc_case PROPERTIES ENVIRONMENT IGABEM_BC_CASE=$<TARGET_FILE:bc_case>)
 endif()

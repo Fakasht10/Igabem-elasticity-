@@ -5,12 +5,15 @@ that app/bc_case reads (src/case_io.hpp).
       material  (one)     E, nu
       solver    (one)     n_gauss, far_tol
       grade     (one)     mesh graded towards supports (python/grade_dat.py)
+      selection (many)    a named surface: a region supports and loads refer to by {"name": ...}
       support   (many)    fixed | symmetry | spring | rbe2, on a region
       loadcase  (many)    a named load case; all share one operator
         load    (many)    force/moment | pressure | traction | bearing | on an rbe2 master
       output    (one)     vtu, csv
       cad       (one)     the STEP the geometry is made from (step_auto.py) and the TET10 mesh of assessments
       assessment (many)   TCD failure check of one feature point (python/failure/assess.py)
+      submodel  (many)    a box of the part meshed finer, driven by the global solve (igamodel/submodel.py)
+      weibull   (many)    weakest-link failure load of the whole part (python/failure/weibull.py)
 
 Prop keys are the case file's keys, so nothing is renamed between the tree,
 the file and the solver. cad and assessment are not part of the case file
@@ -45,6 +48,11 @@ def support_rule(props, region):
             raise ModelError(f"{k} applies to a symmetry support only")
 
 
+def selection_rule(props, region):
+    if region is not None and "name" in region:
+        raise ModelError("a named surface is a region, not another name")
+
+
 def assessment_rule(props, region):
     if "card" in props and "K_Ic" in props:
         raise ModelError("an assessment takes K_Ic from its card or from K_Ic, not both")
@@ -62,8 +70,8 @@ def load_rule(props, region):
             raise ModelError("a load on an rbe2 master acts about the master's ref; about does not apply")
 
 
-register(NodeType("case", "Model", "case", children=("material", "solver", "grade", "support", "loadcase", "output",
-                                                     "cad", "assessment"),
+register(NodeType("case", "Model", "case", children=("material", "solver", "grade", "selection", "support", "loadcase", "output",
+                                                     "cad", "assessment", "submodel", "weibull"),
                   props=(
     Prop("geometry", "str", doc="the .dat surface (step_auto.py / geomio), relative to the case file"),
     Prop("faces", "str", doc="CAD face map; unset = next to the geometry (python/face_ids.py)"),
@@ -83,6 +91,11 @@ register(NodeType("grade", "Grading", "grade", singleton=True, props=(
     Prop("inner", "ints", doc="faces graded from both sides"),
     Prop("h0", "float", doc="first knot span"), Prop("growth", "float")),
     doc="Refine the surface towards the supports by knot insertion."))
+
+register(NodeType("selection", "Named surface", "sel", region=True, rule=selection_rule, props=(
+    Prop("name", "str", doc="what supports and loads call it"),
+), doc="A name for a region (CAD faces, patches or a geometric selection), so supports and loads can refer to "
+       "it and survive a re-pick."))
 
 register(NodeType("support", "Support", "sup", region=True, rule=support_rule, props=(
     Prop("label", "str"),
@@ -139,4 +152,40 @@ register(NodeType("assessment", "Assessment", "tcd", rule=assessment_rule, props
     Prop("mesh_curvature", "int", doc="TET10 elements per radian; unset = 16"),
     Prop("focus_radius", "float", "mm", doc="refinement sphere round the point; unset = 1.5 L"),
     Prop("focus_h", "float", "mm", doc="element size in it; unset = min(0.15, rho / 6), 0.15 without rho"),
+    Prop("submodel", "str", doc="label of the submodel to assess on; unset = the whole part"),
 ), doc="Theory of Critical Distances at one point: the point and energy point methods give the load factor at failure."))
+
+def submodel_rule(props, region):
+    lo, hi = props.get("lo"), props.get("hi")
+    if lo is not None and hi is not None and any(b <= a for a, b in zip(lo, hi)):
+        raise ModelError("a submodel box needs lo < hi in x, y and z")
+
+
+register(NodeType("submodel", "Submodel", "sub", rule=submodel_rule, props=(
+    Prop("label", "str"),
+    Prop("lo", "vec3", "mm", doc="box corner"), Prop("hi", "vec3", "mm", doc="opposite corner"),
+    Prop("h", "float", "mm", doc="IgBEM knot span in the box; unset = 0.5"),
+    Prop("curvature", "int", doc="knot spans per radian on curved edges; unset = 6"),
+    Prop("degree", "int", doc="unset = 2"),
+), doc="The part inside a box, meshed at its own h, its cut faces driven by the global displacement."))
+
+
+def weibull_rule(props, region):
+    if "card" in props and ("m" in props or "S0" in props):
+        raise ModelError("a weibull check takes m and S0 from its card or from m and S0, not both")
+
+
+register(NodeType("weibull", "Weibull", "wb", rule=weibull_rule, props=(
+    Prop("label", "str"),
+    Prop("cases", "names", doc="load cases to assess; unset = all"),
+    Prop("card", "str", doc="material card (failure/materials.py) giving m, S0 and V0"),
+    Prop("m", "float", doc="Weibull modulus, without a card"),
+    Prop("S0", "float", "MPa", doc="scale stress at V0, without a card"),
+    Prop("V0", "float", "mm^3", doc="reference volume; unset = the card's, or 1"),
+    Prop("probability", "float", doc="also report the load at this failure probability (0 < P < 1)"),
+    Prop("mesh_h", "float", "mm", doc="TET10 size of the integration mesh; unset = 2.5"),
+    Prop("mesh_curvature", "int", doc="TET10 elements per radian; unset = 16"),
+    Prop("focus_point", "vec3", "mm", doc="centre of a refinement sphere of the integration mesh"),
+    Prop("focus_radius", "float", "mm"), Prop("focus_h", "float", "mm"),
+), doc="Stress weakest-link volume law over the whole part: J = sum w max(s1, 0)^m / V0 at every TET10 Gauss "
+       "point, evaluated exactly; the characteristic (63.2 %) and mean failure loads per load case."))

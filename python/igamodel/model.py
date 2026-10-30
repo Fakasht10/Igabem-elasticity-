@@ -184,18 +184,24 @@ def check_selector(s) -> None:
                     raise ModelError(f"{k}.{f}: bad value {x!r}")
 
 
-REGION_KEYS = ("face_id", "face_ids", "patches", "select")
+REGION_KEYS = ("face_id", "face_ids", "patches", "select", "name")
 
 
 def check_region(r: dict) -> dict:
     """Where a support or load acts, in case-file keys: face_id | face_ids | patches,
-    optionally ANDed with select; or select alone. CAD face ids survive a remesh;
-    a geometric select also survives a re-import that renumbers faces."""
+    optionally ANDed with select; or select alone; or the name of a named surface
+    alone. CAD face ids survive a remesh; a geometric select also survives a
+    re-import that renumbers faces."""
     if not isinstance(r, dict) or not r:
         raise ModelError(f"a region is an object with {list(REGION_KEYS)}, got {r!r}")
     unknown = set(r) - set(REGION_KEYS)
     if unknown:
         raise ModelError(f"region has unknown keys {sorted(unknown)}")
+    if "name" in r:
+        if not isinstance(r["name"], str) or not r["name"]:
+            raise ModelError(f"name is a non-empty string, got {r['name']!r}")
+        if len(r) > 1:
+            raise ModelError("a named surface stands alone; put the selection in the name")
     if "face_id" in r and not _int(r["face_id"]):
         raise ModelError(f"face_id is an integer, got {r['face_id']!r}")
     for k in ("face_ids", "patches"):
@@ -343,6 +349,16 @@ class Model:
             _check_node(n.type, n.props, region)
             n.region = check_region(region) if region is not None else None
             return None
+        if kind == "batch":
+            ops = op.get("ops")
+            if not isinstance(ops, list) or not ops:
+                raise ModelError("batch takes a non-empty list of operations")
+            before = self.snapshot()
+            try:
+                return [self.apply(o) for o in ops]
+            except Exception:
+                self.restore(before)       # all or nothing
+                raise
         if kind == "remove":
             if op["tag"] == self.root.tag:
                 raise ModelError("the root cannot be removed")
@@ -350,7 +366,7 @@ class Model:
             parent = self.parent_of(op["tag"])
             parent.children = [c for c in parent.children if c.tag != op["tag"]]
             return None
-        raise ModelError(f"unknown operation {kind!r} (add, set, select, remove)")
+        raise ModelError(f"unknown operation {kind!r} (add, set, select, remove, batch)")
 
     def replay(self, ops) -> list:
         return [self.apply(op) for op in ops]

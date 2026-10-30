@@ -209,6 +209,25 @@ class Solve:
                 os.unlink(path)
         return out
 
+    def displacement_all(self, points, on_surface=None):
+        """{load case: (displacement (n, 3), winding (n,))} by the direct evaluation (a submodel's cut faces)."""
+        P = np.atleast_2d(np.asarray(points, float))
+        on = np.zeros(len(P), bool) if on_surface is None else np.broadcast_to(np.asarray(on_surface, bool), len(P))
+        self.n += 1
+        src = os.path.join(self.dir, f"upts_{self.n}.txt")
+        np.savetxt(src, np.column_stack([P, on.astype(float)]), fmt="%.17g")
+        prefix = os.path.join(self.dir, f"uout_{self.n}")
+        self.proc.stdin.write(f"displacement {src} {prefix}\n")
+        self.proc.stdin.flush()
+        self.last_report = self._until_ready()
+        out = {}
+        for name in self.cases:
+            d = np.loadtxt(f"{prefix}_{name}.txt", ndmin=2)
+            out[name] = (d[:, 3:6], d[:, 6])
+            os.unlink(f"{prefix}_{name}.txt")
+        os.unlink(src)
+        return out
+
     def close(self):
         if self.proc.poll() is None:
             self.proc.stdin.write("quit\n")

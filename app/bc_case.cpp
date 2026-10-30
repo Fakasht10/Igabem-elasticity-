@@ -2,7 +2,7 @@
 // thin driver over BcModel. All cases share the cached operators and one LU.
 //
 // usage: bc_case <case.json> [--csv file] [--vtu prefix] [--sub 4] [--max-residual r]
-//                [--points file --points-out prefix] [--serve]
+//                [--points file --points-out prefix] [--serve] [--greville support file]
 //
 // Prints, per case: the applied resultant of every load, the reaction of every
 // support and spring, the global equilibrium residual |sum of all boundary
@@ -21,6 +21,10 @@
 // From 1,000 points on, interior points go through the treecode (src/treecode.hpp).
 // --serve: after the solve, read commands from stdin ("points <file> <prefix>", "quit"),
 // answering "ready" after each, so later probes reuse the solution without a new LU.
+// "displacement <file> <prefix>" writes prefix_<case>.txt: x y z ux uy uz winding (direct
+// evaluation; s = 1 takes the boundary value at the closest surface point).
+// --greville: write the points a support's patches are interpolated at ("x y z" per line) and
+// exit without a solve: where a "field" for that support must give its displacement.
 
 #include <chrono>
 #include <cstdio>
@@ -41,7 +45,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   int sub = 4;
-  std::string csv_arg, vtu_arg, pts_arg, pts_out;
+  std::string csv_arg, vtu_arg, pts_arg, pts_out, grev_label, grev_out;
   double max_res = -1.0;
   bool serve = false;
   for (int i = 2; i < argc; ++i) {
@@ -52,6 +56,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--points")) pts_arg = argv[++i];
     else if (!std::strcmp(argv[i], "--points-out")) pts_out = argv[++i];
     else if (!std::strcmp(argv[i], "--serve")) serve = true;
+    else if (!std::strcmp(argv[i], "--greville") && i + 2 < argc) { grev_label = argv[++i]; grev_out = argv[++i]; }
   }
   if (!pts_arg.empty() && pts_out.empty()) {
     std::cerr << "error: --points needs --points-out\n";
@@ -61,11 +66,35 @@ int main(int argc, char** argv) {
   CaseFile cf;
   BcModel model;
   std::vector<LoadCase> cases;
+  cf.need_fields = grev_label.empty();
   try {
     cf.load(argv[1], model, cases);
   } catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << "\n";
     return 2;
+  }
+  if (!grev_label.empty()) {
+    const FixedSupport* s = nullptr;
+    for (const auto& f : model.supports)
+      if (f.label == grev_label) s = &f;
+    if (!s) {
+      std::cerr << "error: no support labelled " << grev_label << "\n";
+      return 2;
+    }
+    std::ofstream o(grev_out);
+    o.precision(17);
+    size_t n = 0;
+    for (int p : s->patches) {  // as BcModel::interpolatePatch
+      const Patch& P = model.mesh.patches[p];
+      PatchEval E;
+      for (int k = 0; k < P.nu * P.nv; ++k, ++n) {
+        P.eval(P.greville(k % P.nu, true), P.greville(k / P.nu, false), E);
+        o << E.x(0) << ' ' << E.x(1) << ' ' << E.x(2) << '\n';
+      }
+    }
+    std::printf("# %zu interpolation points of %s (%zu patches) -> %s\n", n, grev_label.c_str(), s->patches.size(),
+                grev_out.c_str());
+    return 0;
   }
   if (!csv_arg.empty()) cf.csv = csv_arg;
   if (!vtu_arg.empty()) cf.vtu = vtu_arg;
@@ -84,7 +113,13 @@ int main(int argc, char** argv) {
 
   const auto t1 = std::chrono::steady_clock::now();
   std::vector<CaseReport> rep;
-  const auto sols = model.solutions(cases, &rep);
+  std::vector<BoundarySolution> sols;
+  try {
+    sols = model.solutions(cases, &rep);
+  } catch (const std::exception& e) {  // a field file without a value at an interpolation point
+    std::cerr << "error: " << e.what() << "\n";
+    return 2;
+  }
   const double t_solve = std::chrono::duration<double>(std::chrono::steady_clock::now() - t1).count();
   std::printf("# %zu case(s) solved in %.2f s (region right-hand sides included)\n", cases.size(), t_solve);
 
@@ -147,10 +182,7 @@ int main(int argc, char** argv) {
                  << r.name << ",peak,u_max," << umax << ",,,,,\n";
     if (!cf.vtu.empty()) surfaceVtu(sols[k], 3).write(cf.vtu + "_" + r.name + "_surface.vtu");
   }
-  // Stress at the points of a file, for every case (see --points above).
-  auto points = [&](const std::string& in_path, const std::string& prefix) {
-    std::vector<Vec3> X;
-    std::vector<char> on;
+  auto readPoints = [](const std::string& in_path, std::vector<Vec3>& X, std::vector<char>& on) {
     std::ifstream in(in_path);
     std::string row;
     while (std::getline(in, row)) {
@@ -161,6 +193,28 @@ int main(int argc, char** argv) {
       X.emplace_back(v[0], v[1], v[2]);
       on.push_back(n == 4 && v[3] != 0.0);
     }
+  };
+  // Displacement at the points of a file, for every case: a submodel's cut faces from this (global) solve.
+  auto displacement = [&](const std::string& in_path, const std::string& prefix) {
+    std::vector<Vec3> X;
+    std::vector<char> on;
+    readPoints(in_path, X, on);
+    for (size_t k = 0; k < cases.size(); ++k) {
+      InteriorEvaluator ev(sols[k], cf.opt);
+      const auto F = ev.eval(X, on);
+      std::ofstream o(prefix + "_" + rep[k].name + ".txt");
+      o.precision(17);
+      o << "# x y z ux uy uz winding\n";
+      for (size_t i = 0; i < X.size(); ++i)
+        o << X[i](0) << ' ' << X[i](1) << ' ' << X[i](2) << ' ' << F[i].u(0) << ' ' << F[i].u(1) << ' ' << F[i].u(2)
+          << ' ' << F[i].winding << '\n';
+    }
+  };
+  // Stress at the points of a file, for every case (see --points above).
+  auto points = [&](const std::string& in_path, const std::string& prefix) {
+    std::vector<Vec3> X;
+    std::vector<char> on;
+    readPoints(in_path, X, on);
     for (size_t k = 0; k < cases.size(); ++k) {
       const auto tp = std::chrono::steady_clock::now();
       // many points: the treecode (src/treecode.hpp, ~1e-7 of the peak stress); few: direct
@@ -195,6 +249,7 @@ int main(int argc, char** argv) {
     while (std::cin >> cmd) {
       if (cmd == "quit") break;
       if (cmd == "points" && (std::cin >> a >> b)) points(a, b);
+      else if (cmd == "displacement" && (std::cin >> a >> b)) displacement(a, b);
       else std::printf("# unknown command %s\n", cmd.c_str());
       std::printf("ready\n");
       std::fflush(stdout);
