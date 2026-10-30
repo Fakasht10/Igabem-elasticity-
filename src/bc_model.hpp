@@ -66,11 +66,32 @@ struct RegionLoad {
   std::function<Vec3(const RPoint&)> t;  // traction
 };
 
+using Vec6 = Eigen::Matrix<double, 6, 1>;
+
+// Rigid coupling (RBE2, as nurb-fea-tcd's bemkit.solve "springs"): the patches of supports[support] (all three
+// components fixed) move with a master at ref, motion q = (u, theta): u(x) = u_m + theta x (x - ref). Master
+// components not held are unknowns, balanced by the patch traction, the loads put on the master and a grounded
+// spring K (6 x 6 on q; zero = none): sum over the patch of the traction wrench + K q = applied wrench.
+struct Rbe2 {
+  std::string label;
+  int support = -1;
+  Vec3 ref = Vec3::Zero();
+  std::array<bool, 6> held{};                                     // ux uy uz rx ry rz held (reaction)
+  Eigen::Matrix<double, 6, 6> K = Eigen::Matrix<double, 6, 6>::Zero();
+};
+
+// Rigid motion q of a master at ref.
+inline std::function<Vec3(const Vec3&)> rigidMotion(const Vec3& ref, const Vec6& q) {
+  return [ref, q](const Vec3& x) { return Vec3(q.head<3>() + Vec3(q.tail<3>()).cross(x - ref)); };
+}
+
 struct LoadCase {
   std::string name;
   std::vector<RegionLoad> loads;
   std::function<Vec3(const Vec3& y, const Vec3& n)> smooth;  // traction data on the whole surface (optional)
   std::function<Vec3(const Vec3& x)> displacement;           // overrides the supports' values (optional)
+  std::vector<std::pair<int, std::function<Vec3(const Vec3&)>>> support_values;  // per support index (optional)
+  std::vector<std::pair<int, Vec6>> master_wrench;           // per RBE2 index: force, moment about its ref
 };
 
 // Resultant force and moment (about the origin) of a traction field.
@@ -86,6 +107,7 @@ struct CaseReport {
   std::vector<std::pair<std::string, Wrench>> reactions;  // per support and spring
   Wrench total;              // whole boundary traction (should vanish)
   double free_work = 0.0;    // max |work of the applied loads on a free rigid motion| / scale
+  std::vector<std::pair<std::string, Vec6>> master_motion;  // per RBE2: (u, theta) of its master
 
   // Equilibrium residual: |resultant of all boundary tractions| over the largest
   // applied or reacting force, and the same for moments about the origin (a pure
@@ -241,18 +263,27 @@ class BcModel {
   int unknowns() const { return int(u_free.size() + t_free.size()); }
   int freeModes() const { return int(free_modes.cols()); }
 
+  std::vector<Rbe2> rbe2;                 // rigid couplings (their supports are in `supports`)
+
   // Boundary solutions of the cases (any number; solved together, 8 at a time).
   std::vector<BoundarySolution> solutions(const std::vector<LoadCase>& cases,
                                           std::vector<CaseReport>* reports = nullptr) const {
-    std::vector<BoundarySolution> out;
-    for (size_t c0 = 0; c0 < cases.size(); c0 += 8) {
-      const int K = int(std::min<size_t>(8, cases.size() - c0));
-      auto chunk = solveChunk(cases, c0, K);
-      for (auto& s : chunk) out.push_back(std::move(s));
-    }
+    std::vector<Vec6> q;
+    const std::vector<LoadCase> fin = rbe2.empty() ? cases : withMasters(cases, q);
+    std::vector<BoundarySolution> out = solveAll(fin);
     if (reports) {
       reports->clear();
-      for (size_t k = 0; k < cases.size(); ++k) reports->push_back(report(cases[k], out[k]));
+      for (size_t k = 0; k < cases.size(); ++k) {
+        reports->push_back(report(fin[k], out[k]));
+        for (size_t i = 0; i < rbe2.size(); ++i) {
+          reports->back().master_motion.push_back({rbe2[i].label, q[k * rbe2.size() + i]});
+          for (const auto& [mi, W] : cases[k].master_wrench)
+            if (mi == int(i)) {
+              reports->back().applied.F += W.head<3>();
+              reports->back().applied.M += W.tail<3>() + rbe2[i].ref.cross(Vec3(W.head<3>()));
+            }
+        }
+      }
     }
     return out;
   }
@@ -293,6 +324,77 @@ class BcModel {
   std::vector<int> spring_col_;  // 3 ndof -> column of S_ (-1: none)
   Eigen::PartialPivLU<Eigen::MatrixXd> lu_;
   std::vector<int> ufree_col_;   // 3 ndof -> unknown index (-1: fixed)
+
+  std::vector<BoundarySolution> solveAll(const std::vector<LoadCase>& cases) const {
+    std::vector<BoundarySolution> out;
+    for (size_t c0 = 0; c0 < cases.size(); c0 += 8) {
+      const int K = int(std::min<size_t>(8, cases.size() - c0));
+      auto chunk = solveChunk(cases, c0, K);
+      for (auto& s : chunk) out.push_back(std::move(s));
+    }
+    return out;
+  }
+
+  // RBE2 masters by superposition on the one LU (bemkit's "superpose"): the cases with every master held, one
+  // unit motion per free master component, the 6 x 6 blocks S (patch wrench per unit motion) solved per case for
+  // q, then the cases again with the masters moved by q (so springs and reports see the final field).
+  std::vector<LoadCase> withMasters(const std::vector<LoadCase>& cases, std::vector<Vec6>& q) const {
+    const int nm = int(rbe2.size());
+    std::vector<std::pair<int, int>> fr;  // (master, component) free
+    for (int i = 0; i < nm; ++i)
+      for (int j = 0; j < 6; ++j)
+        if (!rbe2[i].held[j]) fr.push_back({i, j});
+    std::vector<LoadCase> unit;
+    for (const auto& [i, j] : fr) {
+      LoadCase lc;
+      lc.name = "rbe2 unit";
+      lc.support_values.push_back({rbe2[i].support, rigidMotion(rbe2[i].ref, Vec6::Unit(j))});
+      for (size_t si = 0; si < supports.size(); ++si)  // other prescribed motions are not part of a unit motion
+        if (supports[si].value && int(si) != rbe2[i].support)
+          lc.support_values.push_back({int(si), [](const Vec3&) { return Vec3(Vec3::Zero()); }});
+      unit.push_back(std::move(lc));
+    }
+    const auto S0 = solveAll(cases), SU = solveAll(unit);
+    auto wrench = [&](const BoundarySolution& s, int i) {
+      std::vector<char> on(mesh.patches.size(), 0);
+      for (int p : supports[rbe2[i].support].patches) on[p] = 1;
+      const Wrench W = resultant(s, [&](int p) { return bool(on[p]); });
+      Vec6 w;
+      w << W.F, W.M - rbe2[i].ref.cross(W.F);
+      return w;
+    };
+    const int nf = int(fr.size());
+    Eigen::MatrixXd A(nf, nf);
+    for (int c = 0; c < nf; ++c)
+      for (int i = 0; i < nm; ++i) {
+        const Vec6 w = wrench(SU[c], i);
+        for (int r = 0; r < nf; ++r)
+          if (fr[r].first == i) A(r, c) = w(fr[r].second);
+      }
+    for (int r = 0; r < nf; ++r)
+      for (int c = 0; c < nf; ++c)
+        if (fr[r].first == fr[c].first) A(r, c) += rbe2[fr[r].first].K(fr[r].second, fr[c].second);
+    Eigen::ColPivHouseholderQR<Eigen::MatrixXd> qr(A);
+    if (nf && qr.rank() < nf)
+      throw std::runtime_error("RBE2: a master motion is unrestrained (hold it, add a spring or another support)");
+    q.assign(cases.size() * nm, Vec6::Zero());
+    std::vector<LoadCase> fin = cases;
+    for (size_t k = 0; k < cases.size(); ++k) {
+      Eigen::VectorXd b(nf);
+      for (int r = 0; r < nf; ++r) {
+        const auto [i, j] = fr[r];
+        double fa = 0.0;
+        for (const auto& [mi, W] : cases[k].master_wrench)
+          if (mi == i) fa += W(j);
+        b(r) = fa - wrench(S0[k], i)(j);
+      }
+      const Eigen::VectorXd x = nf ? Eigen::VectorXd(qr.solve(b)) : Eigen::VectorXd();
+      for (int r = 0; r < nf; ++r) q[k * nm + fr[r].first](fr[r].second) = x(r);
+      for (int i = 0; i < nm; ++i)
+        fin[k].support_values.push_back({rbe2[i].support, rigidMotion(rbe2[i].ref, q[k * nm + i])});
+    }
+    return fin;
+  }
 
   void buildSprings() {
     spring_dofs.clear();
@@ -464,9 +566,14 @@ class BcModel {
         for (size_t p = 0; p < mesh.patches.size(); ++p)
           if (dir[p][0] || dir[p][1] || dir[p][2]) interpolatePatch(int(p), lc.displacement, dir[p], UC, k);
       } else {
-        for (const auto& s : supports)
-          if (s.value)
-            for (int p : s.patches) interpolatePatch(p, s.value, s.fix, UC, k);
+        for (size_t si = 0; si < supports.size(); ++si) {
+          const auto& s = supports[si];
+          auto v = s.value;
+          for (const auto& [i, f] : lc.support_values)
+            if (i == int(si)) v = f;
+          if (v)
+            for (int p : s.patches) interpolatePatch(p, v, s.fix, UC, k);
+        }
       }
     }
     Eigen::MatrixXd tk = TC, uk = Eigen::MatrixXd::Zero(3 * mesh.ndof, K);

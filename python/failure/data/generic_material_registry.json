@@ -1,0 +1,123 @@
+[
+  {
+    "id": "ABS-M30-iso",
+    "name": "ABS-M30 (isotropic approximation)",
+    "E_MPa": 2300.0,
+    "nu": 0.35,
+    "weibull": {"m": 5.0, "S0_MPa": 100.0, "V0_mm3": 1.0},
+    "tcd": {"K_Ic_MPa_sqrt_m": 2.3717082451262845, "sigma_uts_MPa": 63.0, "qualification": "known input"},
+    "use_note": "Generic ABS-M30 isotropic screening only.",
+    "source_property_definition": "Project values set 2026-10-14: K_Ic 75 MPa*sqrt(mm), sigma_uts 63 MPa (TCD inherent strength), S0 100 MPa at V0 = 1 mm3 and m = 5. The earlier generic values (K_Ic 2.6 MPa*sqrt(m), sigma_uts 23 MPa, S0 25 MPa) gave L = 4.1 mm, longer than the notch field, and the extraction path left the notch bisector.",
+    "anisotropic": false,
+    "screening_only": false
+  },
+  {
+    "id": "PLA",
+    "name": "PLA (generic approximation)",
+    "E_MPa": 3500.0,
+    "nu": 0.35,
+    "weibull": {"m": 5.0, "S0_MPa": 46.7, "V0_mm3": 1.0},
+    "tcd": {"K_Ic_MPa_sqrt_m": 3.7, "sigma_uts_MPa": 42.9, "qualification": "known input"},
+    "use_note": "Generic PLA isotropic screening only.",
+    "source_property_definition": "S0 inferred from mean UTS at assumed V0=1 mm3 and m=5; values rounded as supplied.",
+    "anisotropic": false,
+    "screening_only": false
+  },
+  {
+    "id": "PETG",
+    "name": "PETG (generic approximation)",
+    "E_MPa": 2100.0,
+    "nu": 0.35,
+    "weibull": {"m": 5.0, "S0_MPa": 54.5, "V0_mm3": 1.0},
+    "tcd": {"K_Ic_MPa_sqrt_m": 2.37, "sigma_uts_MPa": 50.0, "qualification": "provisional engineering estimate"},
+    "use_note": "PETG fracture input is a provisional engineering estimate.",
+    "source_property_definition": "S0 inferred from mean UTS at assumed V0=1 mm3 and m=5; values rounded as supplied.",
+    "anisotropic": false,
+    "screening_only": false
+  },
+  {
+    "id": "ASA",
+    "name": "ASA (generic approximation)",
+    "E_MPa": 2200.0,
+    "nu": 0.35,
+    "weibull": {"m": 5.0, "S0_MPa": 38.1, "V0_mm3": 1.0},
+    "tcd": {"K_Ic_MPa_sqrt_m": 2.2, "sigma_uts_MPa": 35.0, "qualification": "TBD by test"},
+    "use_note": "Outdoor/UV applications; qualify actual grade and print condition.",
+    "source_property_definition": "S0 inferred from mean UTS at assumed V0=1 mm3 and m=5; values rounded as supplied.",
+    "anisotropic": false,
+    "screening_only": false
+  },
+  {
+    "id": "PC",
+    "name": "PC (generic approximation)",
+    "E_MPa": 2300.0,
+    "nu": 0.37,
+    "weibull": {"m": 5.0, "S0_MPa": 54.5, "V0_mm3": 1.0},
+    "tcd": {"K_Ic_MPa_sqrt_m": 2.5, "sigma_uts_MPa": 50.0, "qualification": "TBD by test"},
+    "use_note": "Temperature/moisture effects require qualification.",
+    "source_property_definition": "S0 inferred from mean UTS at assumed V0=1 mm3 and m=5; values rounded as supplied.",
+    "anisotropic": false,
+    "screening_only": false
+  },
+  {
+    "id": "PA12",
+    "name": "PA12 (generic approximation)",
+    "E_MPa": 1700.0,
+    "nu": 0.39,
+    "weibull": {"m": 5.0, "S0_MPa": 50.1, "V0_mm3": 1.0},
+    "tcd": {"K_Ic_MPa_sqrt_m": 2.0, "sigma_uts_MPa": 46.0, "qualification": "TBD by test"},
+    "use_note": "Moisture critical; qualify conditioned state.",
+    "source_property_definition": "S0 inferred from mean UTS at assumed V0=1 mm3 and m=5; values rounded as supplied.",
+    "anisotropic": false,
+    "screening_only": false
+  },
+  {
+    "id": "PA6",
+    "name": "PA6 (generic approximation)",
+    "E_MPa": 2800.0,
+    "nu": 0.39,
+    "weibull": {"m": 5.0, "S0_MPa": 74.1, "V0_mm3": 1.0},
+    "tcd": {"K_Ic_MPa_sqrt_m": 2.3, "sigma_uts_MPa": 68.0, "qualification": "TBD by test"},
+    "use_note": "Moisture sensitive; qualify conditioned state.",
+    "source_property_definition": "S0 inferred from mean UTS at assumed V0=1 mm3 and m=5; values rounded as supplied.",
+    "anisotropic": false,
+    "screening_only": false
+  },
+  {
+    "id": "Onyx-chopped-fiber-nylon",
+    "name": "Onyx / chopped-fiber nylon (isotropic screening approximation)",
+    "E_MPa": 3000.0,
+    "nu": 0.35,
+    "weibull": {"m": 5.0, "S0_MPa": 39.2, "V0_mm3": 1.0},
+    "tcd": {"K_Ic_MPa_sqrt_m": 1.8, "sigma_uts_MPa": 36.0, "qualification": "TBD by test"},
+    "use_note": "Anisotropic/vendor 36 MPa; isotropic screening only.",
+    "source_property_definition": "S0 inferred from mean UTS at assumed V0=1 mm3 and m=5; values rounded as supplied.",
+    "anisotropic": true,
+    "screening_only": true,
+    "warning": "Anisotropic material: isotropic-screening-only approximation; do not use for design qualification."
+  },
+  {
+    "id": "ULTEM-9085-PEI",
+    "name": "ULTEM 9085 / PEI (generic approximation)",
+    "E_MPa": 2500.0,
+    "nu": 0.36,
+    "weibull": {"m": 5.0, "S0_MPa": 59.9, "V0_mm3": 1.0},
+    "tcd": {"K_Ic_MPa_sqrt_m": 2.1, "sigma_uts_MPa": 55.0, "qualification": "TBD by test"},
+    "use_note": "Orientation/configuration sensitive; qualify actual process.",
+    "source_property_definition": "S0 inferred from mean UTS at assumed V0=1 mm3 and m=5; values rounded as supplied.",
+    "anisotropic": false,
+    "screening_only": false
+  },
+  {
+    "id": "Nylon12CF-evidence-only",
+    "name": "Nylon 12CF (evidence only)",
+    "solve_enabled": false,
+    "weibull": null,
+    "tcd": null,
+    "use_note": "Do not use isotropic model",
+    "source_property_definition": "Weibull/TCD/UTS TBD; evidence-only record.",
+    "anisotropic": true,
+    "screening_only": true,
+    "warning": "Fiber orientation-dependent material; no isotropic solve card is provided."
+  }
+]

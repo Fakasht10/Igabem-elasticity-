@@ -27,7 +27,7 @@ is automatic; patches are exact where the CAD allows it and fitted elsewhere:
   5. checks: distance to the CAD faces, interface gap, volume vs. OpenCASCADE.
 
 usage: python3 python/step_auto.py in.step out.dat [--h 0.4] [--degree 3] [--refine k]
-                                     [--fit-all] [--split]
+                                     [--fit-all] [--split] [--focus x,y,z,r,hf]...
 """
 
 import argparse
@@ -45,10 +45,26 @@ from spline_checks import _basis, conformity_gap, evaluate, spline_volume  # noq
 
 
 # ---------------------------------------------------------------- 1. quad mesh
+def _focus_field(focus, h, slope=0.3):
+    """Background size: (x, y, z, r, hf) focus spheres, size hf inside radius r and growing by `slope`
+    per unit distance outside it (the same "core" grading as nurb-fea-tcd's Refinement), capped at h.
+    A MathEval field, which Gmsh honours on every face (its Ball field is not always honoured)."""
+    terms = ["%.17g + %.17g * Max(0, Sqrt((x-(%.17g))^2 + (y-(%.17g))^2 + (z-(%.17g))^2) - %.17g)"
+             % (hf, slope, x, y, z, r) for x, y, z, r, hf in focus]
+    expr = terms[0]
+    for t in terms[1:]:
+        expr = "Min(%s, %s)" % (expr, t)
+    f = gmsh.model.mesh.field.add("MathEval")
+    gmsh.model.mesh.field.setString(f, "F", "Min(%.17g, %s)" % (h, expr))
+    gmsh.model.mesh.field.setAsBackgroundMesh(f)
+    gmsh.option.setNumber("Mesh.MeshSizeMin", min(gmsh.option.getNumber("Mesh.MeshSizeMin"),
+                                                  min(hf for *_, hf in focus) / 2))
+
+
 class QuadMesh:
     """All-quad surface mesh of a STEP solid with its CAD classification (gmsh session open)."""
 
-    def __init__(self, step, h, curvature=8, split_closed=False):
+    def __init__(self, step, h, curvature=8, split_closed=False, focus=()):
         tmp = None
         if split_closed:
             tmp = tempfile.NamedTemporaryFile(suffix=".brep", delete=False).name
@@ -66,6 +82,8 @@ class QuadMesh:
             gmsh.option.setNumber(k, v)
         # structured grids on four-sided faces (compatible counts chosen by Gmsh); the rest
         # gets quasi-structured quads
+        if focus:
+            _focus_field(focus, h)
         gmsh.model.mesh.setTransfiniteAutomatic(recombine=True)
         _match_translated_faces()
         gmsh.model.mesh.generate(2)
@@ -526,14 +544,43 @@ def jacobian_ratio(P, m=5):
     return min(J) / max(J)
 
 
+def span_jacobian(P):
+    """min over the knot spans of min / max |x_u x x_v| on the span's 3 x 3 corner/mid grid: near 0 flags an
+    element whose parametrisation collapses at a point (a fitted side with a near-zero speed), which the
+    collocation resolves badly (a local stress spike)."""
+    U, V = np.unique(P.U), np.unique(P.V)
+    worst = 1.0
+    for i in range(len(U) - 1):
+        for j in range(len(V) - 1):
+            J = [np.linalg.norm(np.cross(*evaluate(P, U[i] + a * (U[i + 1] - U[i]), V[j] + b * (V[j + 1] - V[j]))[1:]))
+                 for a in (0.0, 0.5, 1.0 - 1e-12) for b in (0.0, 0.5, 1.0 - 1e-12)]
+            worst = min(worst, min(J) / max(J))
+    return worst
+
+
+def span_aspect(P):
+    """max over the knot spans (elements) of long side / short side, measured along the mid iso-lines:
+    a sliver (a thin strip of quads left by the layout) is collocated badly and shows as a stress spike."""
+    U, V = np.unique(P.U), np.unique(P.V)
+    worst = 1.0
+    for i in range(len(U) - 1):
+        for j in range(len(V) - 1):
+            um, vm = 0.5 * (U[i] + U[i + 1]), 0.5 * (V[j] + V[j + 1])
+            _, xu, xv = evaluate(P, um, vm)
+            a, b = np.linalg.norm(xu) * (U[i + 1] - U[i]), np.linalg.norm(xv) * (V[j + 1] - V[j])
+            worst = max(worst, max(a, b) / max(min(a, b), 1e-300))
+    return worst
+
+
 def _deviation(P, surf, m=4):
     t = (np.arange(m) + 0.5) / m
     X = np.array([evaluate(P, u, v)[0] for u in t for v in t])
     return np.linalg.norm(_project(2, surf, X) - X, axis=1).max()
 
 
-def convert(step, out, h=0.4, degree=3, refine=0, curvature=8, name=None, exact_faces=True, split_closed=False):
-    M = QuadMesh(step, h, curvature, split_closed and exact_faces)
+def convert(step, out, h=0.4, degree=3, refine=0, curvature=8, name=None, exact_faces=True, split_closed=False,
+            focus=()):
+    M = QuadMesh(step, h, curvature, split_closed and exact_faces, focus)
     try:
         sep = trace_layout(M)
         B, fallback = blocks(M, sep)
@@ -578,7 +625,9 @@ def convert(step, out, h=0.4, degree=3, refine=0, curvature=8, name=None, exact_
     v_spl = spline_volume(patches, 8)  # rational patches: Gauss rule no longer exact
     write_dat(out, patches, name or os.path.basename(out))
     return dict(quads=nquads, patches=len(patches), exact_patches=nexact, fallback_blocks=fallback, min_quad_quality=qmin,
-                min_jacobian_ratio=min(jacobian_ratio(P) for P in patches), max_dev=dev,
+                min_jacobian_ratio=min(jacobian_ratio(P) for P in patches),
+                min_span_jacobian=min(span_jacobian(P) for P in patches),
+                max_span_aspect=max(span_aspect(P) for P in patches), max_dev=dev,
                 conformity_gap=gap, shared_edges=nshared, open_edges=lonely, vol_cad=v_cad,
                 vol_spline=v_spl, vol_rel_err=abs(v_spl - v_cad) / abs(v_cad))
 
@@ -595,9 +644,11 @@ def main(argv=None):
     ap.add_argument("--split", action="store_true",
                     help="cut closed faces along their parameter lines first (exact hole walls on prismatic parts;"
                          " on revolved parts such as a bolt it only adds patches)")
+    ap.add_argument("--focus", action="append", default=[], metavar="x,y,z,r,hf",
+                    help="refine to size hf within radius r of (x, y, z), graded out to h (repeatable)")
     a = ap.parse_args(argv)
     r = convert(a.step, a.out, a.h, a.degree, a.refine, a.curvature, exact_faces=not a.fit_all,
-                split_closed=a.split)
+                split_closed=a.split, focus=[tuple(map(float, f.split(","))) for f in a.focus])
     for k, v in r.items():
         print("%-15s %s" % (k, v))
     return r

@@ -1,0 +1,48 @@
+{
+  "source": "project calibration baseline results.json",
+  "sha256": "ff63e53131f79db97ab8a6dcb28542de08cec1dc126462f0c521e35c9e929a8a",
+  "parameters": {
+    "0": {
+      "angle": 0,
+      "method": "Weibull_stress",
+      "status": "fit",
+      "shape_parameter": 4.419058216054463,
+      "parameter_definition": "m",
+      "roots": [
+        4.419058216054463
+      ],
+      "scale_MPa": 308.30664322564195,
+      "energy_threshold_MPa": null,
+      "calibration_loss": 9.668965408125187e-14,
+      "excluded_RMSE_percent": 11.67026313230589
+    },
+    "30": {
+      "angle": 30,
+      "method": "Weibull_stress",
+      "status": "fit",
+      "shape_parameter": 4.31752001482266,
+      "parameter_definition": "m",
+      "roots": [
+        4.31752001482266
+      ],
+      "scale_MPa": 283.6174071363281,
+      "energy_threshold_MPa": null,
+      "calibration_loss": 1.6189645083458092e-16,
+      "excluded_RMSE_percent": 10.99789805941975
+    },
+    "45": {
+      "angle": 45,
+      "method": "Weibull_stress",
+      "status": "fit",
+      "shape_parameter": 5.797333694435908,
+      "parameter_definition": "m",
+      "roots": [
+        5.797333694435908
+      ],
+      "scale_MPa": 194.32083028316876,
+      "energy_threshold_MPa": null,
+      "calibration_loss": 6.026978723927112e-24,
+      "excluded_RMSE_percent": 10.95308443787696
+    }
+  }
+}

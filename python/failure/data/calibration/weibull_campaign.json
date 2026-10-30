@@ -1,0 +1,1192 @@
+{
+  "artifact_sha256": "f7873b5dc6f390a2ef30afd4832429c0282e86d602467f487bfe6ca4d23cb359",
+  "calibration_consistency": {
+    "pass": true,
+    "pooled": {
+      "observed_means_N": {
+        "UB": 3143.777777777778,
+        "US": 2946.1111111111113
+      },
+      "pass": true,
+      "predicted_means_N": {
+        "UB": 3143.7777777778697,
+        "US": 2946.111111110998
+      },
+      "relative_error_percent": {
+        "UB": 2.9309887850104133e-12,
+        "US": -3.841371665203042e-12
+      },
+      "tolerance_relative": 1e-08
+    },
+    "raster": {
+      "0": {
+        "observed_means_N": {
+          "UB": 3310.3333333333335,
+          "US": 3221.3333333333335
+        },
+        "pass": true,
+        "predicted_means_N": {
+          "UB": 3310.333333333326,
+          "US": 3221.333333333332
+        },
+        "relative_error_percent": {
+          "UB": -2.220446049250313e-13,
+          "US": -4.440892098500626e-14
+        },
+        "tolerance_relative": 1e-08
+      },
+      "30": {
+        "observed_means_N": {
+          "UB": 2930.3333333333335,
+          "US": 2833.3333333333335
+        },
+        "pass": true,
+        "predicted_means_N": {
+          "UB": 2930.3333333333326,
+          "US": 2833.333333333333
+        },
+        "relative_error_percent": {
+          "UB": -3.3306690738754696e-14,
+          "US": -1.1102230246251565e-14
+        },
+        "tolerance_relative": 1e-08
+      },
+      "45": {
+        "observed_means_N": {
+          "UB": 3190.6666666666665,
+          "US": 2783.6666666666665
+        },
+        "pass": true,
+        "predicted_means_N": {
+          "UB": 3190.666666666684,
+          "US": 2783.6666666665737
+        },
+        "relative_error_percent": {
+          "UB": 5.329070518200751e-13,
+          "US": -3.3306690738754696e-12
+        },
+        "tolerance_relative": 1e-08
+      }
+    }
+  },
+  "campaign_status": "PASS",
+  "cards": [
+    {
+      "E_MPa": 3235.0,
+      "id": "pla-raster-0-weibull",
+      "name": "PLA raster 0\u00b0 \u2014 Weibull stress (experimental)",
+      "nu": 0.35,
+      "provenance": {
+        "experimental_status": "research calibration; process/raster-specific PLA",
+        "geometry_assumptions": "nominal quarter mesh; full-volume hazard and measured specimen thickness scaling",
+        "restrictions": "Only the measured raster/process/conditioning and calibration geometry family; do not transfer to generic PLA or other polymers."
+      },
+      "solve_enabled": true,
+      "status": "calibrated_research",
+      "weibull": {
+        "S0_MPa": 354.76819409548693,
+        "V0_mm3": 1.0,
+        "calibration_sha256": "f7873b5dc6f390a2ef30afd4832429c0282e86d602467f487bfe6ca4d23cb359",
+        "held_out_RMSE_percent": 11.92995262213818,
+        "m": 4.131588397578871,
+        "model": "3-D positive maximum-principal stress weakest-link volume law",
+        "predictive_quality": "REPORTED",
+        "predictive_warning": "Held-out error is reported and this experimental card must not be treated as validated predictive performance.",
+        "source": "calibration/results/weibull_campaign.json"
+      }
+    },
+    {
+      "E_MPa": 3314.3333333333335,
+      "id": "pla-raster-30-weibull",
+      "name": "PLA raster 30\u00b0 \u2014 Weibull stress (experimental)",
+      "nu": 0.35,
+      "provenance": {
+        "experimental_status": "research calibration; process/raster-specific PLA",
+        "geometry_assumptions": "nominal quarter mesh; full-volume hazard and measured specimen thickness scaling",
+        "restrictions": "Only the measured raster/process/conditioning and calibration geometry family; do not transfer to generic PLA or other polymers."
+      },
+      "solve_enabled": true,
+      "status": "calibrated_research",
+      "weibull": {
+        "S0_MPa": 323.8338383894504,
+        "V0_mm3": 1.0,
+        "calibration_sha256": "f7873b5dc6f390a2ef30afd4832429c0282e86d602467f487bfe6ca4d23cb359",
+        "held_out_RMSE_percent": 10.992071920275169,
+        "m": 4.058666246354035,
+        "model": "3-D positive maximum-principal stress weakest-link volume law",
+        "predictive_quality": "REPORTED",
+        "predictive_warning": "Held-out error is reported and this experimental card must not be treated as validated predictive performance.",
+        "source": "calibration/results/weibull_campaign.json"
+      }
+    },
+    {
+      "E_MPa": 3372.0,
+      "id": "pla-raster-45-weibull",
+      "name": "PLA raster 45\u00b0 \u2014 Weibull stress (experimental)",
+      "nu": 0.35,
+      "provenance": {
+        "experimental_status": "research calibration; process/raster-specific PLA",
+        "geometry_assumptions": "nominal quarter mesh; full-volume hazard and measured specimen thickness scaling",
+        "restrictions": "Only the measured raster/process/conditioning and calibration geometry family; do not transfer to generic PLA or other polymers."
+      },
+      "solve_enabled": true,
+      "status": "calibrated_research",
+      "weibull": {
+        "S0_MPa": 223.62507353803787,
+        "V0_mm3": 1.0,
+        "calibration_sha256": "f7873b5dc6f390a2ef30afd4832429c0282e86d602467f487bfe6ca4d23cb359",
+        "held_out_RMSE_percent": 10.343890929458928,
+        "m": 5.24859706045962,
+        "model": "3-D positive maximum-principal stress weakest-link volume law",
+        "predictive_quality": "REPORTED",
+        "predictive_warning": "Held-out error is reported and this experimental card must not be treated as validated predictive performance.",
+        "source": "calibration/results/weibull_campaign.json"
+      }
+    }
+  ],
+  "dataset_gate": {
+    "counts_by_angle": {
+      "0": 18,
+      "30": 18,
+      "45": 18
+    },
+    "dataset_sha256": "e675dab652ed95f68b376dde937a1aa111880bbce2d75d5b4af49da4b61121fe",
+    "pooled": {
+      "angles": [
+        0,
+        30,
+        45
+      ],
+      "calibration_count": 18,
+      "calibration_ids": [
+        "B04_0_1",
+        "B04_0_2",
+        "B04_0_3",
+        "B04_30_1",
+        "B04_30_2",
+        "B04_30_3",
+        "B04_45_1",
+        "B04_45_2",
+        "B04_45_3",
+        "S04_0_1",
+        "S04_0_2",
+        "S04_0_3",
+        "S04_30_1",
+        "S04_30_2",
+        "S04_30_3",
+        "S04_45_1",
+        "S04_45_2",
+        "S04_45_3"
+      ],
+      "holdout_count": 36,
+      "holdout_ids": [
+        "I04_0_1",
+        "I04_0_2",
+        "I04_0_3",
+        "I04_30_1",
+        "I04_30_2",
+        "I04_30_3",
+        "I04_45_1",
+        "I04_45_2",
+        "I04_45_3",
+        "OR0_0_1",
+        "OR0_0_2",
+        "OR0_0_3",
+        "OR0_30_1",
+        "OR0_30_2",
+        "OR0_30_3",
+        "OR0_45_1",
+        "OR0_45_2",
+        "OR0_45_3",
+        "OR1_0_1",
+        "OR1_0_2",
+        "OR1_0_3",
+        "OR1_30_1",
+        "OR1_30_2",
+        "OR1_30_3",
+        "OR1_45_1",
+        "OR1_45_2",
+        "OR1_45_3",
+        "OR3_0_1",
+        "OR3_0_2",
+        "OR3_0_3",
+        "OR3_30_1",
+        "OR3_30_2",
+        "OR3_30_3",
+        "OR3_45_1",
+        "OR3_45_2",
+        "OR3_45_3"
+      ]
+    },
+    "raster_0": {
+      "angles": [
+        0
+      ],
+      "calibration_count": 6,
+      "calibration_ids": [
+        "B04_0_1",
+        "B04_0_2",
+        "B04_0_3",
+        "S04_0_1",
+        "S04_0_2",
+        "S04_0_3"
+      ],
+      "holdout_count": 12,
+      "holdout_ids": [
+        "I04_0_1",
+        "I04_0_2",
+        "I04_0_3",
+        "OR0_0_1",
+        "OR0_0_2",
+        "OR0_0_3",
+        "OR1_0_1",
+        "OR1_0_2",
+        "OR1_0_3",
+        "OR3_0_1",
+        "OR3_0_2",
+        "OR3_0_3"
+      ]
+    },
+    "schema_version": 1,
+    "status": "PASS",
+    "tension_count": 54
+  },
+  "fitted_on": "h=.18 NGSolve runtime reductions",
+  "gate_version": "weibull-3d-thickness-aware-v2",
+  "mesh_levels_mm": [
+    0.25,
+    0.18
+  ],
+  "method": "exact source inverse-variance weighted profiled log family-mean objective; measured thickness per specimen",
+  "numerical_status": "PASS",
+  "pooled": {
+    "fit": {
+      "S0_MPa": 272.67949041213717,
+      "calibration_consistency": {
+        "observed_means_N": {
+          "UB": 3143.777777777778,
+          "US": 2946.1111111111113
+        },
+        "pass": true,
+        "predicted_means_N": {
+          "UB": 3143.7777777778697,
+          "US": 2946.111111110998
+        },
+        "relative_error_percent": {
+          "UB": 2.9309887850104133e-12,
+          "US": -3.841371665203042e-12
+        },
+        "tolerance_relative": 1e-08
+      },
+      "loss": 4.5156960114956805e-24,
+      "m": 4.596511097063984,
+      "observed_means_N": {
+        "UB": 3143.777777777778,
+        "US": 2946.1111111111113
+      },
+      "roots": [
+        4.596511097063984
+      ],
+      "status": "fit",
+      "unit_N_per_MPa": {
+        "UB": 11.52920512293116,
+        "US": 10.804300340513855
+      },
+      "weights": [
+        2284.58136292876,
+        1750.3600082159555
+      ]
+    },
+    "mesh_drift": {
+      "families": {
+        "OB": {
+          "h018_unit_N_per_MPa": 3.811449392194674,
+          "h025_unit_N_per_MPa": 3.809982342795136,
+          "pass": true,
+          "predicted_load_drift_percent": 0.03850541203458402
+        },
+        "OI": {
+          "h018_unit_N_per_MPa": 3.8187382457182064,
+          "h025_unit_N_per_MPa": 3.8184174282149574,
+          "pass": true,
+          "predicted_load_drift_percent": 0.008401844724414964
+        },
+        "OS": {
+          "h018_unit_N_per_MPa": 3.81476544078614,
+          "h025_unit_N_per_MPa": 3.811915242387382,
+          "pass": true,
+          "predicted_load_drift_percent": 0.07477077053195114
+        },
+        "UB": {
+          "h018_unit_N_per_MPa": 3.6922859225553486,
+          "h025_unit_N_per_MPa": 3.68790423871249,
+          "pass": true,
+          "predicted_load_drift_percent": 0.11881229986570041
+        },
+        "UI": {
+          "h018_unit_N_per_MPa": 3.62320954772361,
+          "h025_unit_N_per_MPa": 3.6053814572003784,
+          "pass": true,
+          "predicted_load_drift_percent": 0.49448555540847483
+        },
+        "US": {
+          "h018_unit_N_per_MPa": 3.5064109336384046,
+          "h025_unit_N_per_MPa": 3.469756603372403,
+          "pass": true,
+          "predicted_load_drift_percent": 1.0563948557767988
+        }
+      },
+      "pass": true,
+      "threshold_percent": 2.0
+    }
+  },
+  "predictions": [
+    {
+      "angle_deg": 0,
+      "family": "UB",
+      "id": "B04_0_1",
+      "observed_N": 3330.0,
+      "predicted_N": 3325.9164785573134,
+      "relative_error_percent": -0.12262827155214984,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UB",
+      "id": "B04_0_2",
+      "observed_N": 3307.0,
+      "predicted_N": 3290.8445176199148,
+      "relative_error_percent": -0.48852380949758745,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UB",
+      "id": "B04_0_3",
+      "observed_N": 3294.0,
+      "predicted_N": 3314.2390038227513,
+      "relative_error_percent": 0.6144202739147397,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UI",
+      "id": "I04_0_1",
+      "observed_N": 3355.0,
+      "predicted_N": 3260.2175185021265,
+      "relative_error_percent": -2.8251112219932484,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UI",
+      "id": "I04_0_2",
+      "observed_N": 3311.0,
+      "predicted_N": 3271.9222936382334,
+      "relative_error_percent": -1.1802387907510314,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "UI",
+      "id": "I04_0_3",
+      "observed_N": 3327.0,
+      "predicted_N": 3248.4993090825815,
+      "relative_error_percent": -2.3595037847135125,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "US",
+      "id": "S04_0_1",
+      "observed_N": 3234.0,
+      "predicted_N": 3209.7866613908036,
+      "relative_error_percent": -0.7487117689918499,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "US",
+      "id": "S04_0_2",
+      "observed_N": 3212.0,
+      "predicted_N": 3232.875601480879,
+      "relative_error_percent": 0.6499253263038351,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "US",
+      "id": "S04_0_3",
+      "observed_N": 3218.0,
+      "predicted_N": 3221.337737128313,
+      "relative_error_percent": 0.10372085544789744,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OB",
+      "id": "OR3_0_1",
+      "observed_N": 3195.0,
+      "predicted_N": 3331.6208260036633,
+      "relative_error_percent": 4.2760821910379665,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OB",
+      "id": "OR3_0_2",
+      "observed_N": 3297.0,
+      "predicted_N": 3319.384864767304,
+      "relative_error_percent": 0.6789464594268768,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OB",
+      "id": "OR3_0_3",
+      "observed_N": 3216.0,
+      "predicted_N": 3319.384864767304,
+      "relative_error_percent": 3.214703506446015,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OI",
+      "id": "OR1_0_1",
+      "observed_N": 2670.0,
+      "predicted_N": 3411.7739034448723,
+      "relative_error_percent": 27.781794136512072,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OI",
+      "id": "OR1_0_2",
+      "observed_N": 3031.0,
+      "predicted_N": 3393.461047791018,
+      "relative_error_percent": 11.958464130353597,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OI",
+      "id": "OR1_0_3",
+      "observed_N": 2669.0,
+      "predicted_N": 3393.461047791018,
+      "relative_error_percent": 27.14353869580435,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OS",
+      "id": "OR0_0_1",
+      "observed_N": 3302.0,
+      "predicted_N": 3394.6124263650763,
+      "relative_error_percent": 2.8047373217769955,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OS",
+      "id": "OR0_0_2",
+      "observed_N": 3329.0,
+      "predicted_N": 3376.2617341990363,
+      "relative_error_percent": 1.419697632893846,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 0,
+      "family": "OS",
+      "id": "OR0_0_3",
+      "observed_N": 3325.0,
+      "predicted_N": 3376.2617341990363,
+      "relative_error_percent": 1.54170629170034,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UB",
+      "id": "B04_30_1",
+      "observed_N": 2986.0,
+      "predicted_N": 2957.4727552717327,
+      "relative_error_percent": -0.9553665347711737,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UB",
+      "id": "B04_30_2",
+      "observed_N": 2706.0,
+      "predicted_N": 2911.6635885897254,
+      "relative_error_percent": 7.6002804356883,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UB",
+      "id": "B04_30_3",
+      "observed_N": 3099.0,
+      "predicted_N": 2921.8636561385388,
+      "relative_error_percent": -5.715919453419205,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UI",
+      "id": "I04_30_1",
+      "observed_N": 3274.0,
+      "predicted_N": 2819.3987355671215,
+      "relative_error_percent": -13.885194393185053,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UI",
+      "id": "I04_30_2",
+      "observed_N": 3262.0,
+      "predicted_N": 2850.28633193062,
+      "relative_error_percent": -12.621510363868182,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "UI",
+      "id": "I04_30_3",
+      "observed_N": 3260.0,
+      "predicted_N": 2840.0026797231326,
+      "relative_error_percent": -12.883353382725993,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "US",
+      "id": "S04_30_1",
+      "observed_N": 2861.0,
+      "predicted_N": 2823.1866941089893,
+      "relative_error_percent": -1.3216814362464469,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "US",
+      "id": "S04_30_2",
+      "observed_N": 2815.0,
+      "predicted_N": 2838.406652945505,
+      "relative_error_percent": 0.8314974403376585,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "US",
+      "id": "S04_30_3",
+      "observed_N": 2824.0,
+      "predicted_N": 2838.406652945505,
+      "relative_error_percent": 0.5101506000532829,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OB",
+      "id": "OR3_30_1",
+      "observed_N": 3142.0,
+      "predicted_N": 2924.504417742867,
+      "relative_error_percent": -6.9222018541417185,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OB",
+      "id": "OR3_30_2",
+      "observed_N": 3195.0,
+      "predicted_N": 2908.441824659735,
+      "relative_error_percent": -8.968956974656173,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OB",
+      "id": "OR3_30_3",
+      "observed_N": 3069.0,
+      "predicted_N": 2919.153432076175,
+      "relative_error_percent": -4.882586116775012,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OI",
+      "id": "OR1_30_1",
+      "observed_N": 2543.0,
+      "predicted_N": 2979.3132600816984,
+      "relative_error_percent": 17.157422732272853,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OI",
+      "id": "OR1_30_2",
+      "observed_N": 2889.0,
+      "predicted_N": 2989.998672322473,
+      "relative_error_percent": 3.4959734275691545,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OI",
+      "id": "OR1_30_3",
+      "observed_N": 2472.0,
+      "predicted_N": 2989.998672322473,
+      "relative_error_percent": 20.954638847996463,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OS",
+      "id": "OR0_30_1",
+      "observed_N": 3057.0,
+      "predicted_N": 2970.096745372304,
+      "relative_error_percent": -2.8427626636472247,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OS",
+      "id": "OR0_30_2",
+      "observed_N": 3108.0,
+      "predicted_N": 2980.800040530687,
+      "relative_error_percent": -4.092662788587931,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 30,
+      "family": "OS",
+      "id": "OR0_30_3",
+      "observed_N": 3068.0,
+      "predicted_N": 2975.4499664292184,
+      "relative_error_percent": -3.0166243015248284,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UB",
+      "id": "B04_45_1",
+      "observed_N": 3179.0,
+      "predicted_N": 3174.3703622114303,
+      "relative_error_percent": -0.1456318901720599,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UB",
+      "id": "B04_45_2",
+      "observed_N": 3230.0,
+      "predicted_N": 3186.600854201878,
+      "relative_error_percent": -1.3436268048954148,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UB",
+      "id": "B04_45_3",
+      "observed_N": 3163.0,
+      "predicted_N": 3211.0287835867434,
+      "relative_error_percent": 1.5184566420089585,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UI",
+      "id": "I04_45_1",
+      "observed_N": 3206.0,
+      "predicted_N": 2988.1247543361355,
+      "relative_error_percent": -6.795859191012621,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UI",
+      "id": "I04_45_2",
+      "observed_N": 3182.0,
+      "predicted_N": 2953.357302043154,
+      "relative_error_percent": -7.1855027642000575,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "UI",
+      "id": "I04_45_3",
+      "observed_N": 3174.0,
+      "predicted_N": 2976.546234701262,
+      "relative_error_percent": -6.2209755922727705,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "US",
+      "id": "S04_45_1",
+      "observed_N": 2777.0,
+      "predicted_N": 2789.031270221928,
+      "relative_error_percent": 0.43324703715981183,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "US",
+      "id": "S04_45_2",
+      "observed_N": 2861.0,
+      "predicted_N": 2783.667477921101,
+      "relative_error_percent": -2.70298923729112,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "US",
+      "id": "S04_45_3",
+      "observed_N": 2713.0,
+      "predicted_N": 2778.3012518566916,
+      "relative_error_percent": 2.4069757411238957,
+      "split": "calibration"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OB",
+      "id": "OR3_45_1",
+      "observed_N": 2826.0,
+      "predicted_N": 3187.255115019199,
+      "relative_error_percent": 12.783266631960322,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OB",
+      "id": "OR3_45_2",
+      "observed_N": 2872.0,
+      "predicted_N": 3206.258974440294,
+      "relative_error_percent": 11.63854367828321,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OB",
+      "id": "OR3_45_3",
+      "observed_N": 2997.0,
+      "predicted_N": 3193.5926907780627,
+      "relative_error_percent": 6.5596493419440405,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OI",
+      "id": "OR1_45_1",
+      "observed_N": 2939.0,
+      "predicted_N": 3255.6436442126883,
+      "relative_error_percent": 10.77385655708365,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OI",
+      "id": "OR1_45_2",
+      "observed_N": 2893.0,
+      "predicted_N": 3261.9168777980826,
+      "relative_error_percent": 12.752052464503372,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OI",
+      "id": "OR1_45_3",
+      "observed_N": 2825.0,
+      "predicted_N": 3249.3675642144226,
+      "relative_error_percent": 15.021860680156562,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OS",
+      "id": "OR0_45_1",
+      "observed_N": 2858.0,
+      "predicted_N": 3237.0129041462483,
+      "relative_error_percent": 13.261473203157736,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OS",
+      "id": "OR0_45_2",
+      "observed_N": 3015.0,
+      "predicted_N": 3218.2838880144373,
+      "relative_error_percent": 6.742417512916665,
+      "split": "holdout"
+    },
+    {
+      "angle_deg": 45,
+      "family": "OS",
+      "id": "OR0_45_3",
+      "observed_N": 2960.0,
+      "predicted_N": 3224.529736949187,
+      "relative_error_percent": 8.936815437472534,
+      "split": "holdout"
+    }
+  ],
+  "predictive_policy": {
+    "heldout_error": "reported prominently; does not override numerical/card gate",
+    "warning_rmse_percent": 25.0
+  },
+  "raster_0": {
+    "fit": {
+      "S0_MPa": 354.76819409548693,
+      "calibration_consistency": {
+        "observed_means_N": {
+          "UB": 3310.3333333333335,
+          "US": 3221.3333333333335
+        },
+        "pass": true,
+        "predicted_means_N": {
+          "UB": 3310.333333333326,
+          "US": 3221.333333333332
+        },
+        "relative_error_percent": {
+          "UB": -2.220446049250313e-13,
+          "US": -4.440892098500626e-14
+        },
+        "tolerance_relative": 1e-08
+      },
+      "held_out_RMSE_percent": 11.92995262213818,
+      "loss": 3.1214129684921143e-25,
+      "m": 4.131588397578871,
+      "observed_means_N": {
+        "UB": 3310.3333333333335,
+        "US": 3221.3333333333335
+      },
+      "predictive_quality": "REPORTED",
+      "roots": [
+        4.131588397578871
+      ],
+      "status": "fit",
+      "unit_N_per_MPa": {
+        "UB": 9.330975517050833,
+        "US": 9.080107481298903
+      },
+      "weights": [
+        98921.5255767302,
+        240703.34020618562
+      ]
+    },
+    "mesh_drift": {
+      "families": {
+        "OB": {
+          "h018_unit_N_per_MPa": 3.205117461950721,
+          "h025_unit_N_per_MPa": 3.204366513323191,
+          "pass": true,
+          "predicted_load_drift_percent": 0.02343516649569999
+        },
+        "OI": {
+          "h018_unit_N_per_MPa": 3.217480139791065,
+          "h025_unit_N_per_MPa": 3.2172514747374668,
+          "pass": true,
+          "predicted_load_drift_percent": 0.0071074659657055506
+        },
+        "OS": {
+          "h018_unit_N_per_MPa": 3.218571809223317,
+          "h025_unit_N_per_MPa": 3.217225801890951,
+          "pass": true,
+          "predicted_load_drift_percent": 0.041837515152809424
+        },
+        "UB": {
+          "h018_unit_N_per_MPa": 3.0923875471666538,
+          "h025_unit_N_per_MPa": 3.090199954514198,
+          "pass": true,
+          "predicted_load_drift_percent": 0.07079129780129811
+        },
+        "UI": {
+          "h018_unit_N_per_MPa": 3.085592802058534,
+          "h025_unit_N_per_MPa": 3.0772943674655044,
+          "pass": true,
+          "predicted_load_drift_percent": 0.26966658376150754
+        },
+        "US": {
+          "h018_unit_N_per_MPa": 3.0433308915432646,
+          "h025_unit_N_per_MPa": 3.0250929566545457,
+          "pass": true,
+          "predicted_load_drift_percent": 0.6028884120271139
+        }
+      },
+      "pass": true,
+      "threshold_percent": 2.0
+    }
+  },
+  "raster_fits": {
+    "0": {
+      "S0_MPa": 354.76819409548693,
+      "calibration_consistency": {
+        "observed_means_N": {
+          "UB": 3310.3333333333335,
+          "US": 3221.3333333333335
+        },
+        "pass": true,
+        "predicted_means_N": {
+          "UB": 3310.333333333326,
+          "US": 3221.333333333332
+        },
+        "relative_error_percent": {
+          "UB": -2.220446049250313e-13,
+          "US": -4.440892098500626e-14
+        },
+        "tolerance_relative": 1e-08
+      },
+      "held_out_RMSE_percent": 11.92995262213818,
+      "loss": 3.1214129684921143e-25,
+      "m": 4.131588397578871,
+      "mesh_drift": {
+        "families": {
+          "OB": {
+            "h018_unit_N_per_MPa": 3.205117461950721,
+            "h025_unit_N_per_MPa": 3.204366513323191,
+            "pass": true,
+            "predicted_load_drift_percent": 0.02343516649569999
+          },
+          "OI": {
+            "h018_unit_N_per_MPa": 3.217480139791065,
+            "h025_unit_N_per_MPa": 3.2172514747374668,
+            "pass": true,
+            "predicted_load_drift_percent": 0.0071074659657055506
+          },
+          "OS": {
+            "h018_unit_N_per_MPa": 3.218571809223317,
+            "h025_unit_N_per_MPa": 3.217225801890951,
+            "pass": true,
+            "predicted_load_drift_percent": 0.041837515152809424
+          },
+          "UB": {
+            "h018_unit_N_per_MPa": 3.0923875471666538,
+            "h025_unit_N_per_MPa": 3.090199954514198,
+            "pass": true,
+            "predicted_load_drift_percent": 0.07079129780129811
+          },
+          "UI": {
+            "h018_unit_N_per_MPa": 3.085592802058534,
+            "h025_unit_N_per_MPa": 3.0772943674655044,
+            "pass": true,
+            "predicted_load_drift_percent": 0.26966658376150754
+          },
+          "US": {
+            "h018_unit_N_per_MPa": 3.0433308915432646,
+            "h025_unit_N_per_MPa": 3.0250929566545457,
+            "pass": true,
+            "predicted_load_drift_percent": 0.6028884120271139
+          }
+        },
+        "pass": true,
+        "threshold_percent": 2.0
+      },
+      "observed_means_N": {
+        "UB": 3310.3333333333335,
+        "US": 3221.3333333333335
+      },
+      "predictive_quality": "REPORTED",
+      "roots": [
+        4.131588397578871
+      ],
+      "status": "fit",
+      "unit_N_per_MPa": {
+        "UB": 9.330975517050833,
+        "US": 9.080107481298903
+      },
+      "weights": [
+        98921.5255767302,
+        240703.34020618562
+      ]
+    },
+    "30": {
+      "S0_MPa": 323.8338383894504,
+      "calibration_consistency": {
+        "observed_means_N": {
+          "UB": 2930.3333333333335,
+          "US": 2833.3333333333335
+        },
+        "pass": true,
+        "predicted_means_N": {
+          "UB": 2930.3333333333326,
+          "US": 2833.333333333333
+        },
+        "relative_error_percent": {
+          "UB": -3.3306690738754696e-14,
+          "US": -1.1102230246251565e-14
+        },
+        "tolerance_relative": 1e-08
+      },
+      "held_out_RMSE_percent": 10.992071920275169,
+      "loss": 0.0,
+      "m": 4.058666246354035,
+      "mesh_drift": {
+        "families": {
+          "OB": {
+            "h018_unit_N_per_MPa": 3.1069561547826416,
+            "h025_unit_N_per_MPa": 3.1062927378688787,
+            "pass": true,
+            "predicted_load_drift_percent": 0.021357192310800244
+          },
+          "OI": {
+            "h018_unit_N_per_MPa": 3.1196421187238332,
+            "h025_unit_N_per_MPa": 3.119432148223745,
+            "pass": true,
+            "predicted_load_drift_percent": 0.006731048797070649
+          },
+          "OS": {
+            "h018_unit_N_per_MPa": 3.121198928130922,
+            "h025_unit_N_per_MPa": 3.1200299675271665,
+            "pass": true,
+            "predicted_load_drift_percent": 0.03746632615462264
+          },
+          "UB": {
+            "h018_unit_N_per_MPa": 2.9952184266003914,
+            "h025_unit_N_per_MPa": 2.99329475675258,
+            "pass": true,
+            "predicted_load_drift_percent": 0.06426596790951589
+          },
+          "UI": {
+            "h018_unit_N_per_MPa": 2.9952932199765456,
+            "h025_unit_N_per_MPa": 2.988127737484274,
+            "pass": true,
+            "predicted_load_drift_percent": 0.23979839959265004
+          },
+          "US": {
+            "h018_unit_N_per_MPa": 2.961477216214544,
+            "h025_unit_N_per_MPa": 2.9455922390874107,
+            "pass": true,
+            "predicted_load_drift_percent": 0.5392795688535124
+          }
+        },
+        "pass": true,
+        "threshold_percent": 2.0
+      },
+      "observed_means_N": {
+        "UB": 2930.3333333333335,
+        "US": 2833.3333333333335
+      },
+      "predictive_quality": "REPORTED",
+      "roots": [
+        4.058666246354035
+      ],
+      "status": "fit",
+      "unit_N_per_MPa": {
+        "UB": 9.048879350925775,
+        "US": 8.749343019323069
+      },
+      "weights": [
+        629.2835297087349,
+        40521.59282108806
+      ]
+    },
+    "45": {
+      "S0_MPa": 223.62507353803787,
+      "calibration_consistency": {
+        "observed_means_N": {
+          "UB": 3190.6666666666665,
+          "US": 2783.6666666666665
+        },
+        "pass": true,
+        "predicted_means_N": {
+          "UB": 3190.666666666684,
+          "US": 2783.6666666665737
+        },
+        "relative_error_percent": {
+          "UB": 5.329070518200751e-13,
+          "US": -3.3306690738754696e-12
+        },
+        "tolerance_relative": 1e-08
+      },
+      "held_out_RMSE_percent": 10.343890929458928,
+      "loss": 5.51486287246679e-24,
+      "m": 5.24859706045962,
+      "mesh_drift": {
+        "families": {
+          "OB": {
+            "h018_unit_N_per_MPa": 4.575580271563166,
+            "h025_unit_N_per_MPa": 4.572365769943224,
+            "pass": true,
+            "predicted_load_drift_percent": 0.07030281000424132
+          },
+          "OI": {
+            "h018_unit_N_per_MPa": 4.556306778798516,
+            "h025_unit_N_per_MPa": 4.556446975089355,
+            "pass": true,
+            "predicted_load_drift_percent": -0.003076877479446516
+          },
+          "OS": {
+            "h018_unit_N_per_MPa": 4.530232866375805,
+            "h025_unit_N_per_MPa": 4.5235037218396785,
+            "pass": true,
+            "predicted_load_drift_percent": 0.14875956669688772
+          },
+          "UB": {
+            "h018_unit_N_per_MPa": 4.442563984381872,
+            "h025_unit_N_per_MPa": 4.43258195079738,
+            "pass": true,
+            "predicted_load_drift_percent": 0.22519681971577832
+          },
+          "UI": {
+            "h018_unit_N_per_MPa": 4.198100831823096,
+            "h025_unit_N_per_MPa": 4.157987223810855,
+            "pass": true,
+            "predicted_load_drift_percent": 0.9647362017499495
+          },
+          "US": {
+            "h018_unit_N_per_MPa": 3.895771277706921,
+            "h025_unit_N_per_MPa": 3.829366155260505,
+            "pass": true,
+            "predicted_load_drift_percent": 1.7341021922177235
+          }
+        },
+        "pass": true,
+        "threshold_percent": 2.0
+      },
+      "observed_means_N": {
+        "UB": 3190.6666666666665,
+        "US": 2783.6666666666665
+      },
+      "predictive_quality": "REPORTED",
+      "roots": [
+        5.24859706045962
+      ],
+      "status": "fit",
+      "unit_N_per_MPa": {
+        "UB": 14.267928976774433,
+        "US": 12.447918395846079
+      },
+      "weights": [
+        24945.054179145103,
+        4219.457950145208
+      ]
+    }
+  },
+  "runtime_port_validation": {
+    "ngsolve_h018_vs_frozen_jax": {
+      "OB": {
+        "logJ": true,
+        "m_grid": true
+      },
+      "OI": {
+        "logJ": true,
+        "m_grid": true
+      },
+      "OS": {
+        "logJ": true,
+        "m_grid": true
+      },
+      "UB": {
+        "logJ": true,
+        "m_grid": true
+      },
+      "UI": {
+        "logJ": true,
+        "m_grid": true
+      },
+      "US": {
+        "logJ": true,
+        "m_grid": true
+      }
+    }
+  },
+  "schema_version": 2
+}

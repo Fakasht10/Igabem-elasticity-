@@ -12,14 +12,17 @@
 //     {"face_id": 3, "fix": ["ux", "uy", "uz"]},             // or "dofs": {"ux": true, ...}
 //     {"select": {"box": [[x0,y0,z0], [x1,y1,z1]]}, "fix": ["uz"], "value": [0, 0, -0.01]},
 //     {"symmetry": "y", "at": 0},
-//     {"face_id": 7, "spring": {"k_n": 1e3, "k_t": 0}}         // or {"k": [kx,ky,kz]}, {"K_total": K}
-//   ],
+//     {"face_id": 7, "spring": {"k_n": 1e3, "k_t": 0}},        // or {"k": [kx,ky,kz]}, {"K_total": K}
+//     {"face_id": 12, "rbe2": {"ref": [x, y, z], "hold": ["uz", "rx"], "k": [kx, ky, kz, krx, kry, krz]}}
+//   ],                                                         // rigid coupling to a master (bc_model.hpp Rbe2)
 //   "cases": [{"name": "pull", "loads": [
 //     {"face_id": 5, "force_N": 100, "direction": [1, 0, 0]},  // uniform, resultant F
 //     {"select": {...}, "pressure": 2.0},
 //     {"face_id": 5, "moment": [0, 0, 10], "about": [x, y, z]}, // + optional force_N/direction
 //     {"face_id": 9, "bearing": {"force_N": 50, "direction": [1, 0, 0]}},
-//     {"select": {...}, "traction": [tx, ty, tz]}]}],           // or top-level "loads": one case
+//     {"select": {...}, "traction": [tx, ty, tz]},
+//     {"rbe2": "pin", "force_N": 10, "direction": [0, 1, 0], "moment": [0, 0, 1]}]}],  // on a master, about its ref
+//                                                              // or top-level "loads": one case
 //   "output": {"vtu": "out/bracket", "csv": "out/bracket.csv"}
 // }
 //
@@ -105,6 +108,7 @@ struct CaseFile {
 
     std::vector<FixedSupport> fixed;
     std::vector<SpringSupport> springs;
+    std::vector<Rbe2> masters;
     int ns = 0;
     for (const Json& s : J["supports"].arr) {
       const std::string label = s.get("label", "support " + std::to_string(ns++));
@@ -128,6 +132,30 @@ struct CaseFile {
         continue;
       }
       Region R = region(s, label);
+      if (s.has("rbe2")) {
+        const Json& r = s["rbe2"];
+        FixedSupport f;
+        f.label = label;
+        f.patches = wholePatches(model.mesh, R, label, s.has("snap") && s["snap"].asBool());
+        Rbe2 m;
+        m.label = label;
+        m.support = int(fixed.size());
+        m.ref = r.has("ref") ? jvec(r["ref"]) : RegionMesh(model.mesh, R).centroid;
+        static const char* keys[6] = {"ux", "uy", "uz", "rx", "ry", "rz"};
+        if (r.has("hold"))
+          for (const Json& c : r["hold"].arr)
+            for (int j = 0; j < 6; ++j)
+              if (c.asString() == keys[j]) m.held[j] = true;
+        if (r.has("k")) {
+          const auto k = r["k"].asNumbers();
+          if (k.size() == 6) for (int j = 0; j < 6; ++j) m.K(j, j) = k[j];
+          else if (k.size() == 36) for (int j = 0; j < 36; ++j) m.K(j / 6, j % 6) = k[j];
+          else throw std::runtime_error(label + ": rbe2 k needs 6 (diagonal) or 36 numbers");
+        }
+        masters.push_back(m);
+        fixed.push_back(f);
+        continue;
+      }
       if (s.has("spring")) {
         const Json& k = s["spring"];
         auto RM = std::make_shared<RegionMesh>(model.mesh, R);
@@ -168,6 +196,18 @@ struct CaseFile {
       int nl = 0;
       for (const Json& L : loads->arr) {
         const std::string label = L.get("label", name + " load " + std::to_string(nl++));
+        if (L.has("rbe2")) {
+          const std::string who = L["rbe2"].asString();
+          int mi = -1;
+          for (size_t i = 0; i < masters.size(); ++i)
+            if (masters[i].label == who) mi = int(i);
+          if (mi < 0) throw std::runtime_error(label + ": no rbe2 support labelled " + who);
+          Vec6 W = Vec6::Zero();
+          if (L.has("force_N")) W.head<3>() = L["force_N"].asNumber() * jvec(L["direction"]).normalized();
+          if (L.has("moment")) W.tail<3>() = jvec(L["moment"]);
+          lc.master_wrench.push_back({mi, W});
+          continue;
+        }
         const std::string key = regionKey(L);
         RegionPtr RM = regions.count(key) ? regions[key] : (regions[key] = std::make_shared<RegionMesh>(model.mesh, region(L, label)));
         if (RM->area <= 0.0) throw std::runtime_error(label + ": the region selects nothing");
@@ -195,6 +235,7 @@ struct CaseFile {
       case_names.push_back(name);
     }
     model.setupOn(geometry, std::move(fixed), std::move(springs), cache);
+    model.rbe2 = std::move(masters);
   }
 
   Region region(const Json& e, const std::string& label) const {

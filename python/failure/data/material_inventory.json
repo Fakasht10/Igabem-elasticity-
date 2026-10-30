@@ -1,0 +1,274 @@
+[
+  {
+    "material": "PLA",
+    "evidence_status": "Army-listed capability",
+    "source": "TYAD",
+    "priority": "Initial validation pool",
+    "screening_notes": "Match grade, printing process, raster/build orientation, porosity and conditioning; do not transfer PLA parameters.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "ABS",
+    "evidence_status": "Army-listed capability",
+    "source": "TYAD",
+    "priority": "Initial validation pool",
+    "screening_notes": "Match grade, printing process, raster/build orientation, porosity and conditioning; do not transfer PLA parameters.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "ASA",
+    "evidence_status": "Army-listed capability",
+    "source": "TYAD",
+    "priority": "Initial validation pool",
+    "screening_notes": "Match grade, printing process, raster/build orientation, porosity and conditioning; do not transfer PLA parameters.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "PETG",
+    "evidence_status": "Army-listed capability",
+    "source": "TYAD",
+    "priority": "Initial validation pool",
+    "screening_notes": "Match grade, printing process, raster/build orientation, porosity and conditioning; do not transfer PLA parameters.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "Polycarbonate (PC)",
+    "evidence_status": "Army-listed capability",
+    "source": "TYAD",
+    "priority": "Initial validation pool",
+    "screening_notes": "Match grade, printing process, raster/build orientation, porosity and conditioning; do not transfer PLA parameters.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "Nylon, unspecified grade",
+    "evidence_status": "Army-listed capability",
+    "source": "TYAD",
+    "priority": "Initial validation pool",
+    "screening_notes": "Match grade, printing process, raster/build orientation, porosity and conditioning; do not transfer PLA parameters.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "PC-ABS",
+    "evidence_status": "Army-listed capability",
+    "source": "ARMY47",
+    "priority": "Engineering candidates",
+    "screening_notes": "Historical equipment/material listing; exact grade and actual use/qualification require confirmation. HT must not be expanded into a guessed chemistry.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "PC-ISO",
+    "evidence_status": "Army-listed capability",
+    "source": "ARMY47",
+    "priority": "Engineering candidates",
+    "screening_notes": "Historical equipment/material listing; exact grade and actual use/qualification require confirmation. HT must not be expanded into a guessed chemistry.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "PA11",
+    "evidence_status": "Army-listed capability",
+    "source": "ARMY47",
+    "priority": "Engineering candidates",
+    "screening_notes": "Historical equipment/material listing; exact grade and actual use/qualification require confirmation. HT must not be expanded into a guessed chemistry.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "PA12",
+    "evidence_status": "Army-listed capability",
+    "source": "ARMY47",
+    "priority": "Engineering candidates",
+    "screening_notes": "Historical equipment/material listing; exact grade and actual use/qualification require confirmation. HT must not be expanded into a guessed chemistry.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "PA6 with chopped carbon fibre",
+    "evidence_status": "Army-listed capability",
+    "source": "ARMY47",
+    "priority": "Engineering candidates",
+    "screening_notes": "Historical equipment/material listing; exact grade and actual use/qualification require confirmation. HT must not be expanded into a guessed chemistry.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "PA12CF",
+    "evidence_status": "Army-listed capability",
+    "source": "ARMY47",
+    "priority": "Engineering candidates",
+    "screening_notes": "Historical equipment/material listing; exact grade and actual use/qualification require confirmation. HT must not be expanded into a guessed chemistry.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "ULTEM9085",
+    "evidence_status": "Army-listed capability",
+    "source": "ARMY47",
+    "priority": "Engineering candidates",
+    "screening_notes": "Historical equipment/material listing; exact grade and actual use/qualification require confirmation. HT must not be expanded into a guessed chemistry.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "TPE",
+    "evidence_status": "Army-listed capability",
+    "source": "ARMY47",
+    "priority": "Engineering candidates",
+    "screening_notes": "Historical equipment/material listing; exact grade and actual use/qualification require confirmation. HT must not be expanded into a guessed chemistry.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "Co-polyester",
+    "evidence_status": "Army-listed capability",
+    "source": "ARMY47",
+    "priority": "Engineering candidates",
+    "screening_notes": "Historical equipment/material listing; exact grade and actual use/qualification require confirmation. HT must not be expanded into a guessed chemistry.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "HIPS",
+    "evidence_status": "Army-listed capability",
+    "source": "ARMY47",
+    "priority": "Engineering candidates",
+    "screening_notes": "Historical equipment/material listing; exact grade and actual use/qualification require confirmation. HT must not be expanded into a guessed chemistry.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "PCTPE",
+    "evidence_status": "Army-listed capability",
+    "source": "ARMY47",
+    "priority": "Engineering candidates",
+    "screening_notes": "Historical equipment/material listing; exact grade and actual use/qualification require confirmation. HT must not be expanded into a guessed chemistry.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "HT (grade unspecified)",
+    "evidence_status": "Army-listed capability",
+    "source": "ARMY47",
+    "priority": "Engineering candidates",
+    "screening_notes": "Historical equipment/material listing; exact grade and actual use/qualification require confirmation. HT must not be expanded into a guessed chemistry.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "Nylon\u2013carbon-fibre composite, grade unspecified",
+    "evidence_status": "Army-reported installed application",
+    "source": "CCAD",
+    "priority": "High relevance",
+    "screening_notes": "Depot equipment component; not evidence for every load-bearing application. Composite anisotropy must be modeled.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "TPU",
+    "evidence_status": "Army-reported lab use",
+    "source": "YUMA",
+    "priority": "Separate nonlinear branch",
+    "screening_notes": "Elastomer: finite strain, rate and creep effects; not unchanged linear-elastic brittle Weibull.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "PolyHex high-temperature PETG",
+    "evidence_status": "Army-listed capability",
+    "source": "TYAD",
+    "priority": "Tooling candidate",
+    "screening_notes": "Listed for molding applications; grade-specific data required.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "Engineering photopolymer resins: clear, casting, FR, ESD, high-temperature",
+    "evidence_status": "Army-listed capability",
+    "source": "TYAD",
+    "priority": "Grade-specific validation",
+    "screening_notes": "Named resin categories, not confirmation of every commercial formulation or qualified part.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "Elastic/silicone resin category",
+    "evidence_status": "Army-listed capability",
+    "source": "TYAD",
+    "priority": "Separate nonlinear branch",
+    "screening_notes": "Category listing only; distinguish true silicone from silicone-like photopolymer and from cast silicone.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "Onyx carbon-fibre-filled nylon",
+    "evidence_status": "Vendor-reported Army use",
+    "source": "ONYX",
+    "priority": "High relevance; corroborate",
+    "screening_notes": "Fort Irwin application reported by manufacturer, not an Army qualification certificate.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "Continuous carbon/glass/aramid reinforcement in polymer prints",
+    "evidence_status": "Vendor-reported Army equipment capability",
+    "source": "ONYX",
+    "priority": "Separate composite branch",
+    "screening_notes": "Capability is not proof of a specific fibre/grade installed part. Need ply/fibre/interlaminar failure treatment.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "ABS with structured polycarbonate core",
+    "evidence_status": "Army research demonstration",
+    "source": "ARL_PC",
+    "priority": "Research candidate",
+    "screening_notes": "Not ordinary PC-ABS blend; thermal postprocessing changes interfaces and properties.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "Recycled PET",
+    "evidence_status": "Army research demonstration",
+    "source": "ARL_PET",
+    "priority": "High-value research candidate",
+    "screening_notes": "Mechanical/part tests reported; lot, degradation, moisture and feedstock variability essential.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "Recycled PS, PP, LDPE/HDPE and PC feedstocks",
+    "evidence_status": "Army research candidate",
+    "source": "RECYCLE",
+    "priority": "Deferred until demonstrated",
+    "screening_notes": "Listed as feedstock research questions; do not claim operational Army use.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "PEEK",
+    "evidence_status": "Vendor/technology candidate; Army grade-use unverified",
+    "source": "HIGH_TEMP",
+    "priority": "Later high-temperature branch",
+    "screening_notes": "DoD or Army-funded printer compatibility alone does not prove Army adoption of this material.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "PEKK / Antero grades",
+    "evidence_status": "Vendor/technology candidate; Army grade-use unverified",
+    "source": "STRATASYS",
+    "priority": "Later high-temperature branch",
+    "screening_notes": "DoD or Army-funded printer compatibility alone does not prove Army adoption of this material.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "ULTEM1010",
+    "evidence_status": "Vendor/technology candidate; Army grade-use unverified",
+    "source": "STRATASYS",
+    "priority": "Later high-temperature branch",
+    "screening_notes": "DoD or Army-funded printer compatibility alone does not prove Army adoption of this material.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "PPSF/PPSU",
+    "evidence_status": "Vendor/technology candidate; Army grade-use unverified",
+    "source": "STRATASYS",
+    "priority": "Later high-temperature branch",
+    "screening_notes": "DoD or Army-funded printer compatibility alone does not prove Army adoption of this material.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "Alumina",
+    "evidence_status": "Army-funded AM demonstration",
+    "source": "CERAMIC",
+    "priority": "Separate ceramic branch",
+    "screening_notes": "Brittle volume statistics relevant, but AM ceramic/process calibration required; this project is static part screening, not ballistic validation.",
+    "checked": "2026-09-09"
+  },
+  {
+    "material": "Boron carbide / silicon carbide ceramic composites",
+    "evidence_status": "Army-funded development objective",
+    "source": "CERAMIC",
+    "priority": "Separate ceramic branch",
+    "screening_notes": "Distinguish development goals from demonstrated field production; no protective-performance claim.",
+    "checked": "2026-09-09"
+  }
+]

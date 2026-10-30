@@ -126,9 +126,12 @@ def _fix_tet_folds(optimise=True, max_pass=100):
 
 
 # ---------------------------------------------------------------- driver
-def cad_to_mesh2(path, h=None, curvature=16, h_min=None, volume=False, optimise=True, check_cad=True, msh=None):
+def cad_to_mesh2(path, h=None, curvature=16, h_min=None, volume=False, optimise=True, check_cad=True, msh=None,
+                 focus=()):
     """-> (Mesh2, info).  volume=True also builds TET10 (its boundary is the tri6 surface, same nodes).
-    msh: optional path for Gmsh's own .msh output (order 2) before the model is closed."""
+    msh: optional path for Gmsh's own .msh output (order 2) before the model is closed.
+    focus: (x, y, z, r, hf) spheres meshed at size hf within radius r, graded out at 0.3 per unit distance
+    (nurb-fea-tcd's "core" Refinement; a MathEval field, which Gmsh's default 3D mesher honours)."""
     t0 = time.perf_counter()
     own = not gmsh.isInitialized()
     if own:
@@ -145,6 +148,16 @@ def cad_to_mesh2(path, h=None, curvature=16, h_min=None, volume=False, optimise=
                      "Mesh.MeshSizeFromCurvature": curvature, "Mesh.MeshSizeFromPoints": 0,
                      "Mesh.MeshSizeExtendFromBoundary": 0, "Mesh.SecondOrderLinear": 0}.items():
             gmsh.option.setNumber(k, v)
+        if focus:
+            terms = ["%.17g + 0.3 * Max(0, Sqrt((x-(%.17g))^2 + (y-(%.17g))^2 + (z-(%.17g))^2) - %.17g)"
+                     % (hf, x, y, z, r) for x, y, z, r, hf in focus]
+            expr = terms[0]
+            for t in terms[1:]:
+                expr = "Min(%s, %s)" % (expr, t)
+            fld = gmsh.model.mesh.field.add("MathEval")
+            gmsh.model.mesh.field.setString(fld, "F", "Min(%.17g, %s)" % (h, expr))
+            gmsh.model.mesh.field.setAsBackgroundMesh(fld)
+            gmsh.option.setNumber("Mesh.MeshSizeMin", min(h_min or h / 50, min(f[4] for f in focus) / 2))
         gmsh.model.mesh.generate(3 if volume else 2)
         gmsh.model.mesh.setOrder(2)
         if volume:
