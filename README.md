@@ -36,7 +36,9 @@ with a thickness-robust solver for thin curved plates.
 ## Build and run
 
 Requires a C++17 compiler, CMake ≥ 3.16, Eigen ≥ 3.3, optionally OpenMP; Python 3 with NumPy and
-Matplotlib for geometry generation and plots.
+Matplotlib for geometry generation and plots. The compressed operators (`src/fast`, `hmatrix_bench`,
+`test_hmatrix`) also need BLAS and LAPACK (e.g. `libopenblas-dev liblapack-dev`); without them they are
+skipped. Run them with `OPENBLAS_NUM_THREADS=1`: the compression is parallel over blocks.
 
 ```sh
 python3 python/make_geometries.py 3      # writes geo/*.dat (cube, imperfect cube, sphere family, cube with cavity, plate with hole; r0..r3)
@@ -51,6 +53,8 @@ ctest --test-dir build                   # Kelvin kernels (finite differences) +
 ./results/run_cavity.sh                  # cavity runs -> results/cavity_tests.csv, cavity_profile_*.csv (~35 min)
 ./build/plate_test geo/plate_hole_p4_t0.2_r3.dat p4r3 kirsch,tension 0.2 --bc clamp --fields out/p4r3   # mixed BCs, probes, .vtu
 ./results/run_plate.sh                   # plate runs (traction-only and clamped) -> results/plate_tests.csv, plate_profile_*.csv
+./results/run_hmatrix.sh                 # compressed H, G: memory, time, accuracy -> results/hmatrix_tests.csv, fig_hmatrix (~30 min)
+./results/run_hmat_gate.sh               # src/hmat solver 17k-88k -> results/hmat_gate.csv (~10 min, peak 7.4 GB); python3 python/plot_hmat_gate.py
 ./results/run_fields.sh                  # probes, .vtu, field figures -> results/fields/, results/fig_probes_*, fig_fields_*
 python3 python/plot_patch_tests.py       # -> results/fig_patch_tests.{pdf,png}
 python3 python/plot_dirichlet_tests.py   # -> results/fig_dirichlet_tests.{pdf,png}
@@ -120,6 +124,10 @@ values, not new numerics.
 | Immersed | `python/immersed/cut3d.py`, `python/immersed/cut_quadrature.py` | Cartesian cut cells of a closed STL (exact volumes, wet faces, surface pieces; ported from kfbim-octree) and non-negative (NNLS) moment-fitted volume rules per cut cell, exact for degree ≤ 3, for immersed IGA-FEM unit cells |
 | Geometry I/O | `python/geomio/` | STEP/IGES/BREP (Gmsh OCC) → watertight face-tagged triangle mesh, face id = Gmsh surface tag as in `step_auto.py`; STL read/write (binary keeps the face id in the attribute word, ASCII one solid per face) with materializr's robustness checks (binary-vs-ASCII by size, truncation, weld with fold guard, winding flood fill, outward per component by nesting); 3MF write/read (face ids as base materials); dihedral-angle face segmentation for untagged STL. Feeds `immersed/cut_quadrature.py`. `highorder.py`: curved second-order meshes (tri6 surface for BEM, TET10 for FEM) with mid-edge nodes on the CAD curves and faces, fold repair and CAD-volume checks (after nurb-fea-tcd); volume error h⁴ against h² for flat triangles |
 | Tests | `tests/test_kernels.cpp`, `tests/test_regression.cpp` | Kernels; every validated result reproduced on a small mesh, including cache hit = fresh |
+| Problems | `problems/cube_cavity.hpp`, `problems/plate_hole.hpp`, `*_exact_gen.hpp` | Load cases, exact fields, quantities of interest, shared by drivers and tests |
+| Compression | `fast/sbie_entries.hpp`, `fast/vector_aca.hpp`, `fast/hmatrix_operator.hpp`, `fast/compressed_sbie.hpp` | H and G as hierarchical matrices on [Htool](https://github.com/htool-ddm/htool) (vendored in `third_party/htool`, MIT): entry callback for any rows x columns (same quadrature as the dense assembly), clustering that keeps the 3 components of a point together, 3 x 3-block ACA with SVD recompression, near field in one pass, rigid-body diagonal from the compressed H, leaves cached on disk. `CompressedSbie` is the counterpart of `OperatorRows` |
+| Hierarchical solver | `hmat/cluster_tree.hpp`, `hmat/element_blocks.hpp`, `hmat/elem_hmatrix.hpp`, `hmat/h_neumann.hpp` | Element-column H-matrix for 50k-100k+ unknowns (bemkit's design): point rows x element columns, sampled CUR on the joint [H \| gamma G] (G C applied during the build, G never stored), one-sided QR + Gram recompression, float storage; near-field sparse LU (UMFPACK) plus a 12-mode-per-aggregate affine coarse level bordered with the rigid modes; right-preconditioned GMRES |
+| Tests | `tests/test_kernels.cpp`, `tests/test_regression.cpp`, `tests/test_hmatrix.cpp` | Kernels; every validated result reproduced on a small mesh, including cache hit = fresh; compressed operators against dense (entries, ACA tolerance, rigid modes, cache) |
 
 Not yet in the library: geometry refinement (still `python/make_geometries.py`). `patch_test` and `dirichlet_test` still
 reassemble per n on purpose, because they are quadrature-convergence studies.
@@ -586,6 +594,51 @@ be fitted, not data.
 
 ![Two-region validation](results/fig_regions.png)
 
+### Hierarchical solver for 50k-100k+ unknowns (`src/hmat`, `hmat_bench`)
+
+Traction-only problems at 100k-class sizes on a 4-core, 15 GB machine. The design follows bemkit
+(nurb-fea-tcd), with changes that make it fit collocation IgBEM:
+
+- **Blocks are point rows x element columns.** Each element's local basis is integrated once, then summed into
+  global DOFs, so no column ever has partial support. Far blocks compress [H | gamma G] jointly
+  (gamma = 2 mu / distance). G C is applied during the build and G is never stored.
+- **Far field:** sampled CUR (farthest-point samples, pivoted Gram-Schmidt column skeleton, a posteriori test on
+  random rows and elements with a block Frobenius criterion), recompressed by QR of U and the Gram of R_U W.
+  Small blocks use a randomized SVD. Factors are stored in float.
+- **Preconditioner:** UMFPACK LU of the exact entries within 1.0 h (h is the support diameter), with bemkit's
+  coarse level applied first: 12 affine modes per aggregate of 256 points, bordered with the 6 rigid modes,
+  E = Z^T A Z from A Z kept in float. Without the coarse level, the long plate took 60 iterations; with it, 23.
+- **Memory:** the far-rule quadrature cache stops at the highest order the tolerance can ask for, and is freed
+  before the LU. Far-build sample caches are float.
+
+Degree-4 plate with a hole under the 3D Kirsch field, eps 1e-5, GMRES to 1e-8, 4 cores
+(`results/hmat_gate.csv`):
+
+| unknowns | geometry | build (s) | precond (s) | solve (s) | its | stored (GB) | peak (GB) | Kirsch error | dense LU error |
+|---|---|---|---|---|---|---|---|---|---|
+| 17.3k | square | 16.0 | 0.9 | 2.9 | 19 | 0.57 | 1.04 | 1.30e-6 | 6.19e-7 |
+| 26.0k | long (L = 3W) | 25.1 | 1.3 | 5.1 | 24 | 0.83 | 1.76 | 5.64e-6 | 1.91e-7 |
+| 58.8k | square | 70.1 | 4.4 | 10.9 | 20 | 2.69 | 4.31 | 1.10e-6 | - |
+| 88.2k | long | 123.9 | 6.9 | 17.1 | 23 | 3.82 | 6.28 | 2.99e-6 | - |
+| 88.2k, eps 1e-6 | long | 270.4 | 6.5 | 17.6 | 23 | 4.57 | 7.25 | 1.73e-7 | - |
+
+![hmat gate](results/fig_hmat_gate.png)
+
+Against the gate set for this work (4 cores, 15 GB):
+
+- **100k-class: pass at 88k.** Build 124 s (gate 150), solve 17 s (gate 45), peak 6.3 GB (gate 8), 23 iterations
+  (gate 30). The 59k to 88k slope is about N^1.4, which puts 100k at about 148 s: at the limit.
+- **50k: borderline.** At 59k the build takes 70 s and peaks at 4.3 GB. Interpolated to 50k, that is about 58 s and
+  3.7 GB against a gate of 60 s and 4 GB; there is no 50k run to confirm it. bemkit's 55k run took 59 s and
+  4.2 GB on 5 cores.
+- **Accuracy: not met at eps 1e-5.** The gate asked for an error within 1.5x of dense LU. At eps 1e-5 the solution
+  error follows eps (1e-6 to 6e-6), while dense LU reaches 2e-7 to 6e-7. eps 1e-6 brings the 88k long plate to
+  1.7e-7, but the build takes 2.2x longer. Use eps 1e-5 for design runs, where 1e-5 displacement accuracy is far
+  below modelling error, and eps 1e-6 for verification.
+
+`ctest -R hmat_kirsch` (5.8k, about 5 s) checks H x and G c against `DenseSbie` (to within 10 eps) and that the
+Kirsch error matches the dense value.
+
 ### Failure layer (`python/failure`), treecode and RBE2
 
 nurb-fea-tcd's failure layer (material cards, hot spots, MATS / bisector path, CP-series regression, TCD / Energy
@@ -622,7 +675,7 @@ the same offset. The project's ABS card, with no fit to these tests, lands withi
    patches; partial regions take loads and springs).
 2. Thin curved plate (cylindrical panel built as exact NURBS): Neumann patch test for t/R = 10⁻¹…10⁻³,
    then Scordelis–Lo as a 3D solid.
-3. Iterative solver, preconditioner and H² compression.
+3. Hierarchical solver beyond 100k: a 50k run to close the gate, then H² or adaptive-precision far blocks (Kriemann 2023) if memory binds; mixed BCs (`BcModel`) on `src/hmat`.
 4. General multi-domain coupling (regions that reach the outer surface, inserts, bimaterial bars);
    the bracket with two walls and a gyroid core from an inward offset of its outer patches; the TCD
    failure layer on the wall stresses.

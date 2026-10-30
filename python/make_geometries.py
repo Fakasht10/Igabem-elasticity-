@@ -16,6 +16,11 @@ Outputs (in geo/):
                          the hole wall, 4 sides), exact rational circle, degree-elevated from 2 to
                          p, then refined k times (k-refinement: C^{p-1} inside patches)
 
+usage: make_geometries.py [R]                  everything above for k = 0..R (default R = 2)
+       make_geometries.py R --plate P T [OUT]   only plate_hole_p{P}_t{T}_r{k}, k = 0..R, into OUT
+                                                (default geo/), e.g. the large or thin plates of the
+                                                compression benchmark (results/run_hmatrix.sh)
+
 Control points are stored homogeneously (x w, y w, z w, w), u index fastest.
 """
 
@@ -233,7 +238,24 @@ def plate_hole(t, a=0.2, W=1.0, L=None):
     return out
 
 
+def plate_only(R, deg, t, out):
+    os.makedirs(out, exist_ok=True)
+    base = plate_hole(t)
+    for _ in range(deg - 2):
+        base = [elevate_bezier(elevate_bezier(P, 0), 1) for P in base]
+    pl = base
+    for r in range(R + 1):
+        name = "plate_hole_p%d_t%g_r%d" % (deg, t, r)
+        write_dat(os.path.join(out, name + ".dat"), pl, name)
+        pl = [refine_uniform(Patch(P.p, P.q, P.U, P.V, P.Pw.copy())) for P in pl]
+
+
 def main():
+    if "--plate" in sys.argv:
+        i = sys.argv.index("--plate")
+        out = sys.argv[i + 3] if len(sys.argv) > i + 3 else ROOT
+        plate_only(int(sys.argv[1]), int(sys.argv[i + 1]), float(sys.argv[i + 2]), out)
+        return
     os.makedirs(ROOT, exist_ok=True)
     write_dat(os.path.join(ROOT, "cube_p2.dat"), cube_p2(), "cube_p2")
     write_dat(os.path.join(ROOT, "cube_p2_imperfect.dat"), cube_p2(True), "cube_p2_imperfect")
