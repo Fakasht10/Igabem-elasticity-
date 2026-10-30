@@ -9,10 +9,13 @@ that app/bc_case reads (src/case_io.hpp).
       loadcase  (many)    a named load case; all share one operator
         load    (many)    force/moment | pressure | traction | bearing | on an rbe2 master
       output    (one)     vtu, csv
+      cad       (one)     the STEP the geometry is made from (step_auto.py) and the TET10 mesh of assessments
+      assessment (many)   TCD failure check of one feature point (python/failure/assess.py)
 
 Prop keys are the case file's keys, so nothing is renamed between the tree,
-the file and the solver. The rules refuse conflicting settings (two support
-behaviours at once); a node still being filled in (no behaviour yet) is
+the file and the solver. cad and assessment are not part of the case file
+(to_case skips them); they live in the model file and drive igamodel.run.
+The rules refuse conflicting settings (two support behaviours at once); a node still being filled in (no behaviour yet) is
 allowed in the tree and refused when the case file is written.
 """
 from __future__ import annotations
@@ -42,6 +45,11 @@ def support_rule(props, region):
             raise ModelError(f"{k} applies to a symmetry support only")
 
 
+def assessment_rule(props, region):
+    if "card" in props and "K_Ic" in props:
+        raise ModelError("an assessment takes K_Ic from its card or from K_Ic, not both")
+
+
 def load_rule(props, region):
     kind = _one_of("load", props, LOAD_KINDS)
     force_like = [k for k in ("force_N", "direction", "moment", "about") if k in props]
@@ -54,7 +62,8 @@ def load_rule(props, region):
             raise ModelError("a load on an rbe2 master acts about the master's ref; about does not apply")
 
 
-register(NodeType("case", "Model", "case", children=("material", "solver", "grade", "support", "loadcase", "output"),
+register(NodeType("case", "Model", "case", children=("material", "solver", "grade", "support", "loadcase", "output",
+                                                     "cad", "assessment"),
                   props=(
     Prop("geometry", "str", doc="the .dat surface (step_auto.py / geomio), relative to the case file"),
     Prop("faces", "str", doc="CAD face map; unset = next to the geometry (python/face_ids.py)"),
@@ -109,3 +118,25 @@ register(NodeType("load", "Load", "load", region=True, rule=load_rule, props=(
 
 register(NodeType("output", "Output", "out", singleton=True, props=(
     Prop("vtu", "str"), Prop("csv", "str")), doc="Where bc_case writes results."))
+
+register(NodeType("cad", "CAD", "cad", singleton=True, props=(
+    Prop("step", "str", doc="the STEP file, relative to the base folder run.assess is given"),
+    Prop("h", "float", "mm", doc="IgBEM knot span; unset = 3"),
+    Prop("curvature", "int", doc="knot spans per radian on curved edges; unset = 6"),
+    Prop("degree", "int", doc="spline degree; unset = 2"),
+), doc="The part's CAD. Generating the geometry (step_auto.py) sets the case's geometry."))
+
+register(NodeType("assessment", "Assessment", "tcd", rule=assessment_rule, props=(
+    Prop("label", "str"),
+    Prop("point", "vec3", "mm", doc="the feature: a notch root, a hot spot"),
+    Prop("cases", "names", doc="load cases to assess; unset = all"),
+    Prop("card", "str", doc="material card (failure/materials.py) giving K_Ic and sigma_uts"),
+    Prop("K_Ic", "float", "MPa sqrt(mm)", doc="fracture toughness, without a card"),
+    Prop("sigma_uts", "float", "MPa", doc="inherent strength sigma_0; with a card, overrides the card's"),
+    Prop("rho", "float", "mm", doc="notch root radius if known (blunt-root floor, mesh focus)"),
+    Prop("state", "choice", choices=("plane_strain", "plane_stress"), doc="for the energy radii; unset = plane strain"),
+    Prop("mesh_h", "float", "mm", doc="TET10 size; unset = 2.5"),
+    Prop("mesh_curvature", "int", doc="TET10 elements per radian; unset = 16"),
+    Prop("focus_radius", "float", "mm", doc="refinement sphere round the point; unset = 1.5 L"),
+    Prop("focus_h", "float", "mm", doc="element size in it; unset = min(0.15, rho / 6), 0.15 without rho"),
+), doc="Theory of Critical Distances at one point: the point and energy point methods give the load factor at failure."))

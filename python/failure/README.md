@@ -9,7 +9,7 @@ TCD / Energy TCD / ASED, Weibull) running on IgBEM solutions. The criteria code 
 | `fracture.py`, `weibull.py`, `materials.py` | vendored from nurb-fea-tcd at 553dd2a (MIT, `LICENSE-nurb-fea-tcd`) |
 | `data/` | the material cards and sha-gated calibration artifacts the cards load (`data/calibration/PROVENANCE.md`) |
 | `fields.py` | helpers vendored from `feakit/bem_backend.py`: TET10 shape functions and 4-point rule, harmonic extension, sharp-edge rings |
-| `igabem_backend.py` | `fea_mesh` (TET10 + tri6, Gmsh face tags), `igabem_geometry` (STEP to multipatch, cached), `Solve` (`bc_case --serve`, one LU kept alive), `fields` (the bem_backend dict) |
+| `igabem_backend.py` | `fea_mesh` (TET10 + tri6, Gmsh face tags), `igabem_geometry` (STEP to multipatch, cached), `Solve` (`bc_case --serve`, one LU kept alive; `stress_all` returns every load case from one query), `fields` (the bem_backend dict) |
 | `assess.py` | the Assess chain for one feature: snap, MATS path or re-entrant edge, root radius, notch apex, exact line, PM / Energy PM failure loads, CP regression |
 | `validate_cicero.py` | Cicero et al. 2020 ABS SENB, four radii, against measured loads |
 | `weibull_parity.py` | log J(m) of the PLA UB / US quarters against the NGSolve reductions the PLA cards were fitted on |

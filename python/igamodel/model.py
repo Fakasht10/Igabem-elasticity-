@@ -62,7 +62,7 @@ class Prop:
     key: str
     kind: str          # int | float | str | bool | choice | names | ints | vec3 | dofs | object
     unit: str = ""
-    choices: tuple = ()  # choice / names: the allowed words; object: the allowed keys
+    choices: tuple = ()  # choice / names: the allowed words (names: none = any); object: the allowed keys
     doc: str = ""
 
     def check(self, v):
@@ -81,7 +81,7 @@ class Prop:
         elif k == "choice":
             ok = isinstance(v, str) and v in self.choices
         elif k == "names":
-            ok = isinstance(v, list) and all(isinstance(x, str) and x in self.choices for x in v)
+            ok = isinstance(v, list) and all(isinstance(x, str) and (not self.choices or x in self.choices) for x in v)
         elif k == "ints":
             ok = isinstance(v, list) and all(_int(x) for x in v)
         elif k == "vec3":
@@ -101,7 +101,7 @@ class Prop:
     def schema(self) -> dict:
         s = {"int": {"type": "integer"}, "float": {"type": "number"}, "str": {"type": "string"},
              "bool": {"type": "boolean"}, "choice": {"enum": list(self.choices)},
-             "names": {"type": "array", "items": {"enum": list(self.choices)}},
+             "names": {"type": "array", "items": {"enum": list(self.choices)} if self.choices else {"type": "string"}},
              "ints": {"type": "array", "items": {"type": "integer"}},
              "vec3": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
              "dofs": {"type": "object", "properties": {d: {"type": "boolean"} for d in DOFS},
