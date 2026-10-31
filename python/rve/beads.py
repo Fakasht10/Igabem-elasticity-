@@ -256,9 +256,70 @@ def cell_090(w, h, b_int, b_lat, alpha=15.0, wc=math.sqrt(0.5), refine=2, grade=
     return conforming_refine(out, refine, tip_marker(tips), grade)
 
 
+# ------------------------------------------------------------------ single bead (bead-boundary cells)
+def bead_00(w, h, b_int, b_lat, alpha=15.0, wc=math.sqrt(0.5), L=None, refine=2, grade=0):
+    """One closed bead segment, axis along x through the origin, x in [0, L]: the 0/0 cell bounded by the welds
+    instead of by planes through the bead axes. Its bounding box [0, L] x [-w/2, w/2] x [-h/2, h/2] carries
+    exactly the connection faces: the in-layer weld strips (y = +-w/2, height b_lat), the interlayer weld strips
+    (z = +-h/2, width b_int) and the two end caps (x = 0, L); everything else is free surface. The + faces are
+    translated copies of the - faces, so src/rve.hpp's periodic conditions apply unchanged (perfect welds), and
+    a weld law t = K [[u]] couples exactly these pairs. 32 Bezier patches before refinement."""
+    L = h if L is None else L
+    g = (w, h, b_int, b_lat, alpha, wc)
+    bd = Bead("x", (0.0, 0.0), g)
+    out = []
+    for ss in (-1, 1):
+        for sz in (-1, 1):
+            out += bd.corner(ss, sz, [(0.0, L)])
+            for a, so in ((0.0, -1.0), (L, 1.0)):
+                out += bd.quarter(ss, sz, a, [so, 0, 0])
+            out.append(orient(rect([0, ss * w / 2, 0], [L, ss * w / 2, 0], [0, ss * w / 2, sz * b_lat / 2]), [0, ss, 0]))
+            out.append(orient(rect([0, 0, sz * h / 2], [L, 0, sz * h / 2], [0, ss * b_int / 2, sz * h / 2]), [0, 0, sz]))
+    ex = [1.0, 0, 0]
+    tips = [((0, ss * w / 2, sz * b_lat / 2), ex) for ss in (-1, 1) for sz in (-1, 1)]
+    tips += [((0, ss * b_int / 2, sz * h / 2), ex) for ss in (-1, 1) for sz in (-1, 1)]
+    return conforming_refine(out, refine, tip_marker(tips), grade)
+
+
+def bead_090(w, h, b_int, b_lat, alpha=15.0, wc=math.sqrt(0.5), refine=2, grade=0):
+    """The two beads of a 0/90 bead-boundary cell, (A, B). A: axis x through the origin, x in [-w/2, w/2] (centred
+    on the B filament it crosses); B = A turned 90 deg about z and lifted by h (axis y at z = h). The cell box is
+    [-w/2, w/2]^2 x [-h/2, 3h/2]. A's top strip crosses B's bottom strip in the interlayer weld square
+    [-b/2, b/2]^2 at z = h/2 (an internal interface between the two regions), and A's bottom square meets the
+    next B's top square through the z faces (periodic). The strips and corners are split at the square's edges so
+    the squares are separate patches (in quarters, split at x = 0 and y = 0, so that A's quarters are B's rotated) and
+    graded toward all four square edges (A's and B's bond tips); the rest of the strips is free surface. Both lists are conforming and B's
+    patches are A's, rotated, in the same order (one cached operator serves both)."""
+    g = (w, h, b_int, b_lat, alpha, wc)
+    b = b_int / 2
+    pieces = [(-w / 2, -b), (-b, 0.0), (0.0, b), (b, w / 2)]   # x = 0 too: A's square quarters map onto B's
+    bd = Bead("x", (0.0, 0.0), g)
+    A = []
+    for ss in (-1, 1):
+        for sz in (-1, 1):
+            A += bd.corner(ss, sz, pieces)
+            for a, so in ((-w / 2, -1.0), (w / 2, 1.0)):
+                A += bd.quarter(ss, sz, a, [so, 0, 0])
+            for x0, x1 in pieces:
+                A.append(orient(rect([x0, ss * w / 2, 0], [x1, ss * w / 2, 0], [x0, ss * w / 2, sz * b_lat / 2]), [0, ss, 0]))
+                A.append(orient(rect([x0, 0, sz * h / 2], [x1, 0, sz * h / 2], [x0, ss * b, sz * h / 2]), [0, 0, sz]))
+    ex = [1.0, 0, 0]
+    tips = [((0, ss * w / 2, sz * b_lat / 2), ex) for ss in (-1, 1) for sz in (-1, 1)]
+    tips += [((0, ss * b, sz * h / 2), ex) for ss in (-1, 1) for sz in (-1, 1)]
+    tips += [((ss * b, 0, sz * h / 2), [0, 1.0, 0]) for ss in (-1, 1) for sz in (-1, 1)]  # B's bond edges on the square
+    A = conforming_refine(A, refine, tip_marker(tips), grade)
+    R = np.array([[0, -1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1.0]])
+    B = []
+    for P in A:
+        Pw = P.Pw @ R.T
+        Pw[..., 2] += h * Pw[..., 3]
+        B.append(type(P)(P.p, P.q, P.U, P.V, Pw))
+    return A, B
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("kind", choices=["00", "090"])
+    ap.add_argument("kind", choices=["00", "090", "bead00", "bead090"])
     ap.add_argument("out")
     ap.add_argument("--w", type=float, default=0.6)
     ap.add_argument("--h", type=float, default=0.3)
@@ -271,8 +332,20 @@ def main(argv=None):
     ap.add_argument("--refine", type=int, default=2)
     ap.add_argument("--grade", type=int, default=0, help="geometric knots toward the bond tips (ratio 1/2)")
     a = ap.parse_args(argv)
-    P = cell_00(a.w, a.h, a.bint, a.blat, a.alpha, a.wc, a.L, a.refine, a.grade) if a.kind == "00" else \
-        cell_090(a.w, a.h, a.bint, a.blat, a.alpha, a.wc, a.refine, a.grade, a.blat_b)
+    if a.kind == "00":
+        P = cell_00(a.w, a.h, a.bint, a.blat, a.alpha, a.wc, a.L, a.refine, a.grade)
+    elif a.kind == "bead090":   # writes <out>_A.dat and <out>_B.dat
+        PA, PB = bead_090(a.w, a.h, a.bint, a.blat, a.alpha, a.wc, a.refine, a.grade)
+        base = a.out[:-4] if a.out.endswith(".dat") else a.out
+        for tag, P in (("A", PA), ("B", PB)):
+            write_dat("%s_%s.dat" % (base, tag), P, "0/90 bead %s w %g h %g bint %g blat %g alpha %g wc %g" %
+                      (tag, a.w, a.h, a.bint, a.blat, a.alpha, a.wc))
+        print("wrote %s_A.dat, %s_B.dat: %d patches each" % (base, base, len(PA)))
+        return
+    elif a.kind == "bead00":
+        P = bead_00(a.w, a.h, a.bint, a.blat, a.alpha, a.wc, a.L, a.refine, a.grade)
+    else:
+        P = cell_090(a.w, a.h, a.bint, a.blat, a.alpha, a.wc, a.refine, a.grade, a.blat_b)
     write_dat(a.out, P, "bead cell %s w %g h %g bint %g blat %g alpha %g wc %g" %
               (a.kind, a.w, a.h, a.bint, a.blat, a.alpha, a.wc))
     print("wrote %s: %d patches, section porosity %.4f%%" %

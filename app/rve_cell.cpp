@@ -13,11 +13,14 @@
 //                int32 traction ndof, int32 ncase (6), float64 E, nu, then per case u (3 ndof), t (3 traction ndof);
 //                case k is the unit macro strain e_k (Voigt 11 22 33 23 13 12, engineering shear)
 //   --load-solutions f  skip assembly and solve: read f (same cell, same mesh options) and only evaluate --points
+//   --weld a:Kn:Kt  linear traction-separation law (N/mm^3) on the periodic face pair normal to axis a (x, y or z),
+//                PBC only (src/rve.hpp RveModel::weld); repeatable. For bead-boundary cells (beads.py bead00)
 //   JSON: per BC the 6x6 C (Voigt 11 22 33 23 13 12, engineering shear), engineering constants, timings.
 #include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <sstream>
+#include <tuple>
 
 #include "interior.hpp"
 #include "multi_region.hpp"
@@ -34,6 +37,7 @@ int main(int argc, char** argv) {
   double E = 2200.0, nu = 0.35, iso_tol = -1, ctol = 1e-6;
   std::string bcs = "kubc,pbc", cache = "none", json, points, save_sol, load_sol;
   std::vector<double> cwant;
+  std::vector<std::tuple<int, double, double>> welds;
   int ng = 10;
   for (int i = 2; i < argc; ++i) {
     auto next = [&]() { return std::string(argv[++i]); };
@@ -45,6 +49,11 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--json")) json = next();
     else if (!std::strcmp(argv[i], "--points")) points = next();
     else if (!std::strcmp(argv[i], "--save-solutions")) save_sol = next();
+    else if (!std::strcmp(argv[i], "--weld")) {
+      const std::string w = next();
+      const size_t c1 = w.find(':'), c2 = w.find(':', c1 + 1);
+      welds.push_back({w[0] - 'x', std::stod(w.substr(c1 + 1, c2 - c1 - 1)), std::stod(w.substr(c2 + 1))});
+    }
     else if (!std::strcmp(argv[i], "--load-solutions")) load_sol = next();
     else if (!std::strcmp(argv[i], "--check-iso")) iso_tol = std::stod(next());
     else if (!std::strcmp(argv[i], "--tol")) ctol = std::stod(next());
@@ -115,6 +124,10 @@ int main(int argc, char** argv) {
   RveModel m;
   const auto t0 = std::chrono::steady_clock::now();
   m.setup(geo, materialEnu(E, nu), o, cache == "none" ? "" : cache);
+  for (auto [a, Kn, Kt] : welds) {
+    m.setWeld(a, Kn, Kt);
+    std::printf("weld normal to %c: Kn %.4g Kt %.4g N/mm^3\n", 'x' + a, Kn, Kt);
+  }
   const double t_setup = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
   const Vec3 L = m.lengths();
   std::printf("cell %s: %zu patches, %d dofs, %d traction dofs, box %.4g x %.4g x %.4g, porosity %.4f%%, %s\n",

@@ -13,7 +13,7 @@ find_package(OpenMP)
 find_library(UMFPACK_LIB umfpack REQUIRED)
 find_path(UMFPACK_INC umfpack.h PATH_SUFFIXES suitesparse REQUIRED)
 
-foreach(app patch_test dirichlet_test interp_error cavity_test plate_test cad_test bc_case bc_validate region_validate rve_cell)
+foreach(app patch_test dirichlet_test interp_error cavity_test plate_test cad_test bc_case bc_validate region_validate rve_cell bead_cell)
   add_executable(${app} app/${app}.cpp)
   target_include_directories(${app} PRIVATE src)
   target_link_libraries(${app} PRIVATE Eigen3::Eigen)
