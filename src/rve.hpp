@@ -43,6 +43,7 @@
 #include <functional>
 #include <map>
 #include <stdexcept>
+#include <tuple>
 #include <string>
 #include <vector>
 
@@ -120,6 +121,17 @@ class RveModel {
   Vec3 lo, hi;
   std::vector<int> face;  // per patch: 2 axis + side (0: lo, 1: hi), -1: not a face
   bool closed = false;    // faces cover the box faces (no pore openings)
+  // Imperfect interfaces on the periodic face pairs (PBC only), per axis a: the + face displacement is
+  // u+ = u-(x - L_a e_a) + E L_a e_a - weld[a] t+, t+ the traction on the + face, weld[a] = K^-1 (3 x 3 compliance,
+  // mm^3/N). Zero (default): perfect continuity. For a bead-boundary cell (python/rve/beads.py bead_00) the y and z
+  // face pairs are the in-layer and interlayer welds and setWeld gives them a linear traction-separation law.
+  std::array<Eigen::Matrix3d, 3> weld{Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Zero()};
+
+  // Normal stiffness Kn and tangential Kt (N/mm^3) of the welds normal to axis a; Kn <= 0: perfect weld.
+  void setWeld(int a, double Kn, double Kt) {
+    const Eigen::Matrix3d nn = Vec3::Unit(a) * Vec3::Unit(a).transpose();
+    weld[a] = Kn > 0 ? Eigen::Matrix3d(nn / Kn + (Eigen::Matrix3d::Identity() - nn) / Kt) : Eigen::Matrix3d::Zero();
+  }
   double t_assemble = 0.0, volume_solid = 0.0;
 
   Vec3 lengths() const { return hi - lo; }
@@ -239,6 +251,7 @@ class RveModel {
             const Vec3 u = s.displacement(e.patch, E), t = s.traction(e.patch, E);
             c.sigma += w * t * E.x.transpose();
             c.energy += w * t.dot(u);
+            if (face[e.patch] >= 0 && face[e.patch] % 2 == 1) c.energy += w * t.dot(weld[face[e.patch] / 2] * t);  // weld
             if (face[e.patch] >= 0) c.eps += w * u * nn.normalized().transpose();
           }
     const double V = volume();
@@ -441,6 +454,51 @@ class RveModel {
     for (size_t p = 0; p < mesh.patches.size(); ++p)
       if (face[p] >= 0 && face[p] % 2 == 1)
         for (size_t i = 0; i < tractionDofs(int(p)).size(); ++i) mrows.push_back(face_row0_[p] / 3 + int(i));
+    // Weld jumps: every dof's displacement is its representative's plus E times the shift plus, across each + face
+    // crossed on the way, -weld[a] times the + face traction there (same NURBS basis for u and t on a face patch,
+    // so the jump coefficient of a control point is the traction coefficient of that control point; averaged over
+    // the + face patches that share it). Walk each class from its representative.
+    std::vector<std::vector<std::pair<int, Eigen::Matrix3d>>> jump(mesh.ndof);
+    bool imperfect = false;
+    for (int a = 0; a < 3; ++a) imperfect |= weld[a].squaredNorm() > 0;
+    if (imperfect) {
+      std::vector<std::vector<std::pair<int, double>>> tplus(3 * mesh.ndof);  // (dof, axis) -> (traction col, weight)
+      for (size_t p = 0; p < mesh.patches.size(); ++p)
+        if (face[p] >= 0 && face[p] % 2 == 1)
+          for (size_t l = 0; l < mesh.l2g[p].size(); ++l)
+            tplus[3 * mesh.l2g[p][l] + face[p] / 2].push_back({tcol[ts.offset[p] + int(l)], 1.0});
+      for (auto& v : tplus)
+        for (auto& e : v) e.second = 1.0 / double(v.size());
+      std::vector<std::vector<std::tuple<int, int, int>>> adj(mesh.ndof);  // (neighbour, axis, +1: neighbour is +)
+      for (int g = 0; g < mesh.ndof; ++g) {
+        if (!on[g]) continue;
+        for (int a = 0; a < 3; ++a) {
+          if (std::abs(mesh.dof_point[g](a) - lo(a)) > ptol) continue;
+          const int h = dix.find(mesh.dof_point[g] + L(a) * Vec3::Unit(a), ptol);
+          adj[g].push_back({h, a, 1});
+          adj[h].push_back({g, a, -1});
+        }
+      }
+      std::vector<char> seen(mesh.ndof, 0);
+      for (int r : reps) {
+        std::vector<int> queue{r};
+        seen[r] = 1;
+        for (size_t q = 0; q < queue.size(); ++q) {
+          const int g = queue[q];
+          for (auto [h, a, dir] : adj[g]) {
+            if (seen[h]) continue;
+            seen[h] = 1;
+            jump[h] = jump[g];
+            if (weld[a].squaredNorm() > 0) {
+              const int plus_dof = dir > 0 ? h : g;  // the + face end of this translation
+              if (tplus[3 * plus_dof + a].empty()) throw std::runtime_error("PBC weld: + face dof without traction");
+              for (auto [col, wgt] : tplus[3 * plus_dof + a]) jump[h].push_back({col, -double(dir) * wgt * weld[a]});
+            }
+            queue.push_back(h);
+          }
+        }
+      }
+    }
     const int nr = int(reps.size()), nt = int(plus.size()), nu = 3 * nr, n = nu + 3 * nt;
     std::vector<int> rows = comps(reps);
     for (int r : comps(mrows)) rows.push_back(r);
@@ -456,6 +514,8 @@ class RveModel {
     }
     for (int j = 0; j < nt; ++j)
       M.middleCols<3>(nu + 3 * j) = -(Gr.middleCols<3>(3 * plus[j]) - Gr.middleCols<3>(3 * minus_of[j]));
+    for (int g = 0; g < mesh.ndof; ++g)
+      for (const auto& [col, C] : jump[g]) M.middleCols<3>(nu + 3 * col) += Hr.middleCols<3>(3 * g) * C;
     System S;
     S.modes = rigid(reps, 3);
     S.A = bordered(M, S.modes, nu);
@@ -463,7 +523,10 @@ class RveModel {
     S.expand = [=](const Eigen::VectorXd& x, int k, Eigen::VectorXd& u, Eigen::VectorXd& t) {
       const Eigen::Matrix3d Ek = voigtUnit(k, true);
       for (int g = 0; g < int(rep_of.size()); ++g)
+      {
         u.segment<3>(3 * g) = x.segment<3>(3 * col_of[rep_of[g]]) + Ek * shift[g];
+        for (const auto& [col, C] : jump[g]) u.segment<3>(3 * g) += C * x.segment<3>(nu + 3 * col);
+      }
       for (int j = 0; j < nt; ++j) {
         t.segment<3>(3 * plus[j]) = x.segment<3>(nu + 3 * j);
         t.segment<3>(3 * minus_of[j]) = -x.segment<3>(nu + 3 * j);

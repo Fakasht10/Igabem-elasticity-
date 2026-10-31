@@ -784,6 +784,43 @@ nodes); `accuracy.max_interpolation_rel` (3 x |linear - cubic|) bounded every on
 - The ν = 0.35 cells keep their six boundary solutions (`rve_cell --save-solutions`, read back with
   `--load-solutions --points` without re-solving) for interior fields, e.g. training a deep material network.
 
+#### Bead-boundary cells: welds as traction-separation laws (`bead_cell`, `rve.welds`)
+
+`src/bead_cell.hpp` cuts the cell along the welds instead of through the bead axes: every bead is its own BEM region,
+and the regions are joined on matched patches (periodic face pairs and internal welds) by a linear law
+u+ = u- + E s - C t+ (C = K^-1, zero = perfect bond). Unknowns are one displacement per tied dof class and the weld
+tractions; the class representative sits on the - side so every region keeps its own SBIE rows.
+
+Each bead type is assembled and condensed once onto its weld unknowns: the batched dense assembly of
+`src/fast/dense_sbie.hpp`, then one LU eliminates the free surface (t = 0) and the bead's own cross-sections (the
+periodic pair normal to its filament axis, `--axes`), leaving the weld operator and the macro-strain load; it is
+cached on disk (`--cache dir`). A rotated copy (`--copy`, the 0/90 cell's B = A turned 90 deg) reads its source's
+blocks turned (R B R^T, load columns turned in Voigt space), so it has no assembly, no LU and no storage. LU and
+GEMM go through LAPACK/BLAS (OpenBLAS) when CMake finds them. 0/90 cell, 4 cores:
+
+| grade | weld unknowns | first run | cached | one dense system (before) |
+|---|---|---|---|---|
+| 2 | 4638 | 9.0 s | 1.7 s | 60 s |
+| 3 | 6414 | 26 s | 3.7 s | 155 s |
+
+ The H-matrix path (PR #22) does not pay at 2-3k dofs
+per bead; it becomes the right tool for cells with many beads.
+
+Debonds: `--crack P|I:a:r:c=v[,c=v]:lim` unpairs the weld patches beyond the front (crack faces traction free;
+Hill-Mandel exact), on cells generated with `beads.py bead_00/bead_090(..., debonds=fractions)` (C0 cuts at each
+depth, so a debond is whole patches). On 0/0 the true crack and the bond narrowed by the same depth give E2 within
+0.1 %; the cuts propagate around the bead (3-5x the dofs), so for finite fracture mechanics `rve.strength --cells
+bead` takes the energy from narrowed-bond bead cells: 0/0 strengths within 0.8 % of the single-region cells, 0/90
+within 2.6 % (and exactly x-y symmetric), its 18 energy cells in 128 s against 240 s.
+
+- Perfect welds reproduce the single-region cell: 0/0 identical C; 0/90 within 1.5 % at grade 2, 0.5 % at grade 3
+  (E3 1099 vs 1105 MPa). Hill-Mandel holds with the interface energy t.C.t.
+- `python3 -m rve.welds` sweeps the weld stiffness kappa = K w / E (thin-interphase law Kt/Kn = (1 - 2nu)/(2(1 - nu))),
+  `data/results/fig_weld_stiffness.*`: 0/0 E2, E3 follow the series-spring estimate within 1-2 %; 0/90 E3 is 50 % of
+  the perfect bond at kappa 3, 76 % at 10, 96 % at 100. One measured E3 calibrates kappa.
+- `bead_cell A.dat B.dat --copy 1:0:90 --axes x,y --weld z:Kn:Kt --weld-int z:Kn:Kt --json out.json`
+  (`--axes` names each bead's filament axis: its own cross-section pair is never a weld).
+
 ## Next steps
 
 1. Exterior Neumann (Eshelby) patch test; move geometry
