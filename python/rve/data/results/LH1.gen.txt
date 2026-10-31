@@ -1,0 +1,1 @@
+wrote /tmp/thesis_runs/LH1.dat: 124 patches, section porosity 6.7309%
