@@ -1,0 +1,1 @@
+wrote /tmp/thesis_runs/BW1.dat: 124 patches, section porosity 2.8448%

@@ -13,7 +13,7 @@ find_package(OpenMP)
 find_library(UMFPACK_LIB umfpack REQUIRED)
 find_path(UMFPACK_INC umfpack.h PATH_SUFFIXES suitesparse REQUIRED)
 
-foreach(app patch_test dirichlet_test interp_error cavity_test plate_test cad_test bc_case bc_validate region_validate)
+foreach(app patch_test dirichlet_test interp_error cavity_test plate_test cad_test bc_case bc_validate region_validate rve_cell)
   add_executable(${app} app/${app}.cpp)
   target_include_directories(${app} PRIVATE src)
   target_link_libraries(${app} PRIVATE Eigen3::Eigen)
@@ -49,6 +49,8 @@ add_test(NAME bc_plate_knots COMMAND bc_case ${CMAKE_SOURCE_DIR}/cases/plate_cla
 add_test(NAME region_patch COMMAND region_validate patch ${CMAKE_SOURCE_DIR}/geo/regions/sph2_a0.5_r1_host.dat ${CMAKE_SOURCE_DIR}/geo/regions/sph2_a0.5_r1_core.dat --check)
 add_test(NAME region_lame COMMAND region_validate lame ${CMAKE_SOURCE_DIR}/geo/regions/sph2_a0.5_r1_host.dat ${CMAKE_SOURCE_DIR}/geo/regions/sph2_a0.5_r1_core.dat --check)
 add_test(NAME region_eshelby COMMAND region_validate eshelby ${CMAKE_SOURCE_DIR}/geo/regions/sph2_a0.5_r1_host.dat ${CMAKE_SOURCE_DIR}/geo/regions/sph2_a0.5_r1_core.dat --check)
+add_test(NAME rve_solid COMMAND rve_cell ${CMAKE_SOURCE_DIR}/geo/cube_p2.dat --bc kubc,pbc,subc --ng 16 --check-iso 1e-6)
+add_test(NAME rve_sphere_pore COMMAND rve_cell ${CMAKE_SOURCE_DIR}/geo/cube_cavity_r1.dat --bc pbc --check-c 3246.21,3246.21,761.765,761.765 --tol 1e-5)
 add_test(NAME region_coupon COMMAND region_validate coupon ${CMAKE_SOURCE_DIR}/geo/regions/coupon_w0.15_n2_host.dat ${CMAKE_SOURCE_DIR}/geo/regions/coupon_w0.15_n2_core.dat --rho 0,0.2,1 --check)
 # the same on the hierarchical backend (src/hmat/h_mixed.hpp) at eps 1e-8, to the float storage floor
 foreach(c bar:bar_L4_p3_n8 halfspace:box_hs_q_p3_r0 cantilever:bar_L10_p3_n20 rbe2:bar_L10_p3_n20)
@@ -76,6 +78,9 @@ if(Python3_FOUND)
   add_test(NAME model_bc_case COMMAND ${Python3_EXECUTABLE} -m unittest igamodel.test_bc_case
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
   set_tests_properties(model_bc_case PROPERTIES ENVIRONMENT IGABEM_BC_CASE=$<TARGET_FILE:bc_case>)
+  add_test(NAME rve_unit COMMAND ${Python3_EXECUTABLE} -m unittest rve.test_rve
+           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
+  set_tests_properties(rve_unit PROPERTIES ENVIRONMENT IGABEM_RVE_CELL=$<TARGET_FILE:rve_cell>)
 endif()
 
 # Hierarchical compression (src/fast): Htool (third_party/htool, MIT, header-only) + BLAS/LAPACK.

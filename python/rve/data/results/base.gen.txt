@@ -1,0 +1,1 @@
+wrote /tmp/thesis_runs/base.dat: 124 patches, section porosity 5.2877%

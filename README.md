@@ -127,6 +127,7 @@ values, not new numerics.
 | Problems | `problems/cube_cavity.hpp`, `problems/plate_hole.hpp`, `*_exact_gen.hpp` | Load cases, exact fields, quantities of interest, shared by drivers and tests |
 | Compression | `fast/sbie_entries.hpp`, `fast/vector_aca.hpp`, `fast/hmatrix_operator.hpp`, `fast/compressed_sbie.hpp` | H and G as hierarchical matrices on [Htool](https://github.com/htool-ddm/htool) (vendored in `third_party/htool`, MIT): entry callback for any rows x columns (same quadrature as the dense assembly), clustering that keeps the 3 components of a point together, 3 x 3-block ACA with SVD recompression, near field in one pass, rigid-body diagonal from the compressed H, leaves cached on disk. `CompressedSbie` is the counterpart of `OperatorRows` |
 | Hierarchical solver | `hmat/cluster_tree.hpp`, `hmat/element_blocks.hpp`, `hmat/elem_hmatrix.hpp`, `hmat/coarse.hpp`, `hmat/two_level.hpp`, `hmat/h_neumann.hpp`, `hmat/h_mixed.hpp` | Element-column H-matrix for 50k-100k+ unknowns (bemkit's design): point rows x element columns, sampled CUR on the joint [H \| gamma G] (G C applied during the build, G never stored), one-sided QR + Gram recompression, float storage; near-field sparse LU (UMFPACK) plus a 12-mode-per-aggregate affine coarse level bordered with the rigid modes; right-preconditioned GMRES. `HMixed`: BcModel's mixed system (supports, springs, RBE2, inclusions) on any row set, G kept on the unknown tractions, dense LU of the supported-face traction block |
+| Bead-cell RVE | `rve.hpp`, `app/rve_cell.cpp`, `python/rve/` | `RveModel`: effective 6x6 stiffness of a periodic cell from one assembly (all collocation rows plus face traction rows), KUBC / PBC / SUBC, six unit strains as right-hand sides of one LU, averages as boundary integrals, Hill–Mandel check. `beads.py`: exact NURBS cells of FDM bead stacks (0/0, 0/90 and every θ/θ−90 by rotation) with notch-angle bond tips and conforming graded refinement (`refine.py`). `strength.py`: bond strength by finite fracture mechanics. `card.py`: T and L modes for `failure/aniso.py` cards |
 | Tests | `tests/test_kernels.cpp`, `tests/test_regression.cpp`, `tests/test_hmatrix.cpp` | Kernels; every validated result reproduced on a small mesh, including cache hit = fresh; compressed operators against dense (entries, ACA tolerance, rigid modes, cache) |
 
 Not yet in the library: geometry refinement (still `python/make_geometries.py`). `patch_test` and `dirichlet_test` still
@@ -721,6 +722,49 @@ over-prediction is the material, not the solver: the paper's K_mat carries plast
 the same offset. The project's ABS card, with no fit to these tests, lands within -8 to +6 %
 (`python3 -m failure.validate_cicero --card ABS-M30-iso --sigma-uts 65`; the card's own 63 MPa gives -0.2 to +4.9 %,
 -8.4 % at rho = 0.5).
+
+### Bead-cell RVE: homogenized stiffness and bond strength (`rve_cell`, `python/rve`)
+
+A perfectly bonded bead stack is one region with traction-free pores, so the cell needs no interface unknowns:
+`RveModel` assembles one SBIE row set, and periodic (PBC), kinematic (KUBC) and static (SUBC) conditions pick
+rows and columns from it. Six unit macro strains are six right-hand sides of one LU.
+
+- **Gates.** Solid cube: C to 2e-8 (KUBC), 1e-7 (PBC), 2e-13 (SUBC) of the isotropic C (ctest `rve_solid`).
+  Spherical pore, 3.35 %: PBC E 2062.7, G 764.0 against Mori–Tanaka 2057.6, 765.5 (+0.25 %, −0.2 %); r2 to r3
+  changes 0.05 % (ctest `rve_sphere_pore` on r1, 2 s). 0/0 bead cell: E1 = (1 − φ) E to all printed digits.
+- **Against Biswas 2019 (CAD-FEM, ABS E 2200, ν 0.35).** The thesis gives no bead dimensions, so the geometry
+  was identified from the Table 7 porosities (rms 0.11 points). In-plane E1 and G12 agree within −1 to +10 % over
+  the five geometries; E3 and G13 come out 12–44 % lower. No member of the bead family matches E1, E3 and G13
+  together: out-of-plane stiffness is set by the bond contact area, which porosity alone does not fix and the
+  thesis does not report. Treat E3 and G13 as geometry-limited until a measured bond width is available.
+
+![stiffness](results/fig_rve_stiffness.png)
+
+- **Bond strength (`python3 -m rve.strength 00|090 out.json --T … --Gc …`).** Finite fracture mechanics
+  (Leguillon 2002) at the bond tips: a debond of depth D forms when the mean traction over D reaches the weld
+  strength T (the thesis's max-nominal-stress law) and the energy released, ½ V σ̄·(S(D) − S(0))·σ̄ / A(D) from
+  the compliance of cells with the bond narrowed by 2D, reaches Gc. Tractions come from one intact-cell solve
+  (interior stress on the bond planes). Within one tip element the profile is replaced by the Williams notch
+  asymptote K r^(λ−1) + c (λ from the notch angle), fitted on the next two elements. Check: the corrected mean
+  over a whole bond equals the exact net-section traction to 0.3 % (0/0 interlayer), 1.9 % (0/0 lateral) and
+  3.9 % (0/90 interlayer). Every load direction then costs nothing.
+
+| cell, T_z = 15.26 MPa, Gc 1.09 N/mm | Z (MPa) | Biswas p. 37 (CZM) |
+|---|---|---|
+| 0/0 | 8.98 | 9.75 (−8 %) |
+| 0/90 | 5.28 | 6.07 (−13 %) |
+
+With the thesis's cohesive length E Gc / T² ≈ 2.6–10 mm, far longer than the 0.1–0.36 mm bonds, both are close
+to the net-section limit. The FFM energy branch takes over only for brittle welds (l_ch on the bond scale). The thesis's T = 30.3 MPa set (Table 9) is not a usable
+target: its 0/0 Z of 27.0 MPa exceeds the net-section bound T b_int / w = 18.2 MPa of its own Table 8 geometry. In-plane 0/90 strengths (X 70, Y 69 MPa) exceed the bulk
+filament strength, so the filament (F) mode governs there.
+
+![tip tractions](results/fig_rve_profiles.png) ![envelope](results/fig_rve_envelope.png)
+
+`python3 -m rve.card strength_00.json card.json` writes the `rve` block and the T and L modes of an orientation
+card (`failure/aniso.py`): S0_L / S0_T = 1.86 and shear ratios 0.96 / 1.00 for the Table 8 cell. Use the ratios;
+take the absolute scale from one Z coupon. Results and figures: `python/rve/data/results`,
+`python3 -m rve.figures outdir`.
 
 ## Next steps
 
