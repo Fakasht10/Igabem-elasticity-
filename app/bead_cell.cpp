@@ -5,6 +5,8 @@
 //
 //   --copy i:j:rz  region i is region j turned by rz degrees about z (and translated): its operator is region j's
 //                  rotated, no assembly (python/rve/beads.py bead090: B = A turned 90 deg)
+//   --axes x,y     filament axis of each region (the periodic pair normal to it continues the bead: never a weld;
+//                  default none: set it with --weld on a cell whose beads cross the box faces)
 //   --weld a:Kn:Kt      linear traction-separation law (N/mm^3) on the periodic face pairs normal to axis a
 //   --weld-int a:Kn:Kt  the same on the internal welds (coincident faces of two regions) normal to axis a
 //                       Kn <= 0: perfect weld (default everywhere)
@@ -27,7 +29,7 @@ int main(int argc, char** argv) {
   std::vector<std::tuple<bool, int, double, double>> welds;
   double E = 2200.0, nu = 0.35;
   int ng = 12;
-  std::string cache = "none", json;
+  std::string cache = "none", json, axes;
   auto weld = [](const char* s, bool internal) {
     double Kn, Kt;
     char a;
@@ -42,6 +44,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--ng")) ng = std::stoi(next());
     else if (!std::strcmp(argv[i], "--cache")) cache = next();
     else if (!std::strcmp(argv[i], "--json")) json = next();
+    else if (!std::strcmp(argv[i], "--axes")) axes = next();
     else if (!std::strcmp(argv[i], "--weld")) welds.push_back(weld(next(), false));
     else if (!std::strcmp(argv[i], "--weld-int")) welds.push_back(weld(next(), true));
     else if (!std::strcmp(argv[i], "--copy")) {
@@ -75,6 +78,7 @@ int main(int argc, char** argv) {
     std::printf("%s weld normal to %c: Kn %.4g Kt %.4g N/mm^3\n", internal ? "internal" : "periodic", 'x' + a, Kn, Kt);
   }
   m.setup(files, materialEnu(E, nu), o, cp, cache == "none" ? "" : cache);
+  for (size_t i = 0; i < axes.size() && i / 2 < m.regions.size(); i += 2) m.regions[i / 2].axis = axes[i] - 'x';
   const double t_setup = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
   const Vec3 L = m.lengths();
   int nper = 0, nint = 0;

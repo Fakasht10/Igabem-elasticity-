@@ -48,6 +48,7 @@ struct BeadRegion {
   std::vector<char> connection;    // per patch: 1 if a connection patch
   int copy_of = -1;                // >= 0: H, G rotated from that region
   Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
+  int axis = -1;                   // filament axis: its periodic pair is the bead itself (always perfect), not a weld
   double t_assemble = 0.0;
 };
 
@@ -67,7 +68,8 @@ class BeadCell {
   PartitionOptions popt;
   Vec3 lo, hi;
   double volume_solid = 0.0;
-  // weld compliances: periodic pairs by axis, interfaces by normal axis (3 x 3, mm^3 / N; zero = perfect)
+  // weld compliances: periodic pairs by axis, interfaces by normal axis (3 x 3, mm^3 / N; zero = perfect). A periodic
+  // pair normal to a region's filament axis (BeadRegion::axis) joins the bead to itself and stays perfect.
   std::array<Eigen::Matrix3d, 3> weld_periodic{Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Zero()};
   std::array<Eigen::Matrix3d, 3> weld_internal{Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Zero()};
 
@@ -319,6 +321,8 @@ class BeadCell {
     return (p + 1 < int(R.ts.offset.size()) ? R.ts.offset[p + 1] : R.ts.ndof) - R.ts.offset[p];
   }
   const Eigen::Matrix3d& compliance(const BeadPair& P) const {
+    static const Eigen::Matrix3d zero = Eigen::Matrix3d::Zero();
+    if (!P.internal && P.rm == P.rp && regions[P.rm].axis == P.axis) return zero;  // a bead's own cross-section
     return P.internal ? weld_internal[P.axis] : weld_periodic[P.axis];
   }
 
