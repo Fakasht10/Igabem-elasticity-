@@ -1,0 +1,97 @@
+{
+ "_doc": "Print-orientation failure cards for python/failure/aniso.py and prob.py. Fitted by failure.pla_orient (PLA, Weibull) and failure.cicero_orient (ABS, TCD); results in results/failure/. Modes: F filament, T filament bond, L layer bond; a mode absent from a card is off. Plies: [theta, theta - 90] about the build direction from the reference axis (the load axis of the calibration specimens).",
+ "pla-as2018-orient": {
+  "name": "PLA, Ahmed & Susmel 2018 process: orientation Weibull with gradient support",
+  "E_MPa": 3235.0,
+  "nu": 0.35,
+  "weibull": {
+   "m": 37.51391006015658,
+   "V0_mm3": 1.0,
+   "modes": {
+    "F": {
+     "S0_MPa": 98.71800633573909,
+     "support_mm": 4.146945663044787
+    },
+    "T": {
+     "S0_MPa": 45.76369632317353,
+     "shear_ratio": 2.1282010263194,
+     "support_mm": 4.146945663044787
+    }
+   }
+  },
+  "scatter": {
+   "m_s": 37.51391006015658,
+   "bias": 0.005208198028609741,
+   "tau": 0.07022447531871218,
+   "family_offsets": {
+    "OB": 0.0617999474144492,
+    "OI": -0.11070649767672087,
+    "OS": 0.012849420573274806,
+    "UB": -0.0010847457333106603,
+    "UI": 0.08328394823647324,
+    "US": -0.046142072814165706
+   },
+   "source": "replicate log-std 0.0342 (36 dof); bias and tau from leave-one-family-out residuals"
+  },
+  "validation": {
+   "held_out_RMSE_percent": 10.046964026957337,
+   "lofo_RMSE_percent": 8.368206349589652,
+   "coverage90": 0.8888888888888888
+  },
+  "domain": "Flat-printed PLA of the source process, raster labels 0/30/45 read as cross-ply [theta, theta-90] (to confirm in the paper). The support length l = 4.15 mm is close to the half-ligament (7.5 mm): it absorbs net-section yielding, not a material length. No layer-bond (L) data."
+ },
+ "pla-as2018-orient-demo-L": {
+  "name": "DEMONSTRATION ONLY: pla-as2018-orient plus an assumed layer-bond mode",
+  "base": "pla-as2018-orient",
+  "weibull_modes_add": {
+   "L": {
+    "S0_MPa": 25.170032977745443,
+    "shear_ratio": 2.1282010263194,
+    "support_mm": 4.146945663044787
+   }
+  },
+  "domain": "L assumed: S0_L = 0.55 S0_T (Z about 55 % of X for FDM, a vendor-cited test), shear ratio as T. No notched or unnotched build-tilt data was found for this material; never use for design."
+ },
+ "abs-cicero2020-orient": {
+  "name": "ABS, Cicero et al. 2020 SENB: per-mode TCD (point method)",
+  "E_MPa": 2300.0,
+  "nu": 0.35,
+  "tcd": {
+   "modes": {
+    "F": {
+     "K": 74.52144424773714,
+     "sigma_0": 61.5541154471266
+    },
+    "T": {
+     "K": 88.51921394780189,
+     "sigma_0": 73.11616098741065,
+     "shear_ratio": 2.0195384667294833
+    }
+   },
+   "L_mm": 0.46655029026009914
+  },
+  "validation": {
+   "modes_N": {
+    "min_pct": -8.89677738645408,
+    "max_pct": 7.508996967221582,
+    "rms_pct": 4.2482019743091435
+   },
+   "modes_loo_N": {
+    "min_pct": -12.290758262451096,
+    "max_pct": 13.304061041860393,
+    "rms_pct": 7.520656807221669
+   },
+   "iso_paper_N": {
+    "min_pct": 36.7280772234144,
+    "max_pct": 78.05688382514775,
+    "rms_pct": 54.847363747752375
+   },
+   "iso_cal_rho1_N": {
+    "min_pct": -12.930723452074366,
+    "max_pct": 14.246862334355836,
+    "rms_pct": 7.673305579339694
+   }
+  },
+  "domain": "Flat-printed ABS of the Cicero process, layups 0/90, 30/-60, 45/-45, SENB bending. Out of calibration for the Ng-Susmel nominal-tension ABS (about +29 % over-prediction, nurb-fea-tcd 2D study). No Weibull calibration; no layer-bond data."
+ }
+}

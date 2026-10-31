@@ -27,22 +27,27 @@ from .fields import tet10_quadrature
 from .igabem_backend import ROOT, Solve, fea_mesh, igabem_geometry
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "calibration")
-GEOM = {"UB": (3.0, 96.0), "US": (0.5, 91.0)}   # rho, specimen length (same_mesh_3d.nominal_geometry, alpha = 0)
+GEOM = {"UB": (3.0, 96.0, 0.0), "UI": (1.0, 92.0, 0.0), "US": (0.5, 91.0, 0.0),     # rho, specimen length, notch
+        "OB": (3.0, 75.0, 135.0), "OI": (1.0, 75.0, 135.0), "OS": (0.5, 75.0, 135.0)}  # opening (nominal_geometry)
 WG, WN, T = 25.0, 15.0, 1.0
 
 
 def quarter_step(family, path):
-    """The quarter specimen as a STEP (OpenCASCADE through Gmsh), the source's a-b-q-c-d-e-f outline."""
+    """The quarter specimen as a STEP (OpenCASCADE through Gmsh), the source's a-b-q-c-d-e-f outline
+    (same_mesh_3d.source_curve_controls): a quadratic Bezier root for the U notches, the interpolating spline through
+    the same three points for the 135 deg V notches, as the source builds them."""
     import gmsh
-    rho, L = GEOM[family]
-    a, b, q, c = (0.0, 0.0), (WN / 2, 0.0), (WN / 2, rho), (WN / 2 + rho, rho)
-    d, e, f = (WG / 2, rho), (WG / 2, L / 2), (0.0, L / 2)
+    rho, L, alpha = GEOM[family]
+    al = math.radians(alpha)
+    xe, ye = WN / 2 + rho * (1 - math.sin(al / 2)), rho * math.cos(al / 2)
+    a, b, q, c = (0.0, 0.0), (WN / 2, 0.0), (WN / 2, rho * math.tan(math.pi / 4 - al / 4)), (xe, ye)
+    d, e, f = (WG / 2, ye + (WG / 2 - xe) * math.tan(al / 2)), (WG / 2, L / 2), (0.0, L / 2)
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
     gmsh.model.add(family)
     o = gmsh.model.occ
     P = [o.addPoint(*p, 0) for p in (a, b, q, c, d, e, f)]
-    curve = o.addBSpline([P[1], P[2], P[3]], degree=2)
+    curve = o.addBSpline([P[1], P[2], P[3]], degree=2) if alpha == 0 else o.addSpline([P[1], P[2], P[3]])
     lines = [o.addLine(P[0], P[1]), curve, o.addLine(P[3], P[4]), o.addLine(P[4], P[5]), o.addLine(P[5], P[6]),
              o.addLine(P[6], P[0])]
     o.extrude([(2, o.addPlaneSurface([o.addCurveLoop(lines)]))], 0, 0, T)
@@ -52,7 +57,7 @@ def quarter_step(family, path):
 
 
 def case_for(family):
-    rho, L = GEOM[family]
+    rho, L, _ = GEOM[family]
     plane = lambda p, n: {"plane": {"point": p, "normal": n, "tol": 1e-6}}
     return {"supports": [{"label": "sym x", "select": plane([0, 0, 0], [1, 0, 0]), "fix": ["ux"], "snap": True},
                          {"label": "sym y", "select": plane([0, 0, 0], [0, 1, 0]), "fix": ["uy"], "snap": True}],
@@ -61,7 +66,7 @@ def case_for(family):
 
 
 def run(family, h, work, E, nu, log=print):
-    rho, L = GEOM[family]
+    rho, L, _ = GEOM[family]
     step = os.path.join(work, f"pla_{family}_quarter.step")
     os.makedirs(work, exist_ok=True)
     if not os.path.exists(step):

@@ -29,7 +29,7 @@ from .run import assess
 
 
 def tree(family, card, m_grid, work, h):
-    rho, _ = GEOM[family]
+    rho = GEOM[family][0]
     step = os.path.join(work, f"pla_{family}_quarter.step")
     if not os.path.exists(step):
         quarter_step(family, step)

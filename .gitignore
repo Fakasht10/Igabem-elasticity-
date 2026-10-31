@@ -9,3 +9,5 @@ geo/*_g*_h*.faces
 geo/step/*_g*_h*.dat
 geo/step/*_g*_h*.faces
 bench/
+results/failure/orient_*.vtu
+results/failure/orient_map_*.npz
