@@ -117,6 +117,45 @@
     "rms_pct": 7.673305579339694
    }
   },
-  "domain": "Flat-printed ABS of the Cicero process, layups 0/90, 30/-60, 45/-45, SENB bending. Out of calibration for the Ng-Susmel nominal-tension ABS (about +29 % over-prediction, nurb-fea-tcd 2D study). No Weibull calibration; no layer-bond data."
+  "domain": "Flat-printed ABS of the Cicero process, layups 0/90, 30/-60, 45/-45, SENB bending. Out of calibration for the Ng-Susmel nominal-tension ABS (about +29 % over-prediction, nurb-fea-tcd 2D study). No Weibull calibration; no layer-bond data. On the Ng & Susmel ABS tension plates (54, 0/30/45 rasters, results/failure/abs_orient.json) this card over-predicts by 42 % on average (0 deg +27 %, 45 deg +55 %): a different process, not a transferable card."
+ },
+ "abs-m30-fortus-orient": {
+  "name": "ABS-M30, Stratasys Fortus process: per-mode TCD (point method) with a measured layer-bond mode",
+  "E_MPa": 2300.0,
+  "nu": 0.35,
+  "tcd": {
+   "method": "point",
+   "L_mm": 0.4511194532083201,
+   "modes": {
+    "F": {
+     "K": 75.0,
+     "sigma_0": 63.0,
+     "shear_ratio": 1.7803349811530191
+    },
+    "T": {
+     "K": 75.0,
+     "sigma_0": 63.0,
+     "shear_ratio": 1.7803349811530191
+    },
+    "L": {
+     "K": 64.10034602076125,
+     "sigma_0": 53.844290657439444,
+     "shear_ratio": 1.7803349811530191
+    }
+   }
+  },
+  "scatter": {
+   "m_s": 73.0,
+   "bias": 0.0,
+   "tau": null,
+   "source": "Kinski et al. 2023 Table 2: pooled within-cell log-std 0.018 (24 dof) of plain ISO 527 bars; forces recorded in 0.05 kN steps (about 1 %), so a resolution-limited bound, and no model error is known for notched Fortus parts (no notched Fortus data)"
+  },
+  "sources": {
+   "in_plane": "project card ABS-M30-iso (K 75 MPa sqrt(mm), sigma_0 63 MPa, checked on Cicero SENB -8..+6 %), taken as the filament and transverse strength alike (the raster effect is not resolved)",
+   "shear_ratio": "Kinski et al. 2023 (doi 10.5604/01.3001.0016.2964) Table 2: flat +-45 / 0-90 = 0.979 -> Y/S12 = 1.78; T-mode bound r >= sqrt(3); one force step either way gives 1.73-1.9; F carries the same in-plane shear strength (X = Y here, so X/S12 = Y/S12); without it a tilted build would load the filament ply in interlaminar shear for free",
+   "layer_bond": "Kinski et al. 2023 Table 2: upright ZX / flat XY = 0.855 (30.9 / 36.1 MPa), Fortus 400mc, 95 C chamber, 0.254 mm layers; on edge YZ 1.05. Z/S13 taken equal to Y/S12 (not measured)",
+   "elastic": "ABS-M30-iso (E 2300 MPa, nu 0.35)"
+  },
+  "domain": "Stratasys Fortus ABS-M30 at 100 % infill with one contour. The notch constants are the isotropic ABS-M30-iso card's; the layer-bond ratio and the scatter come from unnotched bars only. Not for the Ng & Susmel or Cicero processes (different strength and scatter). No Weibull block: TCD only."
  }
 }

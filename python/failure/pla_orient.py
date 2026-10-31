@@ -18,7 +18,7 @@ hold out UI OB OI OS) and by leave-one-family-out:
                     do not identify L), on the bisector (z = 0.25 / 0.5 / 0.75 averaged): sigma0 alone, or sigma0_F,
                     sigma0_T, Y/S12. The isotropic ones are the parity check against nurb-fea-tcd's notch-fitted card.
 
-usage: python3 -m failure.pla_orient [--fields-only] [--h 1.5]      (fields ~2-4 min per family, once; fit ~12 min with LOFO)
+usage: python3 -m failure.pla_orient [--material pla|abs] [--fields-only] [--h 1.5]      (fields ~2-4 min per family, once; fit ~12 min with LOFO)
 """
 import argparse
 import json
@@ -36,7 +36,7 @@ from .fields import tet10_gradient, tet10_quadrature
 from .igabem_backend import ROOT, Solve, fea_mesh, igabem_geometry
 from .weibull_parity import GEOM, T, WN, case_for, quarter_step
 
-DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "calibration", "pla_notched_tension.json")
+DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "calibration")
 FAMILY = {"B04": "UB", "I04": "UI", "S04": "US", "OR3": "OB", "OR1": "OI", "OR0": "OS"}
 ANGLES = (0.0, 30.0, 45.0)
 CAL = ("UB", "US")
@@ -45,12 +45,13 @@ LINE_D = np.geomspace(0.02, 7.4, 160)  # bisector distances from the root (mm), 
 LINE_Z = (0.25, 0.5, 0.75)             # through-thickness stations, averaged (nurb-fea-tcd tcd_notch_fit)
 
 
-def rows():
-    out = []
-    for r in json.load(open(DATA)):
-        out.append({"id": r["id"], "family": FAMILY[r["id"][:3]], "angle": float(r["angle_deg"]),
-                    "t": float(r["thickness_mm"]), "P": float(r["failure_load_N"])})
-    return out
+def rows(material="pla"):
+    """The 54 notched tension rows: Ahmed & Susmel 2018 (PLA) or Ng & Susmel (ABS), same six plate shapes."""
+    if material == "abs":
+        return [{"id": r["id"], "family": r["id"].split("_")[0], "angle": float(r["angle"]), "t": float(r["t"]),
+                 "P": float(r["failure_load"])} for r in json.load(open(os.path.join(DATA, "abs_nominal_tension.json")))]
+    return [{"id": r["id"], "family": FAMILY[r["id"][:3]], "angle": float(r["angle_deg"]), "t": float(r["thickness_mm"]),
+             "P": float(r["failure_load_N"])} for r in json.load(open(os.path.join(DATA, "pla_notched_tension.json")))]
 
 
 # ------------------------------------------------------------------------------------------- fields (once)
@@ -111,8 +112,10 @@ def tcd_ratio(f, angle, card):
     ply, competing modes, every mode at the card's L (aniso.tcd); the failure load is 2 t / ratio."""
     K = lambda s0: s0 * math.sqrt(math.pi * card["L_mm"])
     modes = {k: dict(p, K=K(p["sigma_0"])) for k, p in card["modes"].items()}
-    return max(r["ratio"] for r in A.tcd(f["line_sig"].mean(0), f["line_d"], {"modes": modes}, print_for(angle),
-                                         method=card["tcd"])[0].values())
+    sig, d = f["line_sig"].mean(0), f["line_d"]
+    if card["tcd"] == "line" and 2 * card["L_mm"] > d[-1]:       # past the centre: the mirror half (x -> -x)
+        sig, d = np.concatenate([sig, sig[::-1]]), np.concatenate([d, WN - d[::-1]])
+    return max(r["ratio"] for r in A.tcd(sig, d, {"modes": modes}, print_for(angle), method=card["tcd"])[0].values())
 
 
 def mean_load(lh1, m, t):
@@ -128,19 +131,20 @@ MODELS = {
 }
 
 
-L_LIT = (117.004 / 42.9) ** 2 / math.pi   # PLA literature L (K 3.7 MPa sqrt(m), sigma 42.9 MPa): 2.368 mm, held
+L_LIT = {"pla": (117.004 / 42.9) ** 2 / math.pi,    # literature L, held: K 3.7 MPa sqrt(m), sigma 42.9 MPa -> 2.368 mm
+         "abs": (82.2192 / 23.0) ** 2 / math.pi}    # Ng & Susmel: K 2.6 MPa sqrt(m), sigma 23 MPa -> 4.068 mm
 
 
-def tcd_model(method, modes):
+def tcd_model(method, modes, L):
     if modes == "iso":
-        return (["sigma0"], [58.0], lambda x, a: {"tcd": method, "L_mm": L_LIT, "modes": {"P": {"sigma_0": x[0]}}})
+        return (["sigma0"], [58.0], lambda x, a: {"tcd": method, "L_mm": L, "modes": {"P": {"sigma_0": x[0]}}})
     return (["sigma0_F", "sigma0_T", "Y_over_S12"], [70.0, 55.0, 1.5],
-            lambda x, a: {"tcd": method, "L_mm": L_LIT,
+            lambda x, a: {"tcd": method, "L_mm": L,
                           "modes": {"F": {"sigma_0": x[0]}, "T": {"sigma_0": x[1], "shear_ratio": x[2]}}})
 
 
-MODELS.update({"tcd-point-iso": tcd_model("point", "iso"), "tcd-point-modes": tcd_model("point", "modes"),
-               "tcd-line-iso": tcd_model("line", "iso"), "tcd-line-modes": tcd_model("line", "modes")})
+def tcd_models(L):
+    return {f"tcd-{m}-{k}": tcd_model(m, k, L) for m in ("point", "line") for k in ("iso", "modes")}
 
 
 def support_model(m_s):
@@ -219,7 +223,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--h", type=float, default=1.5)
     ap.add_argument("--work", default=os.path.join(ROOT, "cache", "failure"))
-    ap.add_argument("--out", default=os.path.join(ROOT, "results", "failure", "pla_orient.json"))
+    ap.add_argument("--material", choices=("pla", "abs"), default="pla",
+                    help="the 54-plate dataset; the fields are the same plates (traction-loaded, E drops out)")
+    ap.add_argument("--out", help="default results/failure/<material>_orient.json")
     ap.add_argument("--fields-only", action="store_true")
     ap.add_argument("--hmat", action="store_true", help="hierarchical solver for the solves still to run (> ~15k unknowns)")
     ap.add_argument("--no-lofo", action="store_true")
@@ -227,13 +233,18 @@ def main():
     fields = {f: field(f, a.h, a.work, a.hmat) for f in GEOM}
     if a.fields_only:
         return
-    data = rows()
+    data = rows(a.material)
+    out = a.out or os.path.join(ROOT, "results", "failure", f"{a.material}_orient.json")
     groups = defaultdict(list)
     for r in data:
         groups[(r["family"], r["angle"])].append(r["P"])
     m_s, s_within, dof = prob.scatter_modulus(groups.values())
     print(f"replicate scatter: log-std {s_within:.4f} ({dof} dof) -> m_s {m_s:.1f}", flush=True)
-    models = dict(MODELS, **{"modes+support": support_model(m_s)})
+    models = dict(MODELS, **tcd_models(L_LIT[a.material]), **{"modes+support": support_model(m_s)})
+    gmean = lambda rs: np.mean([math.log(r["P"] / r["t"]) for r in rs])
+    k = math.exp(gmean(data) - gmean(rows("pla")))                     # start strengths scaled from the PLA ones
+    models = {n: (m[0], [v * k if p.startswith(("S0", "sigma0")) else v for p, v in zip(m[0], m[1])], m[2])
+              for n, m in models.items()}
     res = {"m_s": m_s, "within_log_std": s_within, "dof": dof, "models": {}}
     fams = sorted(GEOM)
     for name, model in models.items():
@@ -264,8 +275,8 @@ def main():
               f"  ({time.perf_counter() - t0:.0f} s)", flush=True)
     res["rows"] = data
     bands(res)
-    os.makedirs(os.path.dirname(a.out), exist_ok=True)
-    json.dump(res, open(a.out, "w"), indent=1)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    json.dump(res, open(out, "w"), indent=1)
 
 
 if __name__ == "__main__":

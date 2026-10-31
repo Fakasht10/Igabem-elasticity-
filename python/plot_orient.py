@@ -6,6 +6,8 @@
       a +-theta PETG laminate (Popa et al. 2025): mode model vs Tsai-Hill vs measured.
   results/fig_orient_map.{pdf,png}: mean failure load of the PLA US specimen against build direction (equal-area
       hemisphere) for the demonstration layer-bond card, relative to the flat print, governing mode marked.
+  results/fig_orient_map_abs_m30.{pdf,png}: the same hemisphere with the Fortus ABS-M30 TCD card (measured layer
+      bond, Kinski et al. 2023), point method on the US bisector.
   results/failure/orient_US_{flat,upright}.vtu: Gauss-point hazard density per mode (ParaView).
 
 usage (from python/; after failure.pla_orient and failure.cicero_orient): python3 plot_orient.py [--dirs 600]
@@ -131,50 +133,79 @@ def validation(out):
         fig.savefig(f"{out}.{ext}", dpi=200)
 
 
-def orientation_map(out, n_dirs, h=1.5):
-    f = PO.field("US", h, os.path.join(ROOT, "cache", "failure"))
-    card = A.load_card("pla-as2018-orient-demo-L")["weibull"]
-    pr = A.Print(angles_deg=(0.0, -90.0), ref_dir=(0, 1, 0))
-    dirs = A.fibonacci_hemisphere(n_dirs)
-    special = {"flat (d = z)": (0, 0, 1), "on edge (d = x)": (1, 0, 0), "upright (d = y, load)": (0, 1, 0)}
-    cache = os.path.join(RES, "failure", f"orient_map_US_{n_dirs}.npz")
-    if os.path.exists(cache):
-        z = np.load(cache)
-        eta, gov = z["eta"], list(z["gov"])
-    else:
-        eta, gov = A.sweep(f["sig"], f["w"], card, pr, np.vstack([dirs, list(special.values())]), f["grad"])
-        np.savez(cache, eta=eta, gov=np.array(gov))
-    ref = eta[-3]
-    rel = eta[:n_dirs] / ref
+SPECIAL = {"flat (d = z)": (0, 0, 1), "on edge (d = x)": (1, 0, 0), "upright (d = y, load)": (0, 1, 0)}
+
+
+def draw_map(out, dirs, rel, gov, special_rel, title):
+    """Equal-area hemisphere of build directions: load factor relative to the flat print, layer-bond region outlined."""
     k = np.sqrt(2.0 / (1.0 + dirs[:, 2]))                               # Lambert azimuthal equal-area about +z
     x, y = k * dirs[:, 0], k * dirs[:, 1]
     fig, ax = plt.subplots(figsize=(4.6, 4.0))
     tc = ax.tricontourf(x, y, rel, levels=np.linspace(np.floor(rel.min() * 20) / 20, np.ceil(rel.max() * 20) / 20, 13),
                         cmap="Blues")
-    Lgov = np.array([g == "L" for g in gov[:n_dirs]], float)
-    ax.tricontour(x, y, Lgov, levels=[0.5], colors=INK, linewidths=1.0)
+    Lgov = np.array([g == "L" for g in gov], float)
+    if 0 < Lgov.sum() < len(Lgov):
+        ax.tricontour(x, y, Lgov, levels=[0.5], colors=INK, linewidths=1.0)
     ax.text(0.0, -1.62, f"layer bond (L) governs {100 * Lgov.mean():.0f} % of directions (outside the line)",
             ha="center", fontsize=7, color=INK)
     ax.add_patch(plt.Circle((0, 0), math.sqrt(2), fill=False, color=MUTED, lw=1))
     offs = {"flat (d = z)": (8, -16), "on edge (d = x)": (-10, 14), "upright (d = y, load)": (8, 2)}
-    for (lab, v), e_ in zip(special.items(), eta[-3:]):
+    for lab, v in SPECIAL.items():
         v = np.asarray(v, float)
         kk = math.sqrt(2.0 / (1.0 + v[2]))
         ax.plot(kk * v[0], kk * v[1], "o", color=INK, ms=5, mec="white")
-        ax.annotate(f"{lab}: {e_ / ref:.2f}", (kk * v[0], kk * v[1]), textcoords="offset points", xytext=offs[lab],
-                    fontsize=7, color=INK, ha="right" if v[0] > 0.5 else "left",
+        ax.annotate(f"{lab}: {special_rel[lab]:.2f}", (kk * v[0], kk * v[1]), textcoords="offset points",
+                    xytext=offs[lab], fontsize=7, color=INK, ha="right" if v[0] > 0.5 else "left",
                     bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.8))
     ax.set_aspect("equal")
     ax.axis("off")
-    cb = fig.colorbar(tc, ax=ax, shrink=0.8, ticks=np.arange(0.5, 1.11, 0.1))
-    cb.set_label("mean failure load / flat print", fontsize=8)
+    cb = fig.colorbar(tc, ax=ax, shrink=0.8, ticks=np.arange(0.5, 1.11, 0.05 if rel.min() > 0.75 else 0.1))
+    cb.set_label("failure load / flat print", fontsize=8)
     cb.ax.tick_params(labelsize=7)
-    ax.set_title("PLA US notched plate, 0/90 layup, by build direction (equal-area)\n"
-                 "DEMO card: layer-bond strength assumed (Z = 0.55 Y)\n", fontsize=8, loc="left")
+    ax.set_title(title, fontsize=8, loc="left")
     fig.tight_layout()
     for ext in ("pdf", "png"):
         fig.savefig(f"{out}.{ext}", dpi=200)
-    return {lab: float(e_ / ref) for lab, e_ in zip(special, eta[-3:])}, f, card, pr
+
+
+def orientation_map(out, n_dirs, h=1.5):
+    f = PO.field("US", h, os.path.join(ROOT, "cache", "failure"))
+    card = A.load_card("pla-as2018-orient-demo-L")["weibull"]
+    pr = A.Print(angles_deg=(0.0, -90.0), ref_dir=(0, 1, 0))
+    dirs = A.fibonacci_hemisphere(n_dirs)
+    cache = os.path.join(RES, "failure", f"orient_map_US_{n_dirs}.npz")
+    if os.path.exists(cache):
+        z = np.load(cache)
+        eta, gov = z["eta"], list(z["gov"])
+    else:
+        eta, gov = A.sweep(f["sig"], f["w"], card, pr, np.vstack([dirs, list(SPECIAL.values())]), f["grad"])
+        np.savez(cache, eta=eta, gov=np.array(gov))
+    ref = eta[-3]
+    special = {lab: float(e_ / ref) for lab, e_ in zip(SPECIAL, eta[-3:])}
+    draw_map(out, dirs, eta[:n_dirs] / ref, gov[:n_dirs], special,
+             "PLA US notched plate, 0/90 layup, by build direction (equal-area)\n"
+             "DEMO card: layer-bond strength assumed (Z = 0.55 Y)\n")
+    return special, f, card, pr
+
+
+def orientation_map_tcd(out, n_dirs, card_id="abs-m30-fortus-orient", h=1.5):
+    """The same hemisphere with a TCD card: per-mode point method on the US bisector (z stations averaged)."""
+    f = PO.field("US", h, os.path.join(ROOT, "cache", "failure"))
+    card = A.load_card(card_id)["tcd"]
+    sig, d = f["line_sig"].mean(0), f["line_d"]
+    angles = (0.0, -90.0)
+    dirs = A._unit(np.vstack([A.fibonacci_hemisphere(n_dirs), list(SPECIAL.values())]))
+    eta, gov = np.empty(len(dirs)), []
+    for i, R in enumerate(A.ply_frames(dirs, angles, (0, 1, 0))):
+        res, g = A.tcd(sig, d, card, R=R, method=card.get("method", "point"))
+        eta[i] = 1.0 / res[g]["ratio"]
+        gov.append(g)
+    ref = eta[-3]
+    special = {lab: float(e_ / ref) for lab, e_ in zip(SPECIAL, eta[-3:])}
+    draw_map(out, dirs[:n_dirs], eta[:n_dirs] / ref, gov[:n_dirs], special,
+             "ABS-M30 (Fortus) card on the US notched plate, 0/90 layup (equal-area)\n"
+             "layer bond measured on bars: Z = 0.855 XY (Kinski et al. 2023)\n")
+    return special
 
 
 def vtu(f, card, pr):
@@ -204,6 +235,8 @@ def main():
     rel, f, card, pr = orientation_map(os.path.join(RES, "fig_orient_map"), a.dirs)
     vtu(f, card, pr)
     print("orientation map, relative to the flat print:", {k: round(v, 3) for k, v in rel.items()})
+    rel = orientation_map_tcd(os.path.join(RES, "fig_orient_map_abs_m30"), a.dirs)
+    print("ABS-M30 Fortus map, relative to the flat print:", {k: round(v, 3) for k, v in rel.items()})
 
 
 if __name__ == "__main__":
