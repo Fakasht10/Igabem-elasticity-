@@ -86,8 +86,8 @@ int main(int argc, char** argv) {
   std::printf("%zu regions, %d dofs, box %.4g x %.4g x %.4g, porosity %.4f%%, %d periodic + %d internal weld pairs\n",
               m.regions.size(), m.ndofTotal(), L(0), L(1), L(2), 100 * m.porosity(), nper, nint);
   for (auto& r : m.regions)
-    std::printf("  %s: %zu patches, %d dofs, %s %.2f s\n", r.file.c_str(), r.mesh.patches.size(), r.mesh.ndof,
-                r.copy_of >= 0 ? "rotated copy," : "assembly", r.t_assemble);
+    std::printf("  %s: %zu patches, %d dofs (%zu on welds), %s %.2f s, condense %.2f s\n", r.file.c_str(), r.mesh.patches.size(), r.mesh.ndof, r.bdof.size(),
+                r.copy_of >= 0 ? "rotated copy" : r.reduced_from_cache ? "cached" : "assembly", r.t_assemble, r.t_reduce);
   std::printf("setup %.2f s\n", t_setup);
   const RveResult r = m.solve();
   const Engineering e = engineering(r.C);

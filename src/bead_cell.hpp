@@ -23,8 +23,11 @@
 
 #include <Eigen/Dense>
 #include <array>
+#include <filesystem>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <stdexcept>
@@ -32,24 +35,111 @@
 #include <tuple>
 #include <vector>
 
+#include "cache.hpp"
+#include "fast/dense_sbie.hpp"
 #include "operators.hpp"
 #include "rve.hpp"
 #include "sbie.hpp"
 #include "solution.hpp"
 
+#ifdef IGABEM_LAPACK
+extern "C" {
+void dgetrf_(const int* m, const int* n, double* a, const int* lda, int* ipiv, int* info);
+void dgetrs_(const char* t, const int* n, const int* nrhs, const double* a, const int* lda, const int* ipiv, double* b,
+             const int* ldb, int* info);
+void dgemm_(const char* ta, const char* tb, const int* m, const int* n, const int* k, const double* al, const double* a,
+            const int* lda, const double* b, const int* ldb, const double* be, double* c, const int* ldc);
+}
+#endif
+
 namespace igabem {
+
+// Dense LU: LAPACK dgetrf/dgetrs when linked (IGABEM_LAPACK; OpenBLAS 3.6x Eigen's PartialPivLU at n = 6000 on
+// 4 cores, 1.8 vs 6.6 s), Eigen otherwise.
+class DenseLU {
+ public:
+  explicit DenseLU(Eigen::MatrixXd A) : A_(std::move(A)) {
+#ifdef IGABEM_LAPACK
+    const int n = int(A_.rows());
+    piv_.resize(n);
+    int info = 0;
+    dgetrf_(&n, &n, A_.data(), &n, piv_.data(), &info);
+    if (info < 0) throw std::runtime_error("DenseLU: dgetrf failed");
+#else
+    lu_.compute(A_);
+#endif
+  }
+  Eigen::MatrixXd solve(Eigen::MatrixXd B) const {
+#ifdef IGABEM_LAPACK
+    const int n = int(A_.rows()), k = int(B.cols());
+    int info = 0;
+    dgetrs_("N", &n, &k, A_.data(), &n, piv_.data(), B.data(), &n, &info);
+    return B;
+#else
+    return lu_.solve(B);
+#endif
+  }
+
+ private:
+  Eigen::MatrixXd A_;
+#ifdef IGABEM_LAPACK
+  std::vector<int> piv_;
+#else
+  Eigen::PartialPivLU<Eigen::MatrixXd> lu_;
+#endif
+};
+
+// C += alpha A B (BLAS dgemm when linked: 3x Eigen's product on the condensation's 7.7k x 2.6k x 7.7k).
+inline void gemmAdd(double alpha, const Eigen::MatrixXd& A, const Eigen::MatrixXd& B, Eigen::MatrixXd& C) {
+#ifdef IGABEM_LAPACK
+  const int m = int(A.rows()), n = int(B.cols()), k = int(A.cols());
+  const double one = 1.0;
+  dgemm_("N", "N", &m, &n, &k, &alpha, A.data(), &m, B.data(), &k, &one, C.data(), &m);
+#else
+  C.noalias() += alpha * A * B;
+#endif
+}
+
+// H (with the rigid-body term) and G at arbitrary collocation rows by the element-batched assembly of the fast dense
+// path (src/fast/dense_sbie.hpp, PR #8): one kernel call per (element, point group) for U and T, GEMM contraction.
+inline void batchedHG(const Mesh& mesh, const TractionSpace& ts, const Material& mat, const SolverOptions& opt,
+                      const std::vector<Collocation>& rows, Eigen::MatrixXd& H, Eigen::MatrixXd& G, double tol = 1e-10) {
+  Mesh m = mesh;  // the batched assembler collocates at mesh.colloc
+  m.colloc = rows;
+  const int n = 3 * int(rows.size());
+  H.setZero(n, 3 * m.ndof);
+  G.setZero(n, 3 * ts.ndof);
+  Eigen::MatrixXd S = Eigen::MatrixXd::Zero(n, 3);
+  DenseSbie ds(m, ts, mat, opt, tol);
+  DenseSbie::Out o;
+  o.H = H.data();
+  o.ldh = n;
+  o.G = G.data();
+  o.ldg = n;
+  o.S = S.data();
+  ds.assemble(o);
+  for (int a = 0; a < int(rows.size()); ++a)
+    for (const auto& [B, NB] : rows[a].basis) H.block<3, 3>(3 * a, 3 * B) -= NB * S.block<3, 3>(3 * a, 0);
+}
 
 struct BeadRegion {
   std::string file;
   Mesh mesh;
   TractionSpace ts;
-  Eigen::MatrixXd H, G;            // rows: 3 per dof collocation point, then 3 per connection traction point
+  // Reduced (Schur) operator on the bead's connection unknowns: the free-surface dofs (t = 0) are condensed out,
+  //   H_ii u_i + H_ib u_b - G_ic t_c = 0   ->   u_i = Xu u_b + Xt t_c,
+  // and the connection rows read Hr u_b - Gr t_c (Hr = H_bb + H_bi Xu, Gr = G_bc - H_bi Xt). Rows: 3 per connection
+  // dof (bdof order), then 3 per connection traction point (tcon order); columns: bdof (Hr) and tcon (Gr).
+  Eigen::MatrixXd Hr, Gr, Xu, Xt;
+  std::vector<int> bdof, idof, tcon;  // connection dofs, interior (free-surface) dofs, connection traction dofs
+  std::vector<int> bpos;              // dof -> position in bdof, -1 if interior
   std::vector<int> conn_row0;      // per patch: first row (point index) of its traction points, -1 if free
   std::vector<char> connection;    // per patch: 1 if a connection patch
-  int copy_of = -1;                // >= 0: H, G rotated from that region
+  int copy_of = -1;                // >= 0: a rotated copy of that region, which holds the matrices (read turned)
   Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
   int axis = -1;                   // filament axis: its periodic pair is the bead itself (always perfect), not a weld
-  double t_assemble = 0.0;
+  double t_assemble = 0.0, t_reduce = 0.0;
+  bool reduced_from_cache = false;
 };
 
 struct BeadPair {
@@ -115,14 +205,23 @@ class BeadCell {
         r.conn_row0[p] = int(rows.size());
         for (auto& c : tractionCollocation(r.mesh, r.ts, p)) rows.push_back(std::move(c));
       }
+      r.bpos.assign(r.mesh.ndof, -1);
+      r.bdof.clear(); r.idof.clear(); r.tcon.clear();
+      for (int p = 0; p < np; ++p)
+        if (r.connection[p]) {
+          for (int g : r.mesh.l2g[p]) r.bpos[g] = 0;
+          for (int j = r.ts.offset[p]; j < r.ts.offset[p] + tdofs(r, p); ++j) r.tcon.push_back(j);
+        }
+      for (int g = 0; g < r.mesh.ndof; ++g) {
+        if (r.bpos[g] < 0) { r.idof.push_back(g); continue; }
+        r.bpos[g] = int(r.bdof.size());
+        r.bdof.push_back(g);
+      }
       if (r.copy_of >= 0) {
-        copyRotated(regions[r.copy_of], r, int(rows.size()));
+        copyRotated(regions[r.copy_of], r);
         continue;
       }
-      OperatorRows A = cachedOperatorRows(r.mesh, r.ts, mat, opt, popt, r.file, cache_dir, "bead_rows", rows);
-      r.t_assemble = A.t_assemble;
-      r.H = std::move(A.H);
-      r.G = std::move(A.G);
+      reduce(r, rows, cache_dir);
     }
   }
 
@@ -170,6 +269,7 @@ class BeadCell {
         trow.push_back({P.rp, Rp.conn_row0[P.pp] + j});
       }
     }
+    if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  pairs matched %.2f s\n", since(t0));
     // union-find classes, representative = member with the smallest coordinate sum (on the - sides)
     std::vector<int> parent(nd);
     for (int g = 0; g < nd; ++g) parent[g] = g;
@@ -191,8 +291,8 @@ class BeadCell {
       const int r = root(g);
       if (best[r] < 0 || better(g, best[r])) best[r] = g;
     }
-    for (int g = 0; g < nd; ++g)
-      if (best[root(g)] == g) { col_of[g] = int(reps.size()); reps.push_back(g); }
+    for (int g = 0; g < nd; ++g)  // free-surface dofs are condensed out (BeadRegion::Xu, Xt): no unknowns
+      if (best[root(g)] == g && regions[reg_of[g]].bpos[g - u0[reg_of[g]]] >= 0) { col_of[g] = int(reps.size()); reps.push_back(g); }
     // jumps: walk each class from its representative; crossing pair k from - to + adds -C t+
     std::vector<std::vector<std::pair<int, Eigen::Matrix3d>>> jump(nd);
     std::map<std::pair<int, int>, std::vector<std::pair<int, double>>> tplus_at;  // (plus dof, pair) -> traction cols
@@ -230,46 +330,61 @@ class BeadCell {
         }
       }
     }
+    if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  classes and jumps %.2f s\n", since(t0));
     // system: rows = reps' dof points (own region) + + side traction points
     const int nr = int(reps.size()), nt = int(plus_t.size()), nu = 3 * nr, n = nu + 3 * nt;
-    Eigen::MatrixXd M = Eigen::MatrixXd::Zero(n, n), rhs = Eigen::MatrixXd::Zero(n, 6);
+    Eigen::MatrixXd A = Eigen::MatrixXd::Zero(n + 3, n + 3), rhs = Eigen::MatrixXd::Zero(n, 6);
+    auto M = A.topLeftCorner(n, n);  // the weld system, bordered below by the three translations
     std::vector<std::pair<int, int>> rowpts;  // (region, row point)
     for (int g : reps) rowpts.push_back({reg_of[g], g - u0[reg_of[g]]});
     for (auto& r : trow) rowpts.push_back(r);
     std::vector<int> tmap(ntt, 0);  // global traction dof -> +col+1 or -(col+1)
     for (int j = 0; j < nt; ++j) { tmap[plus_t[j]] = j + 1; tmap[minus_t[j]] = -(j + 1); }
     std::vector<Vec3> shift(nd);
-    for (int g = 0; g < nd; ++g) shift[g] = X[g] - X[best[root(g)]];
-    for (int i = 0; i < int(rowpts.size()); ++i) {
+    std::vector<int> ucol(nd);  // dof -> its class's unknown (-1: condensed free-surface dof)
+    for (int g = 0; g < nd; ++g) { shift[g] = X[g] - X[best[root(g)]]; ucol[g] = col_of[best[root(g)]]; }
+    for (const auto& [ri, pt] : rowpts)
+      if (pt < regions[ri].mesh.ndof && regions[ri].bpos[pt] < 0) throw std::runtime_error("BeadCell: row on a free-surface dof");
+    std::array<Eigen::Matrix3d, 6> Eu;
+    for (int k = 0; k < 6; ++k) Eu[k] = voigtUnit(k, true);
+#pragma omp parallel for schedule(dynamic, 16)
+    for (int i = 0; i < int(rowpts.size()); ++i) {  // row block i is written by one thread only
       const auto [ri, pt] = rowpts[i];
       const BeadRegion& R = regions[ri];
-      const auto Hr = R.H.middleRows<3>(3 * pt);
-      const auto Gr = R.G.middleRows<3>(3 * pt);
-      for (int gl = 0; gl < R.mesh.ndof; ++gl) {
-        const int g = u0[ri] + gl;
-        const auto Hb = Hr.middleCols<3>(3 * gl);
-        M.block<3, 3>(3 * i, 3 * col_of[best[root(g)]]) += Hb;
+      const BeadRegion& S = source(R);  // a rotated copy reads its source's blocks, turned: Rot B Rot^T
+      const bool rot = R.copy_of >= 0;
+      const Eigen::Matrix3d& Rot = R.R;
+      const int rr = pt < R.mesh.ndof ? R.bpos[pt] : int(R.bdof.size()) + pt - R.mesh.ndof;
+      const auto Hr = S.Hr.middleRows<3>(3 * rr);
+      const auto Gr = S.Gr.middleRows<3>(3 * rr);
+      for (int j = 0; j < int(R.bdof.size()); ++j) {
+        const int g = u0[ri] + R.bdof[j];
+        const Eigen::Matrix3d Hb = rot ? Eigen::Matrix3d(Rot * Hr.middleCols<3>(3 * j) * Rot.transpose())
+                                       : Eigen::Matrix3d(Hr.middleCols<3>(3 * j));
+        M.block<3, 3>(3 * i, 3 * ucol[g]) += Hb;
         if (shift[g].squaredNorm() > 0)
-          for (int k = 0; k < 6; ++k) rhs.block<3, 1>(3 * i, k) -= Hb * (voigtUnit(k, true) * shift[g]);
+          for (int k = 0; k < 6; ++k) rhs.block<3, 1>(3 * i, k) -= Hb * (Eu[k] * shift[g]);
         for (const auto& [col, C] : jump[g]) M.block<3, 3>(3 * i, nu + 3 * col) += Hb * C;
       }
-      for (int dl = 0; dl < R.ts.ndof; ++dl) {
-        const int s = tmap[t0r[ri] + dl];
+      for (int j = 0; j < int(R.tcon.size()); ++j) {
+        const int s = tmap[t0r[ri] + R.tcon[j]];
         if (!s) continue;
-        M.block<3, 3>(3 * i, nu + 3 * (std::abs(s) - 1)) -= (s > 0 ? 1.0 : -1.0) * Gr.middleCols<3>(3 * dl);
+        const Eigen::Matrix3d Gb = rot ? Eigen::Matrix3d(Rot * Gr.middleCols<3>(3 * j) * Rot.transpose())
+                                       : Eigen::Matrix3d(Gr.middleCols<3>(3 * j));
+        M.block<3, 3>(3 * i, nu + 3 * (std::abs(s) - 1)) -= (s > 0 ? 1.0 : -1.0) * Gb;
       }
     }
+    if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  blocks placed %.2f s\n", since(t0));
     // border the three translations
     Eigen::MatrixXd modes = Eigen::MatrixXd::Zero(nu, 3);
     for (int j = 0; j < nr; ++j) modes.block<3, 3>(3 * j, 0).setIdentity();
     for (int k = 0; k < 3; ++k) modes.col(k).normalize();
     const double sc = M.cwiseAbs().maxCoeff();
-    Eigen::MatrixXd A = Eigen::MatrixXd::Zero(n + 3, n + 3);
-    A.topLeftCorner(n, n) = M;
     A.block(0, n, nu, 3) = sc * modes;
     A.block(n, 0, 3, nu) = sc * modes.transpose();
     res.unknowns = n;
-    Eigen::PartialPivLU<Eigen::MatrixXd> lu(A);
+    if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  weld system built %.2f s\n", since(t0));
+    const DenseLU lu(std::move(A));
     const auto t1 = std::chrono::steady_clock::now();
     res.t_factor = std::chrono::duration<double>(t1 - t0).count();
     Eigen::MatrixXd B = Eigen::MatrixXd::Zero(n + 3, 6);
@@ -292,12 +407,24 @@ class BeadCell {
       for (size_t i = 0; i < regions.size(); ++i) {
         const BeadRegion& R = regions[i];
         BoundarySolution s{&R.mesh, &R.ts, mat, Eigen::VectorXd::Zero(3 * R.mesh.ndof), tg.segment(3 * t0r[i], 3 * R.ts.ndof), {}};
-        for (int gl = 0; gl < R.mesh.ndof; ++gl) {
-          const int g = u0[i] + gl;
-          Vec3 u = Xs.col(k).segment<3>(3 * col_of[best[root(g)]]) + Ek * shift[g];
+        Eigen::VectorXd ub(3 * R.bdof.size()), tc(3 * R.tcon.size());
+        for (int j = 0; j < int(R.bdof.size()); ++j) {
+          const int g = u0[i] + R.bdof[j];
+          Vec3 u = Xs.col(k).segment<3>(3 * ucol[g]) + Ek * shift[g];
           for (const auto& [col, C] : jump[g]) u += C * Xs.col(k).segment<3>(nu + 3 * col);
-          s.u.segment<3>(3 * gl) = u;
+          ub.segment<3>(3 * j) = u;
+          s.u.segment<3>(3 * R.bdof[j]) = u;
         }
+        for (int j = 0; j < int(R.tcon.size()); ++j) tc.segment<3>(3 * j) = s.t.segment<3>(3 * R.tcon[j]);
+        const BeadRegion& S = source(R);
+        auto turn = [&](Eigen::VectorXd v, bool back) {  // every triplet by R (back: R^T)
+          Eigen::Map<Eigen::MatrixXd> V(v.data(), 3, v.size() / 3);
+          V = (back ? Eigen::Matrix3d(R.R.transpose()) : R.R) * V;
+          return v;
+        };
+        const Eigen::VectorXd ui = R.copy_of < 0 ? Eigen::VectorXd(S.Xu * ub + S.Xt * tc)
+                                                 : turn(S.Xu * turn(ub, true) + S.Xt * turn(tc, true), false);
+        for (int j = 0; j < int(R.idof.size()); ++j) s.u.segment<3>(3 * R.idof[j]) = ui.segment<3>(3 * j);
         accumulate(R, s, c, int(i));
         res.solutions.push_back(std::move(s));
       }
@@ -384,21 +511,96 @@ class BeadCell {
       }
   }
 
-  // H, G of a region that is a rotated + translated copy of another with the same patch structure
-  void copyRotated(const BeadRegion& S, BeadRegion& T, int nrows) const {
-    if (S.mesh.ndof != T.mesh.ndof || S.ts.ndof != T.ts.ndof || 3 * nrows != S.H.rows())
-      throw std::runtime_error("BeadCell: copied region does not match its source");
+  // out(:, c0 + j) = s M(rows, cols[j]), threaded over columns (Eigen's indexed view gathers serially: 14 s of the
+  // grade-3 condensation)
+  static void gather(const Eigen::MatrixXd& M, const std::vector<int>& rows, const std::vector<int>& cols,
+                     Eigen::MatrixXd& out, int c0, double s) {
+#pragma omp parallel for schedule(static)
+    for (int j = 0; j < int(cols.size()); ++j) {
+      const double* src = M.data() + long(cols[j]) * M.rows();
+      double* dst = out.data() + long(c0 + j) * out.rows();
+      for (size_t i = 0; i < rows.size(); ++i) dst[i] = s * src[rows[i]];
+    }
+  }
+  static Eigen::MatrixXd gather(const Eigen::MatrixXd& M, const std::vector<int>& rows, const std::vector<int>& cols) {
+    Eigen::MatrixXd out(rows.size(), cols.size());
+    gather(M, rows, cols, out, 0, 1.0);
+    return out;
+  }
+  static std::vector<int> expand3(const std::vector<int>& v) {
+    std::vector<int> e;
+    e.reserve(3 * v.size());
+    for (int i : v) for (int c = 0; c < 3; ++c) e.push_back(3 * i + c);
+    return e;
+  }
+
+  // Assemble the bead's operator (rows: dof points, then connection traction points) and condense the free-surface
+  // dofs: one LU of H_ii per bead type, cached on disk with the reduced blocks.
+  void reduce(BeadRegion& r, const std::vector<Collocation>& rows, const std::string& cache_dir) {
+    const auto t0 = std::chrono::steady_clock::now();
+    std::string path;
+    if (!cache_dir.empty()) {
+      std::filesystem::create_directories(cache_dir);
+      path = cache_dir + "/" + operatorKey(r.file, "bead_schur", mat, opt, popt) + ".bin";
+      r.reduced_from_cache = loadMatrices(path, {&r.Hr, &r.Gr, &r.Xu, &r.Xt}) &&
+                             r.Hr.cols() == 3 * int(r.bdof.size()) && r.Gr.cols() == 3 * int(r.tcon.size()) &&
+                             r.Xu.rows() == 3 * int(r.idof.size());
+      if (r.reduced_from_cache) { r.t_reduce = since(t0); return; }
+    }
+    OperatorRows A;
+    batchedHG(r.mesh, r.ts, mat, opt, rows, A.H, A.G);
+    r.t_assemble = since(t0);
+    const int nd = r.mesh.ndof, nct = int(r.tcon.size());
+    std::vector<int> brow = r.bdof;  // boundary rows: connection dof points, then the connection traction points
+    for (int j = 0; j < nct; ++j) brow.push_back(nd + j);
+    const auto I = expand3(r.idof), B = expand3(r.bdof), Bt = expand3(brow), T = expand3(r.tcon);
+    const auto t1 = std::chrono::steady_clock::now();
+    if (I.empty()) {  // nothing to condense
+      r.Hr = gather(A.H, Bt, B);
+      r.Gr = gather(A.G, Bt, T);
+      r.Xu.resize(0, B.size());
+      r.Xt.resize(0, T.size());
+      r.t_reduce = since(t1);
+      return;
+    }
+    const DenseLU lu(gather(A.H, I, I));
+    if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  lu %.2f s (n %zu)\n", since(t1), I.size());
+    Eigen::MatrixXd rhs(I.size(), B.size() + T.size());
+    gather(A.H, I, B, rhs, 0, -1.0);
+    gather(A.G, I, T, rhs, int(B.size()), 1.0);
+    const Eigen::MatrixXd X = lu.solve(std::move(rhs));
+    if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  solve %.2f s (rhs %zu)\n", since(t1), B.size() + T.size());
+    r.Xu = X.leftCols(B.size());
+    r.Xt = X.rightCols(T.size());
+    const Eigen::MatrixXd Hbi = gather(A.H, Bt, I);
+    Eigen::MatrixXd HG(Bt.size(), B.size() + T.size());
+    gather(A.H, Bt, B, HG, 0, 1.0);
+    gather(A.G, Bt, T, HG, int(B.size()), -1.0);
+    if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  gathers %.2f s\n", since(t1));
+    gemmAdd(1.0, Hbi, X, HG);
+    if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  gemm %.2f s\n", since(t1));  // [Hr, -Gr] = [H_bb, -G_bc] + H_bi [Xu, Xt]
+    r.Hr = HG.leftCols(B.size());
+    r.Gr = -HG.rightCols(T.size());
+    r.t_reduce = since(t1);
+    if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  products done %.2f s (rows %zu)\n", since(t1), Bt.size());
+    if (!path.empty()) saveMatrices(path, {&r.Hr, &r.Gr, &r.Xu, &r.Xt});
+  }
+
+  // Reduced operator of a region that is a rotated + translated copy of another with the same patch structure:
+  // every 3 x 3 block turns as R B R^T (isotropic kernels are rotation- and translation-equivariant).
+  void copyRotated(const BeadRegion& S, BeadRegion& T) const {
+    if (S.mesh.ndof != T.mesh.ndof || S.ts.ndof != T.ts.ndof || S.bdof != T.bdof || S.tcon != T.tcon)
+      throw std::runtime_error("BeadCell: copied region does not match its source (patches or connections)");
     const Vec3 d = T.mesh.dof_point[0] - T.R * S.mesh.dof_point[0];
     for (int g = 0; g < S.mesh.ndof; ++g)
       if ((T.mesh.dof_point[g] - T.R * S.mesh.dof_point[g] - d).norm() > 1e3 * tol_)
         throw std::runtime_error("BeadCell: copied region is not a rigid copy (dof order or geometry)");
-    T.H.resize(S.H.rows(), S.H.cols());
-    T.G.resize(S.G.rows(), S.G.cols());
-    const Eigen::Matrix3d& R = T.R;
-    for (int i = 0; i < nrows; ++i) {
-      for (int j = 0; j < S.mesh.ndof; ++j) T.H.block<3, 3>(3 * i, 3 * j) = R * S.H.block<3, 3>(3 * i, 3 * j) * R.transpose();
-      for (int j = 0; j < S.ts.ndof; ++j) T.G.block<3, 3>(3 * i, 3 * j) = R * S.G.block<3, 3>(3 * i, 3 * j) * R.transpose();
-    }
+    if (S.copy_of >= 0) throw std::runtime_error("BeadCell: copy of a copy");
+    // nothing stored: solve() turns the source's blocks on the fly (3 x 3 products, cheap next to the LU)
+  }
+  const BeadRegion& source(const BeadRegion& R) const { return R.copy_of >= 0 ? regions[R.copy_of] : R; }
+  static double since(std::chrono::steady_clock::time_point t) {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - t).count();
   }
 
   void accumulate(const BeadRegion& R, const BoundarySolution& s, RveCaseResult& c, int ri) const {

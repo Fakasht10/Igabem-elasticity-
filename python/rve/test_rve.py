@@ -173,3 +173,64 @@ class TestApi(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBeadCell(unittest.TestCase):
+    """Bead-boundary cells (app/bead_cell, src/bead_cell.hpp): one region per bead, welds as spring laws."""
+
+    @classmethod
+    def setUpClass(cls):
+        from rve import welds
+        from rve.strength import RVE_CELL
+        cls.rve_cell, cls.bead_cell = RVE_CELL, welds.BEAD_CELL
+        if not (os.path.exists(RVE_CELL) and os.path.exists(welds.BEAD_CELL)):
+            raise unittest.SkipTest("rve_cell / bead_cell not built")
+
+    def _run(self, exe, args, d, name):
+        import json
+        import subprocess
+        out = os.path.join(d, name + ".json")
+        subprocess.run([exe] + args + ["--json", out], check=True, stdout=subprocess.DEVNULL)
+        with open(out) as f:
+            r = json.load(f)
+        return np.array(r["bc"]["pbc"]["C"] if "bc" in r else r["C"]), r
+
+    def test_00_matches_single_region_and_series_springs(self):
+        """Perfect welds: the C of rve_cell (to 1e-3: the condensed system borders the translations on the weld dofs
+        only, and the collocation PBC system is consistent only to discretization error, 3e-4 here); spring welds: E2,
+        E3 within 3 % of the series-spring estimate."""
+        import tempfile
+        from rve.beads import bead_00
+        from make_geometries import write_dat
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "b.dat")
+            write_dat(f, bead_00(G["w"], G["h"], G["b_int"], G["b_lat"], refine=1, grade=1), "test")
+            C1, _ = self._run(self.rve_cell, [f, "--bc", "pbc", "--ng", "12"], d, "single")
+            C2, r = self._run(self.bead_cell, [f, "--ng", "12", "--axes", "x"], d, "bead")
+            self.assertLess(np.abs(C1 - C2).max() / np.abs(C1).max(), 1e-3)
+            E0 = r["eng"]
+            K = 10 * 2200 / G["w"]
+            law = "%g:%g" % (K, K)
+            _, s = self._run(self.bead_cell, [f, "--ng", "12", "--axes", "x", "--weld", "y:" + law, "--weld", "z:" + law],
+                             d, "spring")
+            self.assertLess(s["hill_mandel"], 1e-3)
+            self.assertAlmostEqual(s["eng"]["E1"] / E0["E1"], 1.0, places=2)
+            for name, extra in (("E2", G["h"] / (G["b_lat"] * G["w"])), ("E3", G["w"] / (G["b_int"] * G["h"]))):
+                est = 1 / (1 / E0[name] + extra / K)
+                self.assertLess(abs(s["eng"][name] / est - 1), 0.03, name)
+
+    def test_090_rotated_operator(self):
+        """0/90: bead B's operator rotated from A's equals B assembled, and C is x-y symmetric."""
+        import tempfile
+        from rve.beads import bead_090
+        from make_geometries import write_dat
+        with tempfile.TemporaryDirectory() as d:
+            files = [os.path.join(d, t + ".dat") for t in "AB"]
+            for f, P in zip(files, bead_090(G["w"], G["h"], G["b_int"], G["b_lat"], refine=1, grade=0)):
+                write_dat(f, P, "test")
+            Cr, r = self._run(self.bead_cell, files + ["--copy", "1:0:90", "--axes", "x,y"], d, "copy")
+            Ca, _ = self._run(self.bead_cell, files + ["--axes", "x,y"], d, "asm")
+            self.assertLess(np.abs(Cr - Ca).max() / np.abs(Ca).max(), 1e-6)
+            self.assertAlmostEqual(Cr[0, 0] / Cr[1, 1], 1.0, places=6)
+            self.assertAlmostEqual(Cr[4, 4] / Cr[3, 3], 1.0, places=3)  # 2e-4 at grade 0: discretization
+            self.assertLess(r["hill_mandel"], 1e-8)

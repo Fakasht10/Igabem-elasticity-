@@ -784,6 +784,35 @@ nodes); `accuracy.max_interpolation_rel` (3 x |linear - cubic|) bounded every on
 - The ν = 0.35 cells keep their six boundary solutions (`rve_cell --save-solutions`, read back with
   `--load-solutions --points` without re-solving) for interior fields, e.g. training a deep material network.
 
+#### Bead-boundary cells: welds as traction-separation laws (`bead_cell`, `rve.welds`)
+
+`src/bead_cell.hpp` cuts the cell along the welds instead of through the bead axes: every bead is its own BEM region,
+and the regions are joined on matched patches (periodic face pairs and internal welds) by a linear law
+u+ = u- + E s - C t+ (C = K^-1, zero = perfect bond). Unknowns are one displacement per tied dof class and the weld
+tractions; the class representative sits on the - side so every region keeps its own SBIE rows.
+
+Each bead type is assembled and condensed once: the batched dense assembly of `src/fast/dense_sbie.hpp`, then the
+free-surface dofs (t = 0) are eliminated by one LU (Schur complement on the weld dofs and tractions), and the
+condensed blocks are cached on disk (`--cache dir`). A rotated copy (`--copy`, the 0/90 cell's B = A turned 90 deg)
+reads its source's blocks turned (R B R^T) while the weld system is built, so it has no assembly, no LU and no
+storage. LU and GEMM go through LAPACK/BLAS (OpenBLAS) when CMake finds them. 0/90 cell, 4 cores:
+
+| grade | dofs | weld unknowns | first run | cached | before (one dense system) |
+|---|---|---|---|---|---|
+| 2 | 4004 | 7680 | 11 s | 3.5 s | 60 s |
+| 3 | 5764 | 10632 | 37 s | 7.4 s | 155 s |
+
+The H-matrix path (PR #22) does not pay at this size: a bead has 2-3k dofs, and the weld system is a dense coupling
+of most of the cell's surface. It becomes the right tool for cells with many beads.
+
+- Perfect welds reproduce the single-region cell: 0/0 identical C; 0/90 within 1.5 % at grade 2, 0.5 % at grade 3
+  (E3 1099 vs 1105 MPa). Hill-Mandel holds with the interface energy t.C.t.
+- `python3 -m rve.welds` sweeps the weld stiffness kappa = K w / E (thin-interphase law Kt/Kn = (1 - 2nu)/(2(1 - nu))),
+  `data/results/fig_weld_stiffness.*`: 0/0 E2, E3 follow the series-spring estimate within 1-2 %; 0/90 E3 is 50 % of
+  the perfect bond at kappa 3, 76 % at 10, 96 % at 100. One measured E3 calibrates kappa.
+- `bead_cell A.dat B.dat --copy 1:0:90 --axes x,y --weld z:Kn:Kt --weld-int z:Kn:Kt --json out.json`
+  (`--axes` names each bead's filament axis: its own cross-section pair is never a weld).
+
 ## Next steps
 
 1. Exterior Neumann (Eshelby) patch test; move geometry
