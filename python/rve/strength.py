@@ -20,6 +20,10 @@ Limits: a short cohesive length (brittle weld, l_ch = E Gc / T^2 << bond) gives 
 strength; a long one (the thesis's l_ch ~ 2.6 mm >> 0.1-0.36 mm bonds) gives the net-section stress limit at
 D -> half the bond.
 
+Imperfect welds (--kappa): a linear spring on every weld (weld_args); the stress part then reads the weld tractions
+of the intact bead cell (weld_means: bounded at the tips, plain strip means) and the energy part the spring-welded
+narrowed cells, with the weak-interface limit G(0) = 1/2 t.C_w.t at D = 0 (python/rve/weld_strength.py sweeps kappa).
+
 Cells: python/rve/beads.py. Families: 0/0 "lat" (in-layer, normal y), "int" (interlayer, normal z); 0/90 "latA"
 (A layer along x, normal y), "latB" (B layer along y, normal x), "int" (b x b squares, normal z).
 
@@ -183,15 +187,30 @@ def run_cell(dat, out_json, E, nu, points=None):
         return json.load(f)
 
 
-def bead_compliance(kind, g, refine, grade, work, tag, E, nu):
+def weld_args(kind, kappa, E, nu, w):
+    """bead_cell options for a linear spring on every weld: Kn = kappa E / w (w the filament pitch), Kt = Kn (1 - 2 nu)
+    / (2 (1 - nu)) (a thin isotropic interphase of the bead's moduli); kappa None: perfect bond."""
+    if kappa is None:
+        return []
+    Kn = kappa * E / w
+    law = "%.10g:%.10g" % (Kn, Kn * (1 - 2 * nu) / (2 * (1 - nu)))
+    args = []
+    for a in ("yz" if kind == "00" else "xyz"):
+        args += ["--weld", "%s:%s" % (a, law)]
+    return args + (["--weld-int", "z:" + law] if kind == "090" else [])
+
+
+def bead_compliance(kind, g, refine, grade, work, tag, E, nu, kappa=None, tractions=False):
     """Compliance of the bead-boundary cell (app/bead_cell: one region per bead, condensed onto the welds, cached)
-    for the geometry g. 0/90: B is A turned 90 deg (one operator) unless its lateral bond differs (b_lat_b)."""
+    for the geometry g, welds perfect or springs of stiffness kappa (weld_args). 0/90: B is A turned 90 deg (one
+    operator) unless its lateral bond differs (b_lat_b). The condensed bead operators do not depend on the weld law:
+    a kappa sweep reuses them from the cache. tractions: also return the weld tractions (BeadCell::weldTractions)."""
     from rve.beads import bead_00, bead_090
     out = os.path.join(work, tag + ".json")
     cmd = [BEAD_CELL]
     if kind == "00":
         f = os.path.join(work, tag + ".dat")
-        write_dat(f, bead_00(g["w"], g["h"], g["b_int"], g["b_lat"], g["alpha"], g["wc"], g["L"], refine, grade), tag)
+        write_dat(f, bead_00(g["w"], g["h"], g["b_int"], g["b_lat"], g["alpha"], g["wc"], g["L"], refine, grade), "bead cell")
         cmd += [f, "--axes", "x"]
     else:
         bb = g.get("b_lat_b") or g["b_lat"]
@@ -200,12 +219,73 @@ def bead_compliance(kind, g, refine, grade, work, tag, E, nu):
         B = A[1] if bb == g["b_lat"] else mk(bb)[1]
         fs = [os.path.join(work, "%s_%s.dat" % (tag, t)) for t in "AB"]
         for f, P in zip(fs, (A[0], B)):
-            write_dat(f, P, tag)
+            write_dat(f, P, "bead cell")  # fixed title: the operator cache hashes the file
         cmd += fs + ["--axes", "x,y"] + (["--copy", "1:0:90"] if bb == g["b_lat"] else [])
     cmd += ["--E", str(E), "--nu", str(nu), "--ng", "12", "--cache", os.path.join(work, "cache"), "--json", out]
+    cmd += weld_args(kind, kappa, E, nu, g["w"])
+    tfile = os.path.join(work, tag + "_tractions.txt")
+    if tractions:
+        cmd += ["--tractions", tfile]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
     with open(out) as fh:
-        return np.linalg.inv(np.array(json.load(fh)["C"]))
+        S = np.linalg.inv(np.array(json.load(fh)["C"]))
+    return (S, np.loadtxt(tfile)) if tractions else S
+
+
+# Weld of each family in the bead cell (src/bead_cell.hpp pairs): normal axis, internal flags allowed.
+WELDS = {"00": {"lat": (1, (0,)), "int": (2, (0,))},
+         "090": {"latA": (1, (0,)), "latB": (0, (0,)), "int": (2, (0, 1))}}
+
+
+def weld_means(T, S, kind, fams, Ds_of):
+    """FFM stress part from the weld tractions of the intact bead cell (T: BeadCell::weldTractions rows, S: its
+    compliance): the mean traction over the strip within D of the bond edges, tn (nD, 6) and ts (nD, 6, 3), per unit
+    macro stress. With spring welds the tractions are bounded at the bond tips (no notch singularity), so the mean
+    is the plain area mean over the Gauss points, D from a cumulative integral sorted by the distance to the edge
+    r = half - max_c |x_c - centre_c| over the in-plane coordinates c across the bond. D = half: the whole bond
+    (equilibrium: the net-section traction exactly)."""
+    ax, it, x, w, nrm = T[:, 0].astype(int), T[:, 1].astype(int), T[:, 2:5], T[:, 5], T[:, 6:9]
+    t = np.einsum("kj,pkc->pjc", S, T[:, 9:].reshape(-1, 6, 3))        # per unit macro stress
+    box = x.max(0) - x.min(0)
+    out = {}
+    for name, F in fams.items():
+        a, ints = WELDS[kind][name]
+        m = (ax == a) & np.isin(it, ints)
+        e = np.asarray(F["normal"], float)
+        te = t[m] * np.sign(nrm[m] @ e)[:, None, None]                  # traction on the face with normal e
+        tn = te @ e                                                      # (p, 6)
+        tsv = te - tn[..., None] * e
+        xm = x[m]
+        across = [c for c in range(3) if c != a and np.ptp(xm[:, c]) < 0.99 * box[c]]
+        lo, hi = xm[:, across].min(0), xm[:, across].max(0)
+        half = 0.5 * float(np.max(hi - lo))
+        if abs(half - F["half"]) > 0.02 * F["half"]:
+            raise RuntimeError("weld %s: half width %.4g, expected %.4g" % (name, half, F["half"]))
+        r = F["half"] - np.max(np.abs(xm[:, across] - 0.5 * (lo + hi)), axis=1)
+        o = np.argsort(r)
+        cw = np.concatenate([[0.0], np.cumsum(w[m][o])])
+        rr = np.concatenate([[0.0], np.maximum(r[o], 0.0)])
+        cn = np.vstack([np.zeros(6), np.cumsum(w[m][o, None] * tn[o], 0)])
+        cs = np.concatenate([np.zeros((1, 6, 3)), np.cumsum(w[m][o, None, None] * tsv[o], 0)])
+        Ds = np.asarray(Ds_of(F))
+        A = np.interp(Ds, rr, cw)
+        tnD = np.stack([np.interp(Ds, rr, cn[:, j]) for j in range(6)], 1) / A[:, None]
+        tsD = np.stack([np.stack([np.interp(Ds, rr, cs[:, j, c]) for c in range(3)], 1) for j in range(6)], 1) / A[:, None, None]
+        edge = r < EDGE * F["half"]                                      # traction at the bond edge (D -> 0)
+        tedge = (w[m][edge, None, None] * te[edge]).sum(0) / w[m][edge].sum()
+        out[name] = (tnD, tsD, tedge)
+    return out
+
+
+EDGE = 0.02   # edge traction: mean over the strip r < EDGE half
+
+
+def spring_compliance(normal, kappa, E, nu, w):
+    """3 x 3 compliance of the weld spring (rve.strength.weld_args) on a bond of this normal."""
+    Kn = kappa * E / w
+    Kt = Kn * (1 - 2 * nu) / (2 * (1 - nu))
+    nn = np.outer(normal, normal)
+    return nn / Kn + (np.eye(3) - nn) / Kt
 
 
 # ------------------------------------------------------------------ criterion
@@ -350,7 +430,20 @@ def main(argv=None):
     ap.add_argument("--cells", choices=["single", "bead"], default="single",
                     help="compliance cells: single-region (rve_cell) or bead-boundary (bead_cell: condensed beads, "
                          "B = A turned; 3-6x faster for 0/90)")
+    ap.add_argument("--kappa", type=float, default=None,
+                    help="weld stiffness kappa = K w / E of a linear spring on every weld (rve.strength.weld_args; "
+                         "default: perfect bond). Needs the bead cells; both FFM parts then see the springs")
+    ap.add_argument("--stress", choices=["points", "weld"], default=None,
+                    help="stress part from the interior stress of the intact single-region cell (points, Williams tip "
+                         "fit; perfect bond only) or the weld tractions of the intact bead cell (weld; default with --kappa)")
     a = ap.parse_args(argv)
+    if a.stress is None:
+        a.stress = "weld" if a.kappa is not None else "points"
+    if a.kappa is not None or a.stress == "weld":
+        if a.stress == "points":
+            raise SystemExit("--kappa: the stress part needs the weld tractions (--stress weld)")
+        a.cells = "bead"
+    ktag = "" if a.kappa is None else "_k%g" % a.kappa
     os.makedirs(a.work, exist_ok=True)
     g = dict(w=a.w, h=a.h, b_int=a.bint, b_lat=a.blat, alpha=a.alpha, wc=a.wc, L=a.h)
     fams = families(a.kind, a.w, a.h, a.bint, a.blat, g["L"])
@@ -368,26 +461,37 @@ def main(argv=None):
         os.remove(pfile + ".new")
     else:
         os.replace(pfile + ".new", pfile)
-    base_dat = os.path.join(a.work, "intact.dat")
-    patches = build(a.kind, g, a.refine, a.grade, base_dat)
-    h_tip = {n: tip_element(patches, [(st[0], np.cross(F["normal"], st[1])) for st in F["stations"]])
-             for n, F in fams.items()}
-    res0 = run_cell(base_dat, os.path.join(a.work, "intact.json"), a.E, a.nu, pfile)
-    fields, S0 = unit_stress_fields(res0)
-    V = float(np.prod(res0["box"]))
     ge = a.grade if a.grade_energy is None else a.grade_energy
-    S0e = S0
-    if a.cells == "bead" and not a.check_only:
-        S0e = bead_compliance(a.kind, g, a.refine, ge, a.work, "bead_intact", a.E, a.nu)
+    h_tip = {}
+    if a.stress == "points":
+        base_dat = os.path.join(a.work, "intact.dat")
+        patches = build(a.kind, g, a.refine, a.grade, base_dat)
+        h_tip = {n: tip_element(patches, [(st[0], np.cross(F["normal"], st[1])) for st in F["stations"]])
+                 for n, F in fams.items()}
+        res0 = run_cell(base_dat, os.path.join(a.work, "intact.json"), a.E, a.nu, pfile)
+        fields, S0 = unit_stress_fields(res0)
+        info = dict(box=res0["box"], porosity=res0["porosity"], C=res0["bc"]["pbc"]["C"])
+        print("tip elements %s mm; Williams exponents lambda I/II/III = %.4f %.4f %.4f (alpha %g deg)" % ({n: round(v, 5) for n, v in h_tip.items()}, *lams, a.alpha))
+    S0e = None if a.stress == "weld" else S0
+    if a.cells == "bead" and not (a.check_only and a.stress == "points"):
+        S0e, Tw = bead_compliance(a.kind, g, a.refine, ge, a.work, "bead_intact" + ktag, a.E, a.nu, a.kappa, True)
+        with open(os.path.join(a.work, "bead_intact%s.json" % ktag)) as fh:
+            rb = json.load(fh)
+        if a.stress == "weld":
+            info = dict(box=rb["box"], porosity=rb["porosity"], C=rb["C"])
+            wm = weld_means(Tw, S0e, a.kind, fams, lambda F: [fr * F["half"] for fr in a.fractions] + [F["half"]])
     elif ge != a.grade and not a.check_only:   # reference compliance on the energy mesh
         dat = os.path.join(a.work, "intact_e.dat")
         build(a.kind, g, a.refine, ge, dat)
         S0e = np.linalg.inv(np.array(run_cell(dat, dat.replace(".dat", ".json"), a.E, a.nu)["bc"]["pbc"]["C"]))
-    print("tip elements %s mm; Williams exponents lambda I/II/III = %.4f %.4f %.4f (alpha %g deg)" % ({n: round(v, 5) for n, v in h_tip.items()}, *lams, a.alpha))
+    V = float(np.prod(info["box"]))
     fam_data = {}
     for name, F in fams.items():
         Ds = [fr * F["half"] for fr in a.fractions]
-        tn, ts, prof = tip_means(fields, index[name], F, lams, Ds + [F["half"]], h_tip[name])
+        if a.stress == "points":
+            tn, ts, prof = tip_means(fields, index[name], F, lams, Ds + [F["half"]], h_tip[name])
+        else:
+            (tn, ts, tedge), prof = wm[name], None
         fd = dict(D=[], tn=[], ts=[], S=[], A=[], S0=S0e, cuts=F["cuts"], profile=prof, check=None)
         if F["lig"] is not None:
             tl, sl = ligament(F)
@@ -399,10 +503,21 @@ def main(argv=None):
         fam_data[name] = fd
         if a.check_only:
             continue
+        if a.kappa is not None:
+            # D -> 0 on a spring weld: the stress part is the edge traction and the energy released per area is the
+            # spring energy there, G(0) = 1/2 t.C_w.t (weak-interface limit), entered as dS/dA = Q / V
+            e = np.asarray(F["normal"], float)
+            Q = tedge @ spring_compliance(e, a.kappa, a.E, a.nu, a.w) @ tedge.T
+            fd["D"].append(0.0)
+            fd["tn"].append(tedge @ e)
+            fd["ts"].append(tedge - np.outer(tedge @ e, e))
+            fd["S"].append(S0e + Q / V)
+            fd["A"].append(1.0)
         for i, D in enumerate(Ds):
             gi = dict(g, **F["change"](D))
             if a.cells == "bead":
-                Si = bead_compliance(a.kind, gi, a.refine, ge, a.work, "bead_%s_%d" % (name, i), a.E, a.nu)
+                Si = bead_compliance(a.kind, gi, a.refine, ge, a.work, "bead_%s_%d%s" % (name, i, ktag), a.E, a.nu,
+                                     a.kappa)
             else:
                 dat = os.path.join(a.work, "%s_%d.dat" % (name, i))
                 build(a.kind, gi, a.refine, ge, dat)
@@ -414,8 +529,8 @@ def main(argv=None):
             fd["A"].append(F["area"](D))
     if a.check_only:
         return fam_data
-    out = dict(kind=a.kind, geometry=g, E=a.E, nu=a.nu, Gc=a.Gc, porosity=res0["porosity"],
-               C=res0["bc"]["pbc"]["C"], l_ch=[a.E * a.Gc / T ** 2 for T in a.T], results={})
+    out = dict(kind=a.kind, geometry=g, E=a.E, nu=a.nu, Gc=a.Gc, kappa=a.kappa, stress=a.stress,
+               porosity=info["porosity"], C=info["C"], l_ch=[a.E * a.Gc / T ** 2 for T in a.T], results={})
     names = ["X (11)", "Y (22)", "Z (33)", "S23", "S13", "S12"]
     for T in a.T:
         rows = {}
@@ -449,7 +564,8 @@ def main(argv=None):
     out["rho"] = RHO.tolist()
     out["families"] = {n: dict(D=f["D"], tn=[t.tolist() for t in f["tn"]], ts=[t.tolist() for t in f["ts"]],
                                dS=[(s - S0e).tolist() for s in f["S"]], A=f["A"], cuts=list(f["cuts"]),
-                               half=fams[n]["half"], profile=f["profile"].tolist(), ligament_check=f["check"],
+                               half=fams[n]["half"],
+                               profile=None if f["profile"] is None else f["profile"].tolist(), ligament_check=f["check"],
                                ligament=None if "lig" not in f else
                                dict(D=f["lig"]["D"], tn=f["lig"]["tn"].tolist(), ts=f["lig"]["ts"].tolist()))
                        for n, f in fam_data.items()}

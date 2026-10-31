@@ -12,6 +12,7 @@
 //                       Kn <= 0: perfect weld (default everywhere)
 //   --crack P|I:a:r:c=v[,c=v]:lim  debond on the periodic (P) or internal (I) welds normal to axis a with + side in
 //                  region r (-1: any): cracked where max |x_c - v| > lim (src/bead_cell.hpp WeldCrack); repeatable
+//   --tractions f  weld tractions of the six unit macro strains at Gauss points of every weld (BeadCell::weldTractions)
 //   JSON: C (Voigt 11 22 33 23 13 12, engineering shear), engineering constants, porosity, timings, Hill-Mandel.
 #include <chrono>
 #include <cmath>
@@ -32,7 +33,7 @@ int main(int argc, char** argv) {
   std::vector<std::tuple<bool, int, double, double>> welds;
   double E = 2200.0, nu = 0.35;
   int ng = 12;
-  std::string cache = "none", json, axes;
+  std::string cache = "none", json, axes, tractions;
   std::vector<WeldCrack> cracks;
   auto weld = [](const char* s, bool internal) {
     double Kn, Kt;
@@ -49,6 +50,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--cache")) cache = next();
     else if (!std::strcmp(argv[i], "--json")) json = next();
     else if (!std::strcmp(argv[i], "--axes")) axes = next();
+    else if (!std::strcmp(argv[i], "--tractions")) tractions = next();
     else if (!std::strcmp(argv[i], "--crack")) {
       std::stringstream ss(next());
       std::string f[5];
@@ -119,6 +121,10 @@ int main(int argc, char** argv) {
   }
   std::printf("  E1 %.2f  E2 %.2f  E3 %.2f  G23 %.2f  G13 %.2f  G12 %.2f  nu12 %.4f  nu13 %.4f  nu23 %.4f\n", e.E1,
               e.E2, e.E3, e.G23, e.G13, e.G12, e.nu12, e.nu13, e.nu23);
+  if (!tractions.empty()) {
+    std::ofstream os(tractions);
+    m.weldTractions(r, os);
+  }
   if (!json.empty()) {
     std::ofstream js(json);
     js.precision(10);
