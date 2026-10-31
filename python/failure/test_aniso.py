@@ -195,6 +195,16 @@ class TcdPoint(unittest.TestCase):
         self.assertEqual(gov, "P")
         self.assertAlmostEqual(out["P"]["ratio"], float(np.interp(L / 2, d, sig[:, 0, 0])) / s0, places=12)
 
+    def test_line_method_is_the_mean_over_two_L(self):
+        d = np.linspace(0.0, 10.0, 501)
+        sig = np.zeros((len(d), 3, 3))
+        sig[:, 1, 1] = 100.0 - 4.0 * d                                   # linear profile: mean over 0..2L = 100 - 4 L
+        card = {"modes": {"P": {"K": 50.0 * math.sqrt(math.pi * 2.0), "sigma_0": 50.0}}}     # L = 2 mm
+        out, _ = A.tcd(sig, d, card, method="line")
+        self.assertAlmostEqual(out["P"]["L_mm"], 2.0, places=12)
+        self.assertAlmostEqual(out["P"]["probed"], 92.0, places=9)
+        self.assertAlmostEqual(A.tcd(sig, d, card)[0]["P"]["probed"], 96.0, places=9)
+
     def test_weak_bond_governs_transverse_load(self):
         d = np.linspace(0, 2, 201)
         sig = np.zeros((len(d), 3, 3))
@@ -237,6 +247,33 @@ class Cards(unittest.TestCase):
     def test_layup(self):
         self.assertEqual(A.parse_layup("30"), (30.0, -60.0))
         self.assertEqual(A.parse_layup("45/-45"), (45.0, -45.0))
+
+
+class NotchRoot(unittest.TestCase):
+    def test_root_is_the_drawn_arc(self):
+        """The calibration quarter's area equals the exact one with a circular root of radius rho (nurb-fea-tcd #74:
+        the quadratic Bezier and interpolating-spline roots were 2 rho and 0.61 rho)."""
+        import os
+        import tempfile
+        import gmsh
+        from .weibull_parity import GEOM, WG, WN, quarter_step
+        for fam in ("UI", "OS"):
+            rho, L, al = GEOM[fam][0], GEOM[fam][1], math.radians(GEOM[fam][2])
+            xe, ye = WN / 2 + rho * (1 - math.sin(al / 2)), rho * math.cos(al / 2)
+            sweep = math.pi / 2 - al / 2                                 # arc from b (angle pi) to c
+            seg = 0.5 * rho * rho * (sweep - math.sin(sweep))            # arc bulges into the material
+            poly = [(0, 0), (WN / 2, 0), (xe, ye), (WG / 2, ye + (WG / 2 - xe) * math.tan(al / 2)), (WG / 2, L / 2),
+                    (0, L / 2)]
+            area = 0.5 * abs(sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(poly, poly[1:] + poly[:1]))) - seg
+            with tempfile.TemporaryDirectory() as d:
+                quarter_step(fam, os.path.join(d, "q.step"))
+                gmsh.initialize()
+                gmsh.option.setNumber("General.Terminal", 0)
+                gmsh.model.occ.importShapes(os.path.join(d, "q.step"))
+                gmsh.model.occ.synchronize()
+                vol = gmsh.model.occ.getMass(3, gmsh.model.getEntities(3)[0][1])
+                gmsh.finalize()
+            self.assertAlmostEqual(vol, area, places=6)
 
 
 if __name__ == "__main__":

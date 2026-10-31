@@ -3,7 +3,7 @@ reductions the frozen PLA cards were fitted on (nurb-fea-tcd calibration/data/qu
 TET4 h = 0.18 mm).
 
 Specimen convention (nurb-fea-tcd calibration/same_mesh_3d.py, from Kwon's run_test.py): the x/y quarter of the
-notched plate (gross width 25, net 15, U-notch root rho as a quadratic Bezier, half-length L/2), extruded through a
+notched plate (gross width 25, net 15, notch root the circular arc of radius rho, half-length L/2), extruded through a
 unit reference thickness z in [0, 1] with both faces free, symmetry on x = 0 and y = 0, and 1 N on the quarter's
 grip face (traction 1 / 12.5 MPa). J = sum_q w_q max(sigma_1, 0)^m / V0 over the quarter, V0 = 1 mm^3.
 
@@ -34,22 +34,25 @@ WG, WN, T = 25.0, 15.0, 1.0
 
 def quarter_step(family, path):
     """The quarter specimen as a STEP (OpenCASCADE through Gmsh), the source's a-b-q-c-d-e-f outline
-    (same_mesh_3d.source_curve_controls): a quadratic Bezier root for the U notches, the interpolating spline through
-    the same three points for the 135 deg V notches, as the source builds them."""
+    (same_mesh_3d.source_curve_controls) with the root drawn as the circular arc of radius rho from b to the flank
+    tangent point c (centre (WN/2 + rho, 0)), as the specimen drawings show (nurb-fea-tcd #74: the earlier quadratic
+    Bezier gave U roots of 2 rho, the interpolating spline 135 deg roots of 0.61 rho)."""
     import gmsh
     rho, L, alpha = GEOM[family]
     al = math.radians(alpha)
     xe, ye = WN / 2 + rho * (1 - math.sin(al / 2)), rho * math.cos(al / 2)
-    a, b, q, c = (0.0, 0.0), (WN / 2, 0.0), (WN / 2, rho * math.tan(math.pi / 4 - al / 4)), (xe, ye)
+    a, b, c = (0.0, 0.0), (WN / 2, 0.0), (xe, ye)
     d, e, f = (WG / 2, ye + (WG / 2 - xe) * math.tan(al / 2)), (WG / 2, L / 2), (0.0, L / 2)
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
     gmsh.model.add(family)
     o = gmsh.model.occ
-    P = [o.addPoint(*p, 0) for p in (a, b, q, c, d, e, f)]
-    curve = o.addBSpline([P[1], P[2], P[3]], degree=2) if alpha == 0 else o.addSpline([P[1], P[2], P[3]])
-    lines = [o.addLine(P[0], P[1]), curve, o.addLine(P[3], P[4]), o.addLine(P[4], P[5]), o.addLine(P[5], P[6]),
-             o.addLine(P[6], P[0])]
+    P = [o.addPoint(*p, 0) for p in (a, b, c, d, e, f)]
+    centre = o.addPoint(WN / 2 + rho, 0.0, 0)
+    curve = o.addCircleArc(P[1], centre, P[2])
+    o.remove([(0, centre)])
+    lines = [o.addLine(P[0], P[1]), curve, o.addLine(P[2], P[3]), o.addLine(P[3], P[4]), o.addLine(P[4], P[5]),
+             o.addLine(P[5], P[0])]
     o.extrude([(2, o.addPlaneSurface([o.addCurveLoop(lines)]))], 0, 0, T)
     o.synchronize()
     gmsh.write(path)

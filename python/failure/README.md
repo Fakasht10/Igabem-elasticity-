@@ -46,20 +46,30 @@ s13^2)), T = sqrt(<s22>^2 + (Y/S12)^2 s12^2), L = sqrt(<s33>^2 + (Z/S13)^2 (s13^
 (one m), so the characteristic load stays closed form. The gradient support n = 1 + sqrt(l |grad s| / s) (Maede,
 Schmitz, Gottschalk & Beck 2017) lets m be the physical scatter modulus while the notch effect comes from l.
 
-Results (2026-10-30, `results/fig_orient_validation.png`):
+Results (2026-10-31, `results/fig_orient_validation.png`). The PLA quarters have the drawn circular notch roots
+(nurb-fea-tcd #74 found the port's quadratic Bezier / interpolating spline gave 2 rho and 0.61 rho; the 2026-10-30
+PLA numbers here were on those roots and are superseded):
 
 | gate | result |
 |---|---|
 | G1 mode P vs `weibull.py` | bit-identical log J |
-| G3 PLA, one card for 0/30/45 | leave-one-family-out RMSE 8.4 % (per-angle isotropic cards 9.7 %); campaign held-out 10.0 % (10.9 %) |
-| G4 PLA 90 % band | covers 89 % with scatter + model error (scatter alone 35 %) |
+| TCD parity with nurb-fea-tcd | isotropic sigma0 at L 2.37 mm on the same 54 plates: point 58.72 MPa (nurb 58.53), line 54.81 (54.97) |
+| G3 PLA, one card for 0/30/45, leave-one-family-out RMSE | TCD line F+T 9.1 %, TCD line isotropic 9.4 %, Weibull F+T with support 9.4 %, per-angle isotropic Weibull 9.8 %, TCD point F+T 12.5 % |
+| G4 PLA 90 % band (TCD line F+T) | covers 87 % with scatter + model error (scatter alone 41 %) |
 | G6 Cicero ABS, one TCD card for 3 layups | -8.9 .. +7.5 % (rms 4.2 %), leave-one-layup-out rms 7.5 % (per-layup isotropic, recalibrated: 7.7 %) |
 | G5 out-of-plane | no build-tilt data found; in-plane PETG +-45 (Popa 2025): -3.2 % |
 
-Physical scatter: within-group log-std 0.034 (36 dof), m_s 37.5. The volume-law m (about 4.1) is not the scatter:
-with it the 1 % load is 0.36 of the mean, with m_s and the model error 0.83. The PLA support length (4.1 mm, the
-half-ligament is 7.5 mm) absorbs net-section yielding; it is not a material length. Shear sensitivity Y/S12 is
-1.8-2.1 across PLA, ABS and PETG. The model tree's weibull node takes `orientation_card`, `build_dir`, `layup`.
+The PLA orientation card (`pla-as2018-orient`) carries both: a `tcd` block (line method, sigma0_F 113, sigma0_T 57.2
+MPa, Y/S12 2.3 at the held L) and the `weibull` block the model tree's weibull node uses (m = m_s, support l 6.5 mm,
+S0_T 39.5 MPa, Y/S12 1.9). The models differ by about one point: on these cross-ply prints the transverse ply always
+governs, so the filament strength is not identified by the Weibull data (its S0_F is set from the TCD ratio and says
+so) and only weakly by TCD. The support length is close to the half-ligament (7.5 mm): it absorbs net-section
+yielding, not a material length.
+
+Physical scatter: within-group log-std 0.034 (36 dof), m_s 37.5 (nurb-fea-tcd's value too). The volume-law m (about
+4) is not the scatter: with it the 1 % load is 0.36 of the mean, with m_s and the model error about 0.8. Shear
+sensitivity Y/S12 is 1.8-2.3 across PLA, ABS and PETG. The model tree's weibull node takes `orientation_card`,
+`build_dir`, `layup`.
 
 ## Runs
 
@@ -70,7 +80,7 @@ python3 -m failure.validate_cicero --card ABS-M30-iso --sigma-uts 65   # cicero_
 python3 -m failure.weibull_parity       # ~2 min, card pla-raster-0-weibull, results/failure/weibull_parity.json
 python3 plot_failure.py                 # results/fig_failure.png
 python3 -m unittest failure.test_failure
-python3 -m failure.pla_orient           # fields ~3 min per family once (OS: --hmat), fit ~20 min with LOFO
+python3 -m failure.pla_orient --hmat    # fields 2-4 min per family once (17 min), fit ~12 min with LOFO
 python3 -m failure.cicero_orient        # 4 solves ~1 min each once, fit seconds
 python3 -m igamodel.gate_orient         # weibull node with an orientation card = pla_orient (bitwise)
 python3 plot_orient.py                  # figures + VTU; the 1500-direction sweep ~5 min, cached

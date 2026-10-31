@@ -14,8 +14,11 @@ hold out UI OB OI OS) and by leave-one-family-out:
     iso-per-angle   mode P, m and S0 per angle (today's three cards; 6 parameters)
     modes           modes F + T, one m (4 parameters: m, S0_F, S0_T, Y/S12)
     modes+support   modes F + T with gradient support at the scatter modulus m_s (4: l, S0_F, S0_T, Y/S12)
+    tcd-<point|line>-<iso|modes>   TCD at the literature L = 2.37 mm (held: these plates fail near net section and
+                    do not identify L), on the bisector (z = 0.25 / 0.5 / 0.75 averaged): sigma0 alone, or sigma0_F,
+                    sigma0_T, Y/S12. The isotropic ones are the parity check against nurb-fea-tcd's notch-fitted card.
 
-usage: python3 -m failure.pla_orient [--fields-only] [--h 1.5]      (fields ~1 min per family, once; fit ~1 min)
+usage: python3 -m failure.pla_orient [--fields-only] [--h 1.5]      (fields ~2-4 min per family, once; fit ~12 min with LOFO)
 """
 import argparse
 import json
@@ -38,6 +41,8 @@ FAMILY = {"B04": "UB", "I04": "UI", "S04": "US", "OR3": "OB", "OR1": "OI", "OR0"
 ANGLES = (0.0, 30.0, 45.0)
 CAL = ("UB", "US")
 E_PLA, NU_PLA = 3235.0, 0.35         # traction-loaded quarter: the stress does not depend on E
+LINE_D = np.geomspace(0.02, 7.4, 160)  # bisector distances from the root (mm), for the TCD models
+LINE_Z = (0.25, 0.5, 0.75)             # through-thickness stations, averaged (nurb-fea-tcd tcd_notch_fit)
 
 
 def rows():
@@ -73,8 +78,11 @@ def field(family, h, work, hmat=False, log=print):
             sig_n[bad], _ = s.stress(pts[bad], True)
         P, w, _ = tet10_quadrature(pts, cells, np.zeros((len(pts), 1)))
         sig, _ = s.stress(P)
+        line = np.array([(WN / 2 - d, 0.0, z) for z in LINE_Z for d in LINE_D])
+        line_sig = s.stress(line)[0].reshape(len(LINE_Z), len(LINE_D), 3, 3)
     grad = tet10_gradient(pts, cells, sig_n)                            # (nq, 3, 3, 3)
-    out = {"P": P, "w": w, "sig": sig, "grad": grad, "seconds": time.perf_counter() - t0}
+    out = {"P": P, "w": w, "sig": sig, "grad": grad, "line_d": LINE_D, "line_sig": line_sig,
+           "seconds": time.perf_counter() - t0}
     np.savez(path, **out)
     log(f"{family}: {len(P)} Gauss points, volume {w.sum():.2f} mm^3, {out['seconds']:.0f} s")
     return out
@@ -98,6 +106,15 @@ def log_h1(f, angle, card):
     return A._logsumexp(list(lh.values())), lh
 
 
+def tcd_ratio(f, angle, card):
+    """Governing (mode stress / sigma_0) at 1 N on the unit quarter along the bisector (z stations averaged), worst
+    ply, competing modes, every mode at the card's L (aniso.tcd); the failure load is 2 t / ratio."""
+    K = lambda s0: s0 * math.sqrt(math.pi * card["L_mm"])
+    modes = {k: dict(p, K=K(p["sigma_0"])) for k, p in card["modes"].items()}
+    return max(r["ratio"] for r in A.tcd(f["line_sig"].mean(0), f["line_d"], {"modes": modes}, print_for(angle),
+                                         method=card["tcd"])[0].values())
+
+
 def mean_load(lh1, m, t):
     return 2 * t * math.gamma(1 + 1 / m) * math.exp(-(math.log(4 * t) + lh1) / m)
 
@@ -109,6 +126,21 @@ MODELS = {
     "modes": (["m", "S0_F", "S0_T", "Y_over_S12"], [4.5, 320, 300, 1.0],
               lambda x, a: {"m": x[0], "modes": {"F": {"S0_MPa": x[1]}, "T": {"S0_MPa": x[2], "shear_ratio": x[3]}}}),
 }
+
+
+L_LIT = (117.004 / 42.9) ** 2 / math.pi   # PLA literature L (K 3.7 MPa sqrt(m), sigma 42.9 MPa): 2.368 mm, held
+
+
+def tcd_model(method, modes):
+    if modes == "iso":
+        return (["sigma0"], [58.0], lambda x, a: {"tcd": method, "L_mm": L_LIT, "modes": {"P": {"sigma_0": x[0]}}})
+    return (["sigma0_F", "sigma0_T", "Y_over_S12"], [70.0, 55.0, 1.5],
+            lambda x, a: {"tcd": method, "L_mm": L_LIT,
+                          "modes": {"F": {"sigma_0": x[0]}, "T": {"sigma_0": x[1], "shear_ratio": x[2]}}})
+
+
+MODELS.update({"tcd-point-iso": tcd_model("point", "iso"), "tcd-point-modes": tcd_model("point", "modes"),
+               "tcd-line-iso": tcd_model("line", "iso"), "tcd-line-modes": tcd_model("line", "modes")})
 
 
 def support_model(m_s):
@@ -123,9 +155,11 @@ def predict(fields, data, build, x):
         key = (r["family"], r["angle"])
         if key not in cache:
             card = build(x, r["angle"])
-            cache[key] = (log_h1(fields[r["family"]], r["angle"], card)[0], card["m"])
-        lh1, m = cache[key]
-        out.append(mean_load(lh1, m, r["t"]))
+            f = fields[r["family"]]
+            cache[key] = ("tcd", tcd_ratio(f, r["angle"], card)) if "tcd" in card else \
+                (log_h1(f, r["angle"], card)[0], card["m"])
+        a, b = cache[key]
+        out.append(2 * r["t"] / b if a == "tcd" else mean_load(a, b, r["t"]))
     return np.array(out)
 
 
@@ -211,6 +245,9 @@ def main():
         b, tau, offs = prob.family_effects(lr[held], np.array([r["family"] for r in data])[held], s_within)
         entry = {"params": params, "loss": loss, **sc, "bias": b, "tau": tau, "family_offsets": offs,
                  "predicted_N": p.tolist()}
+        params_all, x_all, _ = fit(fields, data, model, fams, starts=[np.log(x)])
+        e_all = 100 * (predict(fields, data, model[2], x_all) / np.array([r["P"] for r in data]) - 1)
+        entry["params_all"], entry["all_fit_RMSE_percent"] = params_all, float(np.sqrt(np.mean(e_all ** 2)))
         if not a.no_lofo:
             lofo = np.empty(len(data))
             for f in fams:

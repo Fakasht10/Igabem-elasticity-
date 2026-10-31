@@ -238,11 +238,12 @@ def sweep(sig, w, card, pr, dirs, grad=None, chunk=16):
     return eta, gov
 
 
-def tcd_point(sig_line, distances, card, pr=None, R=None):
-    """Point method per mode along an extraction line: sig_line (nd, 3, 3) at distances (nd,) mm from the root.
+def tcd(sig_line, distances, card, pr=None, R=None, method="point"):
+    """TCD per mode along an extraction line: sig_line (nd, 3, 3) at distances (nd,) mm from the root.
     card["modes"][k] carries K (MPa sqrt(mm)) and sigma_0 (MPa), optionally shear_ratio; L_k = (K/sigma_0)^2 / pi.
-    Returns {mode: {"L_mm", "probed", "ratio"}} (probed: the worst ply's mode stress at L_k/2) and the governing
-    mode; the failure load is applied / max ratio (linear elasticity)."""
+    method "point" probes the mode stress at L_k/2, "line" averages it over 0..2 L_k (the line needs to reach 2 L_k).
+    Returns {mode: {"L_mm", "probed", "ratio"}} (probed: the worst ply's value) and the governing mode; the failure
+    load is applied / max ratio (linear elasticity)."""
     modes = _card_modes(card)
     if R is None and pr is not None:
         R = ply_frames(pr.build_dir, pr.plies()[0], pr.ref_dir)[0]
@@ -251,10 +252,20 @@ def tcd_point(sig_line, distances, card, pr=None, R=None):
         L = (float(p["K"]) / float(p["sigma_0"])) ** 2 / math.pi
         s = mode_stress(k, sig_line)[None] if k == "P" else \
             mode_stress(k, sig_line, R, float(p.get("shear_ratio", 0.0 if k == "F" else 1.0)))
-        probed = max(float(np.interp(0.5 * L, distances, si)) for si in s)
+        if method == "point":
+            probed = max(float(np.interp(0.5 * L, distances, si)) for si in s)
+        elif method == "line":
+            u = np.linspace(0.0, 2.0 * L, 400)
+            probed = max(float(np.trapezoid(np.interp(u, distances, si), u)) / (2.0 * L) for si in s)
+        else:
+            raise ValueError(f"unknown TCD method {method!r}")
         out[k] = {"L_mm": L, "probed": probed, "ratio": probed / float(p["sigma_0"])}
     gov = max(out, key=lambda k: out[k]["ratio"])
     return out, gov
+
+
+def tcd_point(sig_line, distances, card, pr=None, R=None):
+    return tcd(sig_line, distances, card, pr, R, "point")
 
 # ------------------------------------------------------------------------------------------- closed forms
 def off_axis_strength(theta_deg, card, mode=None):

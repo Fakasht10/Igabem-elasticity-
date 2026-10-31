@@ -1,7 +1,7 @@
 {
  "_doc": "Print-orientation failure cards for python/failure/aniso.py and prob.py. Fitted by failure.pla_orient (PLA, Weibull) and failure.cicero_orient (ABS, TCD); results in results/failure/. Modes: F filament, T filament bond, L layer bond; a mode absent from a card is off. Plies: [theta, theta - 90] about the build direction from the reference axis (the load axis of the calibration specimens).",
  "pla-as2018-orient": {
-  "name": "PLA, Ahmed & Susmel 2018 process: orientation Weibull with gradient support",
+  "name": "PLA, Ahmed & Susmel 2018 process: orientation TCD (line method) and Weibull with gradient support",
   "E_MPa": 3235.0,
   "nu": 0.35,
   "weibull": {
@@ -9,36 +9,61 @@
    "V0_mm3": 1.0,
    "modes": {
     "F": {
-     "S0_MPa": 98.71800633573909,
-     "support_mm": 4.146945663044787
+     "S0_MPa": 78.85451844476611,
+     "support_mm": 6.508767517339355,
+     "note": "not identified by these cross-ply prints (the fit runs to infinity); S0_T x sigma0_F/sigma0_T of the TCD block"
     },
     "T": {
-     "S0_MPa": 45.76369632317353,
-     "shear_ratio": 2.1282010263194,
-     "support_mm": 4.146945663044787
+     "S0_MPa": 39.5417932606338,
+     "shear_ratio": 1.8921245650086471,
+     "support_mm": 6.508767517339355
     }
    }
   },
   "scatter": {
    "m_s": 37.51391006015658,
-   "bias": 0.005208198028609741,
-   "tau": 0.07022447531871218,
+   "bias": -0.0026898032967116194,
+   "tau": 0.08168431030567788,
    "family_offsets": {
-    "OB": 0.0617999474144492,
-    "OI": -0.11070649767672087,
-    "OS": 0.012849420573274806,
-    "UB": -0.0010847457333106603,
-    "UI": 0.08328394823647324,
-    "US": -0.046142072814165706
+    "OB": 0.057664386604993845,
+    "OI": -0.13630199165169837,
+    "OS": 0.045983770284311394,
+    "UB": 0.015243987150222337,
+    "UI": 0.078019963040858,
+    "US": -0.0606101154286872
    },
-   "source": "replicate log-std 0.0342 (36 dof); bias and tau from leave-one-family-out residuals"
+   "source": "replicate log-std 0.0342 (36 dof); bias and tau from the Weibull model's leave-one-family-out residuals"
   },
   "validation": {
-   "held_out_RMSE_percent": 10.046964026957337,
-   "lofo_RMSE_percent": 8.368206349589652,
-   "coverage90": 0.8888888888888888
+   "held_out_RMSE_percent": 10.153544768074802,
+   "lofo_RMSE_percent": 9.422597800555806,
+   "coverage90": 0.9074074074074074
   },
-  "domain": "Flat-printed PLA of the source process, raster labels 0/30/45 read as cross-ply [theta, theta-90] (to confirm in the paper). The support length l = 4.15 mm is close to the half-ligament (7.5 mm): it absorbs net-section yielding, not a material length. No layer-bond (L) data."
+  "domain": "Flat-printed PLA of the source process, raster labels 0/30/45 read as cross-ply [theta, theta-90]. Notch roots are the drawn arcs (nurb-fea-tcd #74). The Weibull support length l = 6.5 mm is close to the half-ligament (7.5 mm): it absorbs net-section yielding, not a material length. The filament mode F is not identified by the Weibull data (the cross-ply's transverse ply always governs); the TCD block identifies sigma0_F only weakly. No layer-bond (L) data.",
+  "tcd": {
+   "method": "line",
+   "L_mm": 2.367756084305311,
+   "L_source": "literature, held (K 3.7 MPa sqrt(m), sigma 42.9 MPa); the plates fail near net section, L is not identified",
+   "modes": {
+    "F": {
+     "sigma_0": 113.98636958138347,
+     "K": 310.88254513986465
+    },
+    "T": {
+     "sigma_0": 57.15874688492788,
+     "K": 155.8928209912378,
+     "shear_ratio": 2.317662974643952
+    }
+   },
+   "iso_line_sigma_0": 54.80977688992773,
+   "parity": "isotropic line sigma0 54.81 MPa, point 58.72 MPa vs nurb-fea-tcd 54.97 / 58.53 MPa (same 54 plates, same L)",
+   "validation": {
+    "lofo_RMSE_percent": 9.08509241210078,
+    "bias": 0.0004060796731276753,
+    "tau": 0.07420051017164388,
+    "coverage90": 0.8703703703703703
+   }
+  }
  },
  "pla-as2018-orient-demo-L": {
   "name": "DEMONSTRATION ONLY: pla-as2018-orient plus an assumed layer-bond mode",
