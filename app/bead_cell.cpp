@@ -12,6 +12,8 @@
 //                       Kn <= 0: perfect weld (default everywhere)
 //   --crack P|I:a:r:c=v[,c=v]:lim  debond on the periodic (P) or internal (I) welds normal to axis a with + side in
 //                  region r (-1: any): cracked where max |x_c - v| > lim (src/bead_cell.hpp WeldCrack); repeatable
+//   --scales s1,s2,... every weld compliance times s (0: perfect bond), one solve per entry sharing one LU
+//                  (BeadCell::solveScales; JSON {"runs": [...]}, tractions f.0, f.1, ...): a kappa sweep in one run
 //   --tractions f  weld tractions of the six unit macro strains at Gauss points of every weld (BeadCell::weldTractions)
 //   JSON: C (Voigt 11 22 33 23 13 12, engineering shear), engineering constants, porosity, timings, Hill-Mandel.
 #include <chrono>
@@ -34,6 +36,7 @@ int main(int argc, char** argv) {
   double E = 2200.0, nu = 0.35;
   int ng = 12;
   std::string cache = "none", json, axes, tractions;
+  std::vector<double> scales{1.0};
   std::vector<WeldCrack> cracks;
   auto weld = [](const char* s, bool internal) {
     double Kn, Kt;
@@ -51,6 +54,11 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--json")) json = next();
     else if (!std::strcmp(argv[i], "--axes")) axes = next();
     else if (!std::strcmp(argv[i], "--tractions")) tractions = next();
+    else if (!std::strcmp(argv[i], "--scales")) {
+      scales.clear();
+      std::stringstream ss(next());
+      for (std::string t; std::getline(ss, t, ',');) scales.push_back(std::stod(t));
+    }
     else if (!std::strcmp(argv[i], "--crack")) {
       std::stringstream ss(next());
       std::string f[5];
@@ -110,28 +118,34 @@ int main(int argc, char** argv) {
     std::printf("  %s: %zu patches, %d dofs (%zu on welds, %d eliminated unknowns), %s %.2f s, condense %.2f s\n", r.file.c_str(), r.mesh.patches.size(), r.mesh.ndof, r.bdof.size(), 3 * r.ne,
                 r.copy_of >= 0 ? "rotated copy" : r.reduced_from_cache ? "cached" : "assembly", r.t_assemble, r.t_reduce);
   std::printf("setup %.2f s\n", t_setup);
-  const RveResult r = m.solve();
-  const Engineering e = engineering(r.C);
-  std::printf("PBC: %d unknowns, factor %.2f s, 6 cases %.2f s, Hill-Mandel %.1e, asymmetry %.1e\n", r.unknowns,
-              r.t_factor, r.t_solve, r.hill_mandel, r.asymmetry);
-  for (int i = 0; i < 6; ++i) {
-    std::printf("  ");
-    for (int j = 0; j < 6; ++j) std::printf("%11.3f", r.C(i, j));
-    std::printf("\n");
-  }
-  std::printf("  E1 %.2f  E2 %.2f  E3 %.2f  G23 %.2f  G13 %.2f  G12 %.2f  nu12 %.4f  nu13 %.4f  nu23 %.4f\n", e.E1,
-              e.E2, e.E3, e.G23, e.G13, e.G12, e.nu12, e.nu13, e.nu23);
-  if (!tractions.empty()) {
-    std::ofstream os(tractions);
-    m.weldTractions(r, os);
-  }
-  if (!json.empty()) {
-    std::ofstream js(json);
+  const auto t1 = std::chrono::steady_clock::now();
+  const std::vector<RveResult> runs = m.solveScales(scales);
+  const double t_all = std::chrono::duration<double>(std::chrono::steady_clock::now() - t1).count();
+  std::printf("PBC: %d unknowns, %zu weld scale(s), factor %.2f s, all solves %.2f s\n", runs[0].unknowns,
+              scales.size(), runs[0].t_factor, t_all);
+  auto num = [](double x) { return std::isfinite(x) ? std::to_string(x) : std::string("null"); };
+  std::ostringstream all;
+  all.precision(10);
+  for (size_t q = 0; q < runs.size(); ++q) {
+    const RveResult& r = runs[q];
+    const Engineering e = engineering(r.C);
+    std::printf("scale %g: Hill-Mandel %.1e, asymmetry %.1e\n", scales[q], r.hill_mandel, r.asymmetry);
+    for (int i = 0; i < 6; ++i) {
+      std::printf("  ");
+      for (int j = 0; j < 6; ++j) std::printf("%11.3f", r.C(i, j));
+      std::printf("\n");
+    }
+    std::printf("  E1 %.2f  E2 %.2f  E3 %.2f  G23 %.2f  G13 %.2f  G12 %.2f  nu12 %.4f  nu13 %.4f  nu23 %.4f\n", e.E1,
+                e.E2, e.E3, e.G23, e.G13, e.G12, e.nu12, e.nu13, e.nu23);
+    if (!tractions.empty()) {
+      std::ofstream os(scales.size() == 1 ? tractions : tractions + "." + std::to_string(q));
+      m.weldTractions(r, os);
+    }
+    std::ostringstream js;
     js.precision(10);
-    auto num = [](double x) { return std::isfinite(x) ? std::to_string(x) : std::string("null"); };
-    js << "{\"E\": " << E << ", \"nu\": " << nu << ", \"porosity\": " << m.porosity() << ", \"box\": [" << L(0) << ", "
-       << L(1) << ", " << L(2) << "], \"dofs\": " << m.ndofTotal() << ", \"unknowns\": " << r.unknowns
-       << ", \"t_setup\": " << t_setup << ", \"t_solve\": " << r.t_factor + r.t_solve
+    js << "{\"E\": " << E << ", \"nu\": " << nu << ", \"scale\": " << scales[q] << ", \"porosity\": " << m.porosity()
+       << ", \"box\": [" << L(0) << ", " << L(1) << ", " << L(2) << "], \"dofs\": " << m.ndofTotal()
+       << ", \"unknowns\": " << r.unknowns << ", \"t_setup\": " << t_setup << ", \"t_solve\": " << t_all
        << ", \"hill_mandel\": " << r.hill_mandel << ", \"C\": [";
     for (int i = 0; i < 6; ++i) {
       js << (i ? ", " : "") << "[";
@@ -140,7 +154,13 @@ int main(int argc, char** argv) {
     }
     js << "], \"eng\": {\"E1\": " << num(e.E1) << ", \"E2\": " << num(e.E2) << ", \"E3\": " << num(e.E3)
        << ", \"G23\": " << num(e.G23) << ", \"G13\": " << num(e.G13) << ", \"G12\": " << num(e.G12)
-       << ", \"nu12\": " << num(e.nu12) << ", \"nu13\": " << num(e.nu13) << ", \"nu23\": " << num(e.nu23) << "}}\n";
+       << ", \"nu12\": " << num(e.nu12) << ", \"nu13\": " << num(e.nu13) << ", \"nu23\": " << num(e.nu23) << "}}";
+    all << (q ? ",\n " : "") << js.str();
+  }
+  if (!json.empty()) {
+    std::ofstream f(json);
+    if (scales.size() == 1) f << all.str() << "\n";                       // one object (as before)
+    else f << "{\"runs\": [" << all.str() << "]}\n";                     // one per --scales entry
   }
   return 0;
 }

@@ -193,6 +193,8 @@ class TestBeadCell(unittest.TestCase):
         subprocess.run([exe] + args + ["--json", out], check=True, stdout=subprocess.DEVNULL)
         with open(out) as f:
             r = json.load(f)
+        if "runs" in r:
+            return None, r
         return np.array(r["bc"]["pbc"]["C"] if "bc" in r else r["C"]), r
 
     def test_00_matches_single_region_and_series_springs(self):
@@ -253,6 +255,24 @@ class TestBeadCell(unittest.TestCase):
             self.assertLess(abs(c["eng"]["E2"] / r["eng"]["E2"] - 1), 0.01)
             Cz, _ = self._run(self.bead_cell, [f, "--axes", "x", "--crack", "P:y:-1:z=0:0"], d, "full")
             self.assertLess(abs(Cz[1, 1]), 1e-6 * r["eng"]["E2"])   # no lateral weld: no sigma_22
+
+    def test_00_weld_scales_match_separate_solves(self):
+        """--scales (one LU of the perfect-bond system + a Woodbury update per weld compliance scale) gives the C of
+        separate solves with the scaled laws, and scale 0 the perfect bond (1e-10)."""
+        import tempfile
+        from rve.beads import bead_00
+        from make_geometries import write_dat
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "b.dat")
+            write_dat(f, bead_00(G["w"], G["h"], G["b_int"], G["b_lat"], refine=1, grade=1), "test")
+            law = lambda K: ["--weld", "y:%.12g:%.12g" % (K, K / 3), "--weld", "z:%.12g:%.12g" % (K, K / 3)]  # noqa: E731
+            K1 = 2200 / G["w"]
+            _, r = self._run(self.bead_cell, [f, "--axes", "x", "--scales", "0,0.1,1"] + law(K1), d, "scales")
+            Cp, _ = self._run(self.bead_cell, [f, "--axes", "x"], d, "perfect")
+            C10, _ = self._run(self.bead_cell, [f, "--axes", "x"] + law(10 * K1), d, "k10")
+            C1, _ = self._run(self.bead_cell, [f, "--axes", "x"] + law(K1), d, "k1")
+            for run, C in zip(r["runs"], (Cp, C10, C1)):
+                self.assertLess(np.abs(np.array(run["C"]) - C).max() / np.abs(C).max(), 1e-10)
 
     def test_00_weld_tractions(self):
         """Weld tractions (bead_cell --tractions, FFM stress part): the force on each weld per unit macro stress is

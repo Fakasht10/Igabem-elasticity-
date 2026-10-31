@@ -134,8 +134,11 @@ struct BeadRegion {
   Mesh mesh;
   TractionSpace ts;
   // Condensed weld operator: K [u_W; t_W] = F e (e: the macro strain, Voigt engineering, 6 columns), rows: weld dofs
-  // (bdof order), then the weld traction points (tcon order); the eliminated unknowns are x = Xk [u_W; t_W] + Xf e.
+  // (bdof order), then the weld traction points (tcon order); the eliminated unknowns that carry a traction (the
+  // cross-sections: their dofs and tractions, xsel) are x = Xk [u_W; t_W] + Xf e. The free-surface displacements
+  // (t = 0) enter neither the cell averages nor the energy, so they are not kept: Xk is ~5x smaller on disk.
   Eigen::MatrixXd K, F, Xk, Xf;
+  std::vector<int> xsel, xpos;     // kept eliminated unknowns; eliminated unknown -> position in xsel, -1 dropped
   std::vector<int> bdof, tcon;     // weld dofs, weld traction dofs (kept)
   std::vector<int> bpos;           // dof -> position in bdof, -1 if eliminated
   std::vector<int> rowpos;         // row point -> kept row, -1 if eliminated
@@ -238,7 +241,13 @@ class BeadCell {
     }
   }
 
-  RveResult solve() const {
+  RveResult solve() const { return solveScales({1.0})[0]; }
+
+  // One solve per weld-compliance scale s (every weld compliance times s; s = 0: perfect bond, s = kappa_ref / kappa
+  // for a kappa sweep). The scale enters the weld system as A(s) = A0 + s U E^T (U: the spring columns of the + side
+  // displacement jumps, E^T: the weld traction unknowns), so several scales share one LU of A0 and the solves
+  // Z = A0^-1 U, then each costs one LU of I + s E^T Z (Woodbury, size 3 x weld tractions) and the averages.
+  std::vector<RveResult> solveScales(const std::vector<double>& scales) const {
     RveResult res;
     res.bc = RveBc::Pbc;
     const auto t0 = std::chrono::steady_clock::now();
@@ -352,7 +361,10 @@ class BeadCell {
     if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  classes and jumps %.2f s\n", since(t0));
     // system: rows = reps' dof points (own region) + + side traction points
     const int nr = int(reps.size()), nt = int(plus_t.size()), nu = 3 * nr, n = nu + 3 * nt;
+    bool springs = false;
+    for (const auto& j : jump) springs = springs || !j.empty();
     Eigen::MatrixXd A = Eigen::MatrixXd::Zero(n + 3, n + 3), rhs = Eigen::MatrixXd::Zero(n, 6);
+    Eigen::MatrixXd U = Eigen::MatrixXd::Zero(springs ? n + 3 : 0, springs ? 3 * nt : 0);  // spring columns (s = 1)
     auto M = A.topLeftCorner(n, n);  // the weld system, bordered below by the three translations
     std::vector<std::pair<int, int>> rowpts;  // (region, row point)
     for (int g : reps) rowpts.push_back({reg_of[g], regions[reg_of[g]].rowpos[g - u0[reg_of[g]]]});
@@ -384,7 +396,7 @@ class BeadCell {
         M.block<3, 3>(3 * i, 3 * ucol[g]) += Hb;
         if (shift[g].squaredNorm() > 0)
           for (int k = 0; k < 6; ++k) rhs.block<3, 1>(3 * i, k) -= Hb * (Eu[k] * shift[g]);
-        for (const auto& [col, C] : jump[g]) M.block<3, 3>(3 * i, nu + 3 * col) += Hb * C;
+        for (const auto& [col, C] : jump[g]) U.block<3, 3>(3 * i, 3 * col) += Hb * C;
       }
       for (int j = 0; j < int(R.tcon.size()); ++j) {
         const int s = tmap[t0r[ri] + R.tcon[j]];
@@ -403,12 +415,37 @@ class BeadCell {
     A.block(n, 0, 3, nu) = sc * modes.transpose();
     res.unknowns = n;
     if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  weld system built %.2f s\n", since(t0));
-    const DenseLU lu(std::move(A));
-    const auto t1 = std::chrono::steady_clock::now();
-    res.t_factor = std::chrono::duration<double>(t1 - t0).count();
     Eigen::MatrixXd B = Eigen::MatrixXd::Zero(n + 3, 6);
     B.topRows(n) = rhs;
-    const Eigen::MatrixXd Xs = lu.solve(B);
+    std::vector<Eigen::MatrixXd> sols;
+    if (scales.size() == 1 || !springs) {  // one scale: factor A(s) itself
+      if (springs) A.middleCols(nu, 3 * nt) += scales[0] * U;
+      const DenseLU lu(std::move(A));
+      const Eigen::MatrixXd Xs = lu.solve(B);
+      sols.assign(scales.size(), Xs);
+    } else {
+      const DenseLU lu(std::move(A));
+      const Eigen::MatrixXd Y = lu.solve(B), Z = lu.solve(U);
+      if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  A0 factor and Z = A0^-1 U (%d x %d) %.2f s\n", n + 3, 3 * nt, since(t0));
+      const Eigen::MatrixXd W = Z.middleRows(nu, 3 * nt);
+      for (double sc : scales) {
+        if (sc == 0.0) { sols.push_back(Y); continue; }
+        Eigen::MatrixXd S = sc * W;
+        S.diagonal().array() += 1.0;
+        const DenseLU ls(std::move(S));
+        Eigen::MatrixXd Xs = Y;
+        gemmAdd(-sc, Z, ls.solve(Y.middleRows(nu, 3 * nt)), Xs);
+        sols.push_back(std::move(Xs));
+      }
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    res.t_factor = std::chrono::duration<double>(t1 - t0).count();
+    std::vector<RveResult> out;
+    for (size_t si = 0; si < scales.size(); ++si) {
+    const double scale = springs ? scales[si] : 0.0;
+    const Eigen::MatrixXd& Xs = sols[si];
+    res.solutions.clear();
+    res.hill_mandel = 0.0;
     // averages and the boundary solutions per region
     res.cases.fill(RveCaseResult{});
     Mat6 Sig;
@@ -431,17 +468,18 @@ class BeadCell {
         for (int j = 0; j < nb; ++j) {
           const int g = u0[i] + R.bdof[j];
           Vec3 u = Xs.col(k).segment<3>(3 * ucol[g]) + Ek * shift[g];
-          for (const auto& [col, C] : jump[g]) u += C * Xs.col(k).segment<3>(nu + 3 * col);
+          for (const auto& [col, C] : jump[g]) u += scale * C * Xs.col(k).segment<3>(nu + 3 * col);
           kv.segment<3>(3 * j) = u;
           s.u.segment<3>(3 * R.bdof[j]) = u;
         }
         for (int j = 0; j < int(R.tcon.size()); ++j) kv.segment<3>(3 * (nb + j)) = s.t.segment<3>(3 * R.tcon[j]);
         const Eigen::VectorXd x = eliminated(R, kv, k);
-        for (int g = 0; g < R.mesh.ndof; ++g)
-          if (R.ecol_u[g] >= 0) s.u.segment<3>(3 * g) = x.segment<3>(3 * R.ecol_u[g]) + Ek * R.eshift[g];
+        for (int g = 0; g < R.mesh.ndof; ++g)  // free-surface dofs (dropped rows) stay 0: t = 0 there
+          if (R.ecol_u[g] >= 0 && R.xpos[R.ecol_u[g]] >= 0)
+            s.u.segment<3>(3 * g) = x.segment<3>(3 * R.xpos[R.ecol_u[g]]) + Ek * R.eshift[g];
         for (int d = 0; d < R.ts.ndof; ++d)
-          if (R.ecol_t[d] >= 0) s.t.segment<3>(3 * d) = R.esign_t[d] * x.segment<3>(3 * R.ecol_t[d]);
-        accumulate(R, s, c, int(i));
+          if (R.ecol_t[d] >= 0) s.t.segment<3>(3 * d) = R.esign_t[d] * x.segment<3>(3 * R.xpos[R.ecol_t[d]]);
+        accumulate(R, s, c, int(i), scale);
         res.solutions.push_back(std::move(s));
       }
       c.sigma = (0.5 / V * (c.sigma + c.sigma.transpose())).eval();
@@ -454,7 +492,9 @@ class BeadCell {
     res.C = Sig;  // unit strains: C = Sigma
     res.asymmetry = (res.C - res.C.transpose()).norm() / res.C.norm();
     res.t_solve = std::chrono::duration<double>(std::chrono::steady_clock::now() - t1).count();
-    return res;
+    out.push_back(res);
+    }
+    return out;
   }
 
   // Weld tractions of a solve (FFM stress part with weld laws): one line per Gauss point of every weld + patch (no
@@ -671,6 +711,16 @@ class BeadCell {
         r.esign_t[om + found] = -1.0;
       }
     }
+    r.xpos.assign(r.ne, -1);
+    for (const BeadPair* P : cont)
+      for (int p : {P->pm, P->pp})
+        for (int g : r.mesh.l2g[p])
+          if (r.ecol_u[g] >= 0) r.xpos[r.ecol_u[g]] = 0;
+    for (int d = 0; d < r.ts.ndof; ++d)
+      if (r.ecol_t[d] >= 0) r.xpos[r.ecol_t[d]] = 0;
+    r.xsel.clear();
+    for (int e = 0; e < r.ne; ++e)
+      if (r.xpos[e] >= 0) { r.xpos[e] = int(r.xsel.size()); r.xsel.push_back(e); }
     r.rowpos.assign(rows.size(), -1);
     const int nb = int(r.bdof.size());
     for (int j = 0; j < nb; ++j) r.rowpos[r.bdof[j]] = j;
@@ -732,9 +782,9 @@ class BeadCell {
     std::string path;
     if (!cache_dir.empty()) {
       std::filesystem::create_directories(cache_dir);
-      path = cache_dir + "/" + operatorKey(r.file, "bead_weld_a" + std::to_string(r.axis), mat, opt, popt) + ".bin";
+      path = cache_dir + "/" + operatorKey(r.file, "bead_weldc_a" + std::to_string(r.axis), mat, opt, popt) + ".bin";
       r.reduced_from_cache = loadMatrices(path, {&r.K, &r.F, &r.Xk, &r.Xf}) && r.K.rows() == 3 * int(krow.size()) &&
-                             r.K.cols() == nk && r.Xk.rows() == 3 * r.ne;
+                             r.K.cols() == nk && r.Xk.rows() == 3 * int(r.xsel.size());
       if (r.reduced_from_cache) { r.t_reduce = since(t0); return; }
     }
     OperatorRows A;
@@ -750,8 +800,9 @@ class BeadCell {
     Eigen::MatrixXd rhs(3 * r.ne, nk + 6);
     rhs << -Ak, F;
     const Eigen::MatrixXd X = lu.solve(std::move(rhs));
-    r.Xk = X.leftCols(nk);
-    r.Xf = X.rightCols(6);
+    const std::vector<int> xr = expand3(r.xsel);
+    r.Xk = X(xr, Eigen::seqN(0, nk));
+    r.Xf = X(xr, Eigen::seqN(nk, 6));
     Eigen::MatrixXd KF(Akk.rows(), nk + 6);
     KF << Akk, -Fk;
     gemmAdd(1.0, Ake, X, KF);  // [K, -F] = [A_kk, -F_k] + A_ke [Xk, Xf]
@@ -766,7 +817,7 @@ class BeadCell {
   void copyRotated(const BeadRegion& S, BeadRegion& T) const {
     if (S.copy_of >= 0) throw std::runtime_error("BeadCell: copy of a copy");
     if (S.mesh.ndof != T.mesh.ndof || S.ts.ndof != T.ts.ndof || S.bdof != T.bdof || S.tcon != T.tcon ||
-        S.ecol_u != T.ecol_u || S.ecol_t != T.ecol_t || S.rowpos != T.rowpos)
+        S.ecol_u != T.ecol_u || S.ecol_t != T.ecol_t || S.rowpos != T.rowpos || S.xsel != T.xsel)
       throw std::runtime_error("BeadCell: copied region does not match its source (patches or connections)");
     const Vec3 d = T.mesh.dof_point[0] - T.R * S.mesh.dof_point[0];
     for (int g = 0; g < S.mesh.ndof; ++g)
@@ -796,7 +847,7 @@ class BeadCell {
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - t).count();
   }
 
-  void accumulate(const BeadRegion& R, const BoundarySolution& s, RveCaseResult& c, int ri) const {
+  void accumulate(const BeadRegion& R, const BoundarySolution& s, RveCaseResult& c, int ri, double scale) const {
     const GaussRule g = gaussLegendre(std::max(6, opt.n_gauss / 2));
     PatchEval E;
     std::vector<int> plus_kind(R.mesh.patches.size(), -1);  // + side of a pair: index into pairs
@@ -811,7 +862,7 @@ class BeadCell {
             const Vec3 u = s.displacement(e.patch, E), t = s.traction(e.patch, E);
             c.sigma += w * t * E.x.transpose();
             c.energy += w * t.dot(u);
-            if (plus_kind[e.patch] >= 0) c.energy += w * t.dot(compliance(pairs[plus_kind[e.patch]]) * t);
+            if (plus_kind[e.patch] >= 0) c.energy += scale * w * t.dot(compliance(pairs[plus_kind[e.patch]]) * t);
           }
   }
 };
