@@ -253,3 +253,34 @@ class TestBeadCell(unittest.TestCase):
             self.assertLess(abs(c["eng"]["E2"] / r["eng"]["E2"] - 1), 0.01)
             Cz, _ = self._run(self.bead_cell, [f, "--axes", "x", "--crack", "P:y:-1:z=0:0"], d, "full")
             self.assertLess(abs(Cz[1, 1]), 1e-6 * r["eng"]["E2"])   # no lateral weld: no sigma_22
+
+    def test_00_weld_tractions(self):
+        """Weld tractions (bead_cell --tractions, FFM stress part): the force on each weld per unit macro stress is
+        the net section exactly (the weld is the cell's only load path across its plane), perfect or spring; a soft
+        weld carries a near-uniform traction (edge mean within 5 % of the net section); the D -> 0 energy of a spring
+        weld, G(0) = 1/2 t.C_w.t, agrees with the first narrowed cell (D = 0.05 half) within 10 %."""
+        import tempfile
+        from rve import strength
+        from rve.beads import bead_00
+        from make_geometries import write_dat
+        g = dict(G, alpha=15.0, wc=math.sqrt(0.5), L=G["h"])
+        fams = strength.families("00", G["w"], G["h"], G["b_int"], G["b_lat"], G["h"])
+        with tempfile.TemporaryDirectory() as d:
+            for kappa in (None, 0.3):
+                S, T = strength.bead_compliance("00", g, 1, 1, d, "k%s" % kappa, 2200.0, 0.35, kappa, True)
+                wm = strength.weld_means(T, S, "00", fams, lambda F: [0.05 * F["half"], F["half"]])
+                for name, F in fams.items():
+                    tn, ts, tedge = wm[name]
+                    j = F["cuts"][0]
+                    self.assertAlmostEqual(tn[-1, j] / (F["lig"]), 1.0, places=3)
+                    if kappa is not None:
+                        self.assertLess(abs(tedge[j] @ F["normal"] / F["lig"] - 1), 0.05)
+                if kappa is not None:
+                    F = fams["lat"]
+                    tedge = wm["lat"][2]
+                    Q = tedge @ strength.spring_compliance(F["normal"], kappa, 2200.0, 0.35, G["w"]) @ tedge.T
+                    D = 0.05 * F["half"]
+                    Sn = strength.bead_compliance("00", dict(g, **F["change"](D)), 1, 1, d, "n", 2200.0, 0.35, kappa)
+                    V = G["w"] * G["h"] * G["h"]
+                    ratio = (Sn - S)[1, 1] * V / F["area"](D) / Q[1, 1]
+                    self.assertLess(abs(ratio - 1), 0.1)

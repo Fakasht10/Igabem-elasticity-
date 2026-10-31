@@ -457,6 +457,42 @@ class BeadCell {
     return res;
   }
 
+  // Weld tractions of a solve (FFM stress part with weld laws): one line per Gauss point of every weld + patch (no
+  // cross-sections, no debonded patches): pair axis, internal flag, x (3), area weight, outward unit normal of the +
+  // region (3), then the + side traction (3) of each of the six unit macro strains (18). Each element cell carries
+  // an ng x ng Gauss rule, so the strip means over a debond depth converge with the mesh.
+  void weldTractions(const RveResult& r, std::ostream& os, int ng = 6) const {
+    const GaussRule g = gaussLegendre(ng);
+    PatchEval E;
+    const size_t nr = regions.size();
+    char buf[64];
+    for (const BeadPair& P : pairs) {
+      if (continuation(P) || cracked(P)) continue;
+      const BeadRegion& R = regions[P.rp];
+      for (const Element& e : R.mesh.elements) {
+        if (e.patch != P.pp) continue;
+        for (const Rect& Rc : e.cells)
+          for (size_t a = 0; a < g.x.size(); ++a)
+            for (size_t b = 0; b < g.x.size(); ++b) {
+              R.mesh.patches[e.patch].evalSpan(e.su, e.sv, Rc.u0 + Rc.du() * g.x[a], Rc.v0 + Rc.dv() * g.x[b], E);
+              const Vec3 nv = E.normal();
+              const double w = g.w[a] * g.w[b] * Rc.du() * Rc.dv() * nv.norm();
+              const Vec3 n = (nv * R.mesh.normal_sign).normalized();
+              os << P.axis << ' ' << int(P.internal);
+              for (int c = 0; c < 3; ++c) { std::snprintf(buf, sizeof buf, " %.10g", E.x(c)); os << buf; }
+              std::snprintf(buf, sizeof buf, " %.10g", w);
+              os << buf;
+              for (int c = 0; c < 3; ++c) { std::snprintf(buf, sizeof buf, " %.8g", n(c)); os << buf; }
+              for (int k = 0; k < 6; ++k) {
+                const Vec3 t = r.solutions[k * nr + P.rp].traction(e.patch, E);
+                for (int c = 0; c < 3; ++c) { std::snprintf(buf, sizeof buf, " %.10g", t(c)); os << buf; }
+              }
+              os << '\n';
+            }
+      }
+    }
+  }
+
  private:
   double tol_ = 1e-12;
 

@@ -821,6 +821,30 @@ within 2.6 % (and exactly x-y symmetric), its 18 energy cells in 128 s against 2
 - `bead_cell A.dat B.dat --copy 1:0:90 --axes x,y --weld z:Kn:Kt --weld-int z:Kn:Kt --json out.json`
   (`--axes` names each bead's filament axis: its own cross-section pair is never a weld).
 
+#### Weld springs in the bond strength (`strength --kappa`, `rve.weld_strength`)
+
+With a spring on every weld both FFM parts see it. The stress part reads the weld tractions of the intact bead cell
+(`bead_cell --tractions`: + side traction at Gauss points of every weld, six unit strains), not the interior stress
+of the single-region cell: for a finite spring they are bounded at the bond tips, and the mean over a debond depth D
+is a plain area mean (no Williams fit). The energy part is the compliance of the spring-welded cell with the bond
+narrowed by 2D; at D -> 0 it is the weak-interface limit G(0) = 1/2 t.C_w.t at the bond edge. The bead operators do
+not depend on the weld law, so a kappa sweep is one cold run and then cached solves.
+
+- Checks: the weld force per unit macro stress is the net section exactly (0.09 / 0.18 / 0.36 mm^2 on the 0/0 and
+  0/90 welds); with perfect welds the weld-traction stress part on a grade-2 bead cell gives the strengths of the
+  grade-4 Williams-fit route within 0.3-2.8 % (0/0, 4.8 s vs 35 s) and 0.1 % for 0/90 X; G(0) matches the first
+  narrowed cell within 6 %; kappa 1000 recovers the perfect bond within 1 %.
+- `python3 -m rve.weld_strength` (T 30.3 MPa, Gc 0.05 N/mm, `data/results/fig_weld_strength.*`): with T and Gc
+  held fixed the weld stiffness moves the onset strength by about 10 %. Stiff welds (kappa > 30) are the perfect
+  bond; intermediate ones are weakest (0/0 Y and Z -10 % at kappa 3, 0/90 X -13 % at kappa 30: the tip traction is
+  still concentrated and the spring stores energy that a debond releases); soft welds carry a near-uniform traction
+  and tend to the net-section limit T / lig. 0/90 X rises to 3.9x at kappa 0.3 because soft lateral welds hand
+  sigma_11 to the A filaments; bulk filament failure is not modelled, so read that branch as "the bond is not the
+  weak link". A poorly bonded print is therefore weaker through T, Gc and the bond width, not through its weld
+  stiffness; kappa itself is calibrated from one measured E3 (`rve.welds`).
+- `python3 -m rve.strength 090 out.json --kappa 10 --grade 2 [--T ...] [--Gc ...]`; `--stress weld` without
+  `--kappa` gives the perfect-bond strength from the weld tractions.
+
 ## Next steps
 
 1. Exterior Neumann (Eshelby) patch test; move geometry
