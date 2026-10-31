@@ -244,6 +244,23 @@ class Cards(unittest.TestCase):
         self.assertNotIn("weibull", abs_)                                    # TCD only
         self.assertIn("Ng-Susmel", abs_["domain"])
 
+    def test_fortus_card_reproduces_its_bars(self):
+        """abs-m30-fortus-orient on uniform tension reproduces Kinski et al. 2023 Table 2: flat 0/90 = the isotropic
+        ABS-M30 strength, flat +-45 0.979 of it, upright 0.855."""
+        c = A.load_card("abs-m30-fortus-orient")["tcd"]
+        d = np.linspace(0.0, 5.0, 11)
+
+        def strength(build, angles, load):
+            sig = np.zeros((len(d), 3, 3))
+            sig[:, load, load] = 1.0
+            pr = A.Print(build_dir=build, angles_deg=angles, ref_dir=(1, 0, 0) if load == 2 else
+                         tuple(np.eye(3)[load]))
+            return 1.0 / max(r["ratio"] for r in A.tcd(sig, d, c, pr)[0].values())
+        flat = strength((0, 0, 1), (0.0, 90.0), 0)
+        self.assertAlmostEqual(flat, 63.0, places=9)
+        self.assertAlmostEqual(strength((0, 0, 1), (45.0, -45.0), 0) / flat, 35.75 / 36.5, places=9)
+        self.assertAlmostEqual(strength((0, 0, 1), (0.0, 90.0), 2) / flat, (30.5 + 31.25) / (35.75 + 36.5), places=9)
+
     def test_layup(self):
         self.assertEqual(A.parse_layup("30"), (30.0, -60.0))
         self.assertEqual(A.parse_layup("45/-45"), (45.0, -45.0))

@@ -18,7 +18,7 @@ TCD / Energy TCD / ASED, Weibull) running on IgBEM solutions. The criteria code 
 | `prob.py` | failure probability of a predicted load: physical scatter m_s from replicates, model error as a family random effect, P_f(F), load at P |
 | `pla_orient.py` | G3/G4: one card for all rasters on the 54 notched plates of Ahmed & Susmel (PLA) or Ng & Susmel (ABS, `--material abs`), three models, campaign split and leave-one-family-out, band coverage |
 | `cicero_orient.py` | G6: one per-mode TCD card for the three Cicero ABS layups, in sample and leave-one-layup-out |
-| `data/orientation_cards.json` | the fitted cards, their scatter blocks and domains (`*-demo-L` is a demonstration, not data) |
+| `data/orientation_cards.json` | the fitted cards, their scatter blocks, sources and domains (`*-demo-L` is a demonstration, not data; `abs-m30-fortus-orient` has the first measured layer-bond mode) |
 | `test_aniso.py` | G1 (mode P bit-identical to `weibull.py`), G2 (off-axis bar closed form), G5 (PETG +-45), G8, kernels (ctest `failure_orientation_unit`) |
 
 ## Local changes to the vendored files
@@ -56,6 +56,7 @@ PLA numbers here were on those roots and are superseded):
 | TCD parity with nurb-fea-tcd | isotropic sigma0 at L 2.37 mm on the same 54 plates: point 58.72 MPa (nurb 58.53), line 54.81 (54.97) |
 | G3 PLA, one card for 0/30/45, leave-one-family-out RMSE | TCD line F+T 9.1 %, TCD line isotropic 9.4 %, Weibull F+T with support 9.4 %, per-angle isotropic Weibull 9.8 %, TCD point F+T 12.5 % |
 | ABS, Ng & Susmel 54 plates, one card for 0/30/45 (`--material abs`, same fields) | TCD parity with nurb-fea-tcd: point sigma0 22.67 MPa (22.5), line 22.25 (22.2) at L 4.07 mm. LOFO: TCD line isotropic 15.0 %, Weibull F+T with support 17.0 %, per-angle Weibull 17.0 %, TCD line F+T 17.3 %. The modes do not pay: replicate scatter is 11.5 % (m_s 11.1) and the raster effect (about 8 % from 0 to 45 deg) is within it. The Cicero card over-predicts these plates by 42 % |
+| ABS-M30, Fortus (`abs-m30-fortus-orient`) | in-plane notch constants of ABS-M30-iso (K 75 MPa sqrt(mm), sigma_0 63); Y/S12 1.78 and layer bond Z = 0.855 XY from Kinski et al. 2023 plain bars (Table 2, 5 per cell); the card reproduces those bars exactly (test). On the US plate: upright 0.855 of flat, worst build about 33 deg from the load axis at 0.79 (interlaminar shear, Z/S13 assumed = Y/S12), on edge 1.00 (bars: 1.05). Scatter m_s about 70, a resolution-limited bound, against 11.1 on the Ng & Susmel process |
 | G4 PLA 90 % band (TCD line F+T) | covers 87 % with scatter + model error (scatter alone 41 %) |
 | G6 Cicero ABS, one TCD card for 3 layups | -8.9 .. +7.5 % (rms 4.2 %), leave-one-layup-out rms 7.5 % (per-layup isotropic, recalibrated: 7.7 %) |
 | G5 out-of-plane | no build-tilt data found; in-plane PETG +-45 (Popa 2025): -3.2 % |
@@ -85,6 +86,6 @@ python3 -m failure.pla_orient --hmat    # fields 2-4 min per family once (17 min
 python3 -m failure.pla_orient --material abs   # same cached fields, fit ~17 min with LOFO
 python3 -m failure.cicero_orient        # 4 solves ~1 min each once, fit seconds
 python3 -m igamodel.gate_orient         # weibull node with an orientation card = pla_orient (bitwise)
-python3 plot_orient.py                  # figures + VTU; the 1500-direction sweep ~5 min, cached
+python3 plot_orient.py                  # figures + VTU (PLA demo map ~5 min, cached; ABS-M30 TCD map seconds)
 python3 -m unittest failure.test_aniso
 ```
