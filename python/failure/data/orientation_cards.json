@@ -117,6 +117,6 @@
     "rms_pct": 7.673305579339694
    }
   },
-  "domain": "Flat-printed ABS of the Cicero process, layups 0/90, 30/-60, 45/-45, SENB bending. Out of calibration for the Ng-Susmel nominal-tension ABS (about +29 % over-prediction, nurb-fea-tcd 2D study). No Weibull calibration; no layer-bond data."
+  "domain": "Flat-printed ABS of the Cicero process, layups 0/90, 30/-60, 45/-45, SENB bending. Out of calibration for the Ng-Susmel nominal-tension ABS (about +29 % over-prediction, nurb-fea-tcd 2D study). No Weibull calibration; no layer-bond data. On the Ng & Susmel ABS tension plates (54, 0/30/45 rasters, results/failure/abs_orient.json) this card over-predicts by 42 % on average (0 deg +27 %, 45 deg +55 %): a different process, not a transferable card."
  }
 }
