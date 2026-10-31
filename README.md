@@ -766,6 +766,24 @@ card (`failure/aniso.py`): S0_L / S0_T = 1.86 and shear ratios 0.96 / 1.00 for t
 take the absolute scale from one Z coupon. Results and figures: `python/rve/data/results`,
 `python3 -m rve.figures outdir`.
 
+#### Printed-material card: API, MCP tool, interactive page (`rve.api`, `rve.mcp_server`, `rve.card_page`)
+
+A precomputed grid of bead cells (`python3 -m rve.grid`, 5 x 5 x 4 geometries over h/w 0.3-0.75, b_int/w 0.3-0.9,
+b_lat/h 0.15-0.7, notch 5 deg; 0/0 at nu 0.30/0.35/0.40, 0/90 at 0.35 with a grade-2 mesh correction; 48 min once)
+turns a card query into an interpolation: material + layup (aligned or theta/theta-90) + raster angle + bead geometry
+in, orthotropic C in the part frame, engineering constants, E(theta), porosity, net-section bond strengths and an
+`aniso.py` card out, in milliseconds. Porosity is an output; `bond="from_porosity"` solves b_int from it and flags the
+answer. Against six direct solves off the grid the interpolation is within 1-2 % (worst 5.3 %, 0/0 E3 between b_int
+nodes); `accuracy.max_interpolation_rel` (3 x |linear - cubic|) bounded every one.
+
+- Python: `rve.api.printed_card("PLA", layup="cross", raster_deg=45, w=0.45, h=0.2, b_int=0.27, b_lat=0.06)`
+- MCP (stdio): `cd python && claude mcp add igabem-rve -- python3 -m rve.mcp_server` (tools `printed_material`,
+  `list_materials`, `grid_range`; MCP SDK 2.x)
+- Page: `python3 -m rve.card_page card.html` writes a self-contained parameter card (same engine in JavaScript, tested
+  against the API).
+- The ν = 0.35 cells keep their six boundary solutions (`rve_cell --save-solutions`, read back with
+  `--load-solutions --points` without re-solving) for interior fields, e.g. training a deep material network.
+
 ## Next steps
 
 1. Exterior Neumann (Eshelby) patch test; move geometry

@@ -25,7 +25,8 @@ Outputs (dict, JSON-ready)
                E Gc / T^2 is much longer than the bond (every polymer weld measured so far; the FFM run of
                rve.strength reproduces them to 2-4 %); outside that regime they are flagged as upper bounds
   card         {"rve": ..., "modes": {"F", "T", "L"}} for failure/aniso.py
-  accuracy     interpolation error estimate (linear vs cubic) per constant, the mesh correction applied, flags
+  accuracy     interpolation error estimate per constant (|linear - cubic|; max_interpolation_rel = 3x its max,
+               which bounded the error at six off-grid direct solves), the mesh correction applied, flags
 
 The grid spans h / w 0.3-0.75, b_int / w 0.3-0.9, b_lat / h 0.15-0.7 (notch angle 5 deg); queries outside it are
 refused, not extrapolated.
@@ -203,6 +204,8 @@ def printed_card(material_id, layup="cross", raster_deg=0.0, w=None, h=None, b_i
                 geometry=dict(w=w, h=h, b_int=b_int, b_lat=b_lat, h_over_w=hn, b_int_over_w=bn, b_lat_over_h=beta),
                 C_MPa=C.tolist(), C_ply_MPa=Cp.tolist(), engineering=e,
                 E_theta=dict(theta_deg=th.tolist(), E_MPa=E_theta), strength=st, regime=regime, card=card,
-                accuracy=dict(interpolation_rel=err, max_interpolation_rel=max(err.values()),
+                # 3 x |linear - cubic|: bounds the error against direct solves at six off-grid cells (worst 5.3 %,
+                # 0/0 E3 between the b_int nodes; typical 1-2 %), see README
+                accuracy=dict(interpolation_rel=err, max_interpolation_rel=3 * max(err.values()),
                               mesh="0/0 refine 1 grade 2; 0/90 grade 1 with the grade-2 corner correction"),
                 flags=flags)

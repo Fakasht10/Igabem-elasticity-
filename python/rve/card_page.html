@@ -171,7 +171,7 @@ function render(){
   polar(r.Et,solid);}
 function polar(Et,solid){const svg=$("polar"),cx=160,cy=160,R=130,mx=Math.max(solid,...Et.map(p=>p[1]));const sc=v=>v/mx*R;
   let h="";[0.25,0.5,0.75,1].forEach(q=>{h+=`<circle cx="${cx}" cy="${cy}" r="${R*q}" fill="none" stroke="var(--grid)" stroke-width="1"/>`;
-    h+=`<text x="${cx+4}" y="${cy-R*q-2}">${f(mx*q)}</text>`;});
+    h+=`<text x="${cx+R*q*Math.cos(0.39)+3}" y="${cy-R*q*Math.sin(0.39)-3}" font-size="10">${f(mx*q)}</text>`;});
   for(let t=0;t<360;t+=45){const a=t*Math.PI/180;h+=`<line x1="${cx}" y1="${cy}" x2="${cx+R*Math.cos(a)}" y2="${cy-R*Math.sin(a)}" stroke="var(--grid)"/>`;
     h+=`<text x="${cx+(R+14)*Math.cos(a)}" y="${cy-(R+14)*Math.sin(a)+4}" text-anchor="middle">${t}°</text>`;}
   h+=`<circle cx="${cx}" cy="${cy}" r="${sc(solid)}" fill="none" stroke="var(--muted)" stroke-dasharray="4 3" stroke-width="1.2"/>`;
