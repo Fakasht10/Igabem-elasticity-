@@ -791,19 +791,27 @@ and the regions are joined on matched patches (periodic face pairs and internal 
 u+ = u- + E s - C t+ (C = K^-1, zero = perfect bond). Unknowns are one displacement per tied dof class and the weld
 tractions; the class representative sits on the - side so every region keeps its own SBIE rows.
 
-Each bead type is assembled and condensed once: the batched dense assembly of `src/fast/dense_sbie.hpp`, then the
-free-surface dofs (t = 0) are eliminated by one LU (Schur complement on the weld dofs and tractions), and the
-condensed blocks are cached on disk (`--cache dir`). A rotated copy (`--copy`, the 0/90 cell's B = A turned 90 deg)
-reads its source's blocks turned (R B R^T) while the weld system is built, so it has no assembly, no LU and no
-storage. LU and GEMM go through LAPACK/BLAS (OpenBLAS) when CMake finds them. 0/90 cell, 4 cores:
+Each bead type is assembled and condensed once onto its weld unknowns: the batched dense assembly of
+`src/fast/dense_sbie.hpp`, then one LU eliminates the free surface (t = 0) and the bead's own cross-sections (the
+periodic pair normal to its filament axis, `--axes`), leaving the weld operator and the macro-strain load; it is
+cached on disk (`--cache dir`). A rotated copy (`--copy`, the 0/90 cell's B = A turned 90 deg) reads its source's
+blocks turned (R B R^T, load columns turned in Voigt space), so it has no assembly, no LU and no storage. LU and
+GEMM go through LAPACK/BLAS (OpenBLAS) when CMake finds them. 0/90 cell, 4 cores:
 
-| grade | dofs | weld unknowns | first run | cached | before (one dense system) |
-|---|---|---|---|---|---|
-| 2 | 4004 | 7680 | 11 s | 3.5 s | 60 s |
-| 3 | 5764 | 10632 | 37 s | 7.4 s | 155 s |
+| grade | weld unknowns | first run | cached | one dense system (before) |
+|---|---|---|---|---|
+| 2 | 4638 | 9.0 s | 1.7 s | 60 s |
+| 3 | 6414 | 26 s | 3.7 s | 155 s |
 
-The H-matrix path (PR #22) does not pay at this size: a bead has 2-3k dofs, and the weld system is a dense coupling
-of most of the cell's surface. It becomes the right tool for cells with many beads.
+ The H-matrix path (PR #22) does not pay at 2-3k dofs
+per bead; it becomes the right tool for cells with many beads.
+
+Debonds: `--crack P|I:a:r:c=v[,c=v]:lim` unpairs the weld patches beyond the front (crack faces traction free;
+Hill-Mandel exact), on cells generated with `beads.py bead_00/bead_090(..., debonds=fractions)` (C0 cuts at each
+depth, so a debond is whole patches). On 0/0 the true crack and the bond narrowed by the same depth give E2 within
+0.1 %; the cuts propagate around the bead (3-5x the dofs), so for finite fracture mechanics `rve.strength --cells
+bead` takes the energy from narrowed-bond bead cells: 0/0 strengths within 0.8 % of the single-region cells, 0/90
+within 2.6 % (and exactly x-y symmetric), its 18 energy cells in 128 s against 240 s.
 
 - Perfect welds reproduce the single-region cell: 0/0 identical C; 0/90 within 1.5 % at grade 2, 0.5 % at grade 3
   (E3 1099 vs 1105 MPa). Hill-Mandel holds with the interface energy t.C.t.

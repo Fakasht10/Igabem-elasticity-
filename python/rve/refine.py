@@ -6,6 +6,12 @@ of what its members ask for, uniform spans plus geometric grading toward a param
 marked (graded(x) True: e.g. a bond tip, where the stress is singular). Inserting each class's knots into all its
 members keeps every shared edge identical, so the mesh stays conforming (and the + faces of a periodic cell stay
 translated copies of the - faces when the marking is periodic).
+
+Fronts (debond fronts of a weld, for finite fracture mechanics on bead-boundary cells): a front (a, k, c) puts a C0
+line (knot multiplicity = degree) at x_k = c in the planar patches normal to axis a that span it, propagated
+through their chord classes like any knot, and split_c0 then cuts every patch at its C0 lines. Each debond depth
+is then a set of whole weld patches, so a crack is unpairing patches (src/bead_cell.hpp WeldCrack) on one mesh and
+one condensed operator for all depths, with tractions discontinuous at the front.
 """
 import numpy as np
 
@@ -69,9 +75,34 @@ def graded_knots(level, near0, near1, grade, q=0.5):
     return t
 
 
-def refine(patches, level=1, graded=None, grade=0, q=0.5, tol=1e-7):
-    """Conforming refinement: uniform `level` plus `grade` geometric knots toward ends marked by graded(x)."""
+def _front_params(P, d, fronts, tol):
+    """Parameters t in (0, 1) along direction d of a planar patch P where it crosses a front (a, k, c)."""
+    X = P.Pw[..., :3] / P.Pw[..., 3:4]
+    out = set()
+    for a, k, c in fronts:
+        if np.ptp(X[..., a]) > tol:
+            continue
+        at = (lambda t: evaluate(P, t, 0.5)[0]) if d == 0 else (lambda t: evaluate(P, 0.5, t)[0])
+        x0, x1 = at(0.0)[k], at(1.0)[k]
+        if abs(x1 - x0) < tol or not min(x0, x1) + tol < c < max(x0, x1) - tol:
+            continue
+        t = (c - x0) / (x1 - x0)
+        if abs(at(t)[k] - c) > 1e3 * tol:
+            raise ValueError("front on a patch whose parametrization is not linear across it")
+        out.add(round(t, 12))
+    return out
+
+
+def refine(patches, level=1, graded=None, grade=0, q=0.5, tol=1e-7, fronts=()):
+    """Conforming refinement: uniform `level` plus `grade` geometric knots toward ends marked by graded(x), plus
+    C0 lines at the fronts [(normal axis, coordinate, value)]."""
     cls = chord_classes(patches, tol)
+    c0 = {}
+    for k, P in enumerate(patches):
+        for d in (0, 1):
+            ts = _front_params(P, d, fronts, tol)
+            r, f = cls[2 * k + d]
+            c0.setdefault(r, set()).update((1 - t) if f else t for t in ts)
     want = {}
     for k, P in enumerate(patches):
         for d in (0, 1):
@@ -94,8 +125,10 @@ def refine(patches, level=1, graded=None, grade=0, q=0.5, tol=1e-7):
         Pw, U, V = P.Pw.copy(), np.asarray(P.U, float), np.asarray(P.V, float)
         for d in (0, 1):
             r, f = cls[2 * k + d]
-            ts = sorted((1 - t) if f else t for t in want[r])
-            for t in ts:
+            deg = P.p if d == 0 else P.q
+            ts = sorted((1 - t) if f else t for t in want[r] | c0.get(r, set()))
+            ts += [t for t in sorted((1 - t) if f else t for t in c0.get(r, set())) for _ in range(deg - 1)]
+            for t in sorted(ts):
                 if d == 0:
                     rows = [insert_knot_curve(P.p, U, Pw[j], t) for j in range(Pw.shape[0])]
                     U, Pw = rows[0][0], np.stack([x[1] for x in rows], axis=0)
@@ -103,4 +136,36 @@ def refine(patches, level=1, graded=None, grade=0, q=0.5, tol=1e-7):
                     cols = [insert_knot_curve(P.q, V, Pw[:, i], t) for i in range(Pw.shape[1])]
                     V, Pw = cols[0][0], np.stack([x[1] for x in cols], axis=1)
         out.append(type(P)(P.p, P.q, U, V, Pw))
+    return out
+
+
+def _split(P, d, t):
+    """Cut a patch at an interior knot t of full multiplicity (C0) in direction d; knots renormalized to [0, 1]."""
+    deg, K = (P.p, np.asarray(P.U)) if d == 0 else (P.q, np.asarray(P.V))
+    k = int(np.searchsorted(K, t - 1e-12))
+    i = k - 1   # the control point at the knot
+    left = np.concatenate([K[:k + deg], [t]])
+    right = np.concatenate([[t], K[k:]])
+    nl = lambda v: (v - v[0]) / (v[-1] - v[0])  # noqa: E731
+    if d == 0:
+        A = type(P)(P.p, P.q, nl(left), P.V, P.Pw[:, :i + 1])
+        B = type(P)(P.p, P.q, nl(right), P.V, P.Pw[:, i:])
+    else:
+        A = type(P)(P.p, P.q, P.U, nl(left), P.Pw[:i + 1])
+        B = type(P)(P.p, P.q, P.U, nl(right), P.Pw[i:])
+    return A, B
+
+
+def split_c0(patches):
+    """Cut every patch at its interior C0 lines (knots of multiplicity >= degree)."""
+    out, todo = [], list(patches)
+    while todo:
+        P = todo.pop()
+        for d, (deg, K) in enumerate(((P.p, np.asarray(P.U)), (P.q, np.asarray(P.V)))):
+            inner = [t for t in np.unique(K) if 0 < t < 1 and np.sum(np.abs(K - t) < 1e-12) >= deg]
+            if inner:
+                todo += _split(P, d, inner[0])
+                break
+        else:
+            out.append(P)
     return out

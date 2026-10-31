@@ -257,7 +257,7 @@ def cell_090(w, h, b_int, b_lat, alpha=15.0, wc=math.sqrt(0.5), refine=2, grade=
 
 
 # ------------------------------------------------------------------ single bead (bead-boundary cells)
-def bead_00(w, h, b_int, b_lat, alpha=15.0, wc=math.sqrt(0.5), L=None, refine=2, grade=0):
+def bead_00(w, h, b_int, b_lat, alpha=15.0, wc=math.sqrt(0.5), L=None, refine=2, grade=0, debonds=()):
     """One closed bead segment, axis along x through the origin, x in [0, L]: the 0/0 cell bounded by the welds
     instead of by planes through the bead axes. Its bounding box [0, L] x [-w/2, w/2] x [-h/2, h/2] carries
     exactly the connection faces: the in-layer weld strips (y = +-w/2, height b_lat), the interlayer weld strips
@@ -278,10 +278,23 @@ def bead_00(w, h, b_int, b_lat, alpha=15.0, wc=math.sqrt(0.5), L=None, refine=2,
     ex = [1.0, 0, 0]
     tips = [((0, ss * w / 2, sz * b_lat / 2), ex) for ss in (-1, 1) for sz in (-1, 1)]
     tips += [((0, ss * b_int / 2, sz * h / 2), ex) for ss in (-1, 1) for sz in (-1, 1)]
-    return conforming_refine(out, refine, tip_marker(tips), grade)
+    fronts = [(1, 2, s * (1 - f) * b_lat / 2) for f in debonds for s in (-1, 1)]
+    fronts += [(2, 1, s * (1 - f) * b_int / 2) for f in debonds for s in (-1, 1)]
+    return _with_fronts(out, refine, tip_marker(tips), grade, fronts)
 
 
-def bead_090(w, h, b_int, b_lat, alpha=15.0, wc=math.sqrt(0.5), refine=2, grade=0):
+def _with_fronts(P, refine, graded, grade, fronts):
+    """Conforming refinement, plus C0 cuts at the debond fronts (separate weld patches per debond depth).
+
+    debonds= of bead_00 / bead_090 are depths as fractions of each weld's half width, the same for every weld: a
+    front's knot travels through the corner surfaces into the neighbouring weld at the same parameter, so equal
+    fractions give one set of cuts (and keep the 0/90 square symmetric under its 90 deg turn)."""
+    from rve.refine import split_c0
+    R = conforming_refine(P, refine, graded, grade, fronts=fronts)
+    return split_c0(R) if fronts else R
+
+
+def bead_090(w, h, b_int, b_lat, alpha=15.0, wc=math.sqrt(0.5), refine=2, grade=0, debonds=()):
     """The two beads of a 0/90 bead-boundary cell, (A, B). A: axis x through the origin, x in [-w/2, w/2] (centred
     on the B filament it crosses); B = A turned 90 deg about z and lifted by h (axis y at z = h). The cell box is
     [-w/2, w/2]^2 x [-h/2, 3h/2]. A's top strip crosses B's bottom strip in the interlayer weld square
@@ -307,7 +320,10 @@ def bead_090(w, h, b_int, b_lat, alpha=15.0, wc=math.sqrt(0.5), refine=2, grade=
     tips = [((0, ss * w / 2, sz * b_lat / 2), ex) for ss in (-1, 1) for sz in (-1, 1)]
     tips += [((0, ss * b, sz * h / 2), ex) for ss in (-1, 1) for sz in (-1, 1)]
     tips += [((ss * b, 0, sz * h / 2), [0, 1.0, 0]) for ss in (-1, 1) for sz in (-1, 1)]  # B's bond edges on the square
-    A = conforming_refine(A, refine, tip_marker(tips), grade)
+    b = b_int / 2
+    fronts = [(1, 2, s * (1 - f) * b_lat / 2) for f in debonds for s in (-1, 1)]   # A's lateral welds (B's: turned)
+    fronts += [(2, k, s * (1 - f) * b) for f in debonds for s in (-1, 1) for k in (0, 1)]   # the weld squares
+    A = _with_fronts(A, refine, tip_marker(tips), grade, fronts)
     R = np.array([[0, -1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1.0]])
     B = []
     for P in A:

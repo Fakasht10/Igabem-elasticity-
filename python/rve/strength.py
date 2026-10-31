@@ -43,6 +43,7 @@ from spline_checks import evaluate  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 RVE_CELL = os.environ.get("IGABEM_RVE_CELL", os.path.join(ROOT, "build", "rve_cell"))
+BEAD_CELL = os.environ.get("IGABEM_BEAD_CELL", os.path.join(ROOT, "build", "bead_cell"))
 FRACTIONS = (0.05, 0.15, 0.3, 0.5, 0.7, 0.9)   # debond length / half bond width (compliance runs)
 # D = half bond: the whole ligament. Its mean traction is the net-section stress (an equilibrium check); if the
 # family is the only load path for some macro stress components (CUTS), separating it releases unbounded energy
@@ -180,6 +181,31 @@ def run_cell(dat, out_json, E, nu, points=None):
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
     with open(out_json) as f:
         return json.load(f)
+
+
+def bead_compliance(kind, g, refine, grade, work, tag, E, nu):
+    """Compliance of the bead-boundary cell (app/bead_cell: one region per bead, condensed onto the welds, cached)
+    for the geometry g. 0/90: B is A turned 90 deg (one operator) unless its lateral bond differs (b_lat_b)."""
+    from rve.beads import bead_00, bead_090
+    out = os.path.join(work, tag + ".json")
+    cmd = [BEAD_CELL]
+    if kind == "00":
+        f = os.path.join(work, tag + ".dat")
+        write_dat(f, bead_00(g["w"], g["h"], g["b_int"], g["b_lat"], g["alpha"], g["wc"], g["L"], refine, grade), tag)
+        cmd += [f, "--axes", "x"]
+    else:
+        bb = g.get("b_lat_b") or g["b_lat"]
+        mk = lambda bl: bead_090(g["w"], g["h"], g["b_int"], bl, g["alpha"], g["wc"], refine, grade)  # noqa: E731
+        A = mk(g["b_lat"])
+        B = A[1] if bb == g["b_lat"] else mk(bb)[1]
+        fs = [os.path.join(work, "%s_%s.dat" % (tag, t)) for t in "AB"]
+        for f, P in zip(fs, (A[0], B)):
+            write_dat(f, P, tag)
+        cmd += fs + ["--axes", "x,y"] + (["--copy", "1:0:90"] if bb == g["b_lat"] else [])
+    cmd += ["--E", str(E), "--nu", str(nu), "--ng", "12", "--cache", os.path.join(work, "cache"), "--json", out]
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+    with open(out) as fh:
+        return np.linalg.inv(np.array(json.load(fh)["C"]))
 
 
 # ------------------------------------------------------------------ criterion
@@ -321,6 +347,9 @@ def main(argv=None):
     ap.add_argument("--fractions", type=float, nargs="+", default=list(FRACTIONS),
                     help="debond depths of the compliance cells, as fractions of the half bond")
     ap.add_argument("--check-only", action="store_true", help="intact cell only: profiles and the ligament check")
+    ap.add_argument("--cells", choices=["single", "bead"], default="single",
+                    help="compliance cells: single-region (rve_cell) or bead-boundary (bead_cell: condensed beads, "
+                         "B = A turned; 3-6x faster for 0/90)")
     a = ap.parse_args(argv)
     os.makedirs(a.work, exist_ok=True)
     g = dict(w=a.w, h=a.h, b_int=a.bint, b_lat=a.blat, alpha=a.alpha, wc=a.wc, L=a.h)
@@ -348,7 +377,9 @@ def main(argv=None):
     V = float(np.prod(res0["box"]))
     ge = a.grade if a.grade_energy is None else a.grade_energy
     S0e = S0
-    if ge != a.grade and not a.check_only:   # reference compliance on the energy mesh
+    if a.cells == "bead" and not a.check_only:
+        S0e = bead_compliance(a.kind, g, a.refine, ge, a.work, "bead_intact", a.E, a.nu)
+    elif ge != a.grade and not a.check_only:   # reference compliance on the energy mesh
         dat = os.path.join(a.work, "intact_e.dat")
         build(a.kind, g, a.refine, ge, dat)
         S0e = np.linalg.inv(np.array(run_cell(dat, dat.replace(".dat", ".json"), a.E, a.nu)["bc"]["pbc"]["C"]))
@@ -370,13 +401,16 @@ def main(argv=None):
             continue
         for i, D in enumerate(Ds):
             gi = dict(g, **F["change"](D))
-            dat = os.path.join(a.work, "%s_%d.dat" % (name, i))
-            build(a.kind, gi, a.refine, ge, dat)
-            r = run_cell(dat, dat.replace(".dat", ".json"), a.E, a.nu)
+            if a.cells == "bead":
+                Si = bead_compliance(a.kind, gi, a.refine, ge, a.work, "bead_%s_%d" % (name, i), a.E, a.nu)
+            else:
+                dat = os.path.join(a.work, "%s_%d.dat" % (name, i))
+                build(a.kind, gi, a.refine, ge, dat)
+                Si = np.linalg.inv(np.array(run_cell(dat, dat.replace(".dat", ".json"), a.E, a.nu)["bc"]["pbc"]["C"]))
             fd["D"].append(D)
             fd["tn"].append(tn[i])
             fd["ts"].append(ts[i])
-            fd["S"].append(np.linalg.inv(np.array(r["bc"]["pbc"]["C"])))
+            fd["S"].append(Si)
             fd["A"].append(F["area"](D))
     if a.check_only:
         return fam_data

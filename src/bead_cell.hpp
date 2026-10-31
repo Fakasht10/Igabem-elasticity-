@@ -11,17 +11,24 @@
 // weld compliance (C = 0: a perfect weld, the regions act as one body). Perfect welds reproduce the single-region
 // cell (src/rve.hpp) and spring welds give the stiffness of imperfectly bonded prints.
 //
-// Unknowns: one displacement per class of dofs tied by the pairs (union-find over all regions), and the + side
-// traction of every pair. Rows: each class representative's dof collocation point (in its own region; the
-// representative is a - side dof, so the - region's SBIE holds there) and every + side traction collocation point, so both sides of every pair carry equations (the rows of src/rve.hpp's PBC,
-// generalized to several regions). The three translations are bordered out.
+// Each bead is condensed once onto its weld unknowns. Its free surface (t = 0) and its own cross-sections (the
+// periodic pair normal to its filament axis, which continues the bead and is never a weld) are eliminated with one
+// LU: what is left is the bead's weld operator K (rows: weld dof and weld traction collocation points; columns: the
+// weld dofs' displacements and the weld tractions) and its load F (the macro strain, which enters through the
+// cross-section shift). The cell then solves the welds only: one displacement per class of weld dofs tied by the
+// pairs (union-find over all regions), and the + side traction of every weld pair; rows at each class
+// representative's dof point (a - side dof, so the - region's SBIE holds there) and every + side traction point.
+// The three translations are bordered out.
 //
-// Identical beads share one operator: a region declared as a rigid copy (rotation R, translation) of an earlier
-// region with the same patch structure gets H and G by rotating that region's 3 x 3 blocks (isotropic Kelvin
-// kernels are rotation- and translation-equivariant), with no assembly. The 0/90 cell's B bead is A turned 90 deg.
+// Identical beads share one condensed operator: a region declared as a rigid copy (rotation R) of an earlier one
+// with the same patch structure reads that region's 3 x 3 blocks turned (R B R^T; isotropic Kelvin kernels are
+// rotation- and translation-equivariant) and its load columns turned in Voigt space, with no assembly and no LU. The
+// 0/90 cell's B bead is A turned 90 deg. Debonds (WeldCrack) and weld springs only change the cell's weld system:
+// every crack length and weld law reuses the same condensed beads.
 #pragma once
 
 #include <Eigen/Dense>
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <chrono>
@@ -126,13 +133,20 @@ struct BeadRegion {
   std::string file;
   Mesh mesh;
   TractionSpace ts;
-  // Reduced (Schur) operator on the bead's connection unknowns: the free-surface dofs (t = 0) are condensed out,
-  //   H_ii u_i + H_ib u_b - G_ic t_c = 0   ->   u_i = Xu u_b + Xt t_c,
-  // and the connection rows read Hr u_b - Gr t_c (Hr = H_bb + H_bi Xu, Gr = G_bc - H_bi Xt). Rows: 3 per connection
-  // dof (bdof order), then 3 per connection traction point (tcon order); columns: bdof (Hr) and tcon (Gr).
-  Eigen::MatrixXd Hr, Gr, Xu, Xt;
-  std::vector<int> bdof, idof, tcon;  // connection dofs, interior (free-surface) dofs, connection traction dofs
-  std::vector<int> bpos;              // dof -> position in bdof, -1 if interior
+  // Condensed weld operator: K [u_W; t_W] = F e (e: the macro strain, Voigt engineering, 6 columns), rows: weld dofs
+  // (bdof order), then the weld traction points (tcon order); the eliminated unknowns are x = Xk [u_W; t_W] + Xf e.
+  Eigen::MatrixXd K, F, Xk, Xf;
+  std::vector<int> bdof, tcon;     // weld dofs, weld traction dofs (kept)
+  std::vector<int> bpos;           // dof -> position in bdof, -1 if eliminated
+  std::vector<int> rowpos;         // row point -> kept row, -1 if eliminated
+  // eliminated unknowns: dof -> column (free surface and cross-section dofs; a + cross-section dof maps to its
+  // - partner, with shift), traction dof -> (column, sign) on the cross-sections (t- = -t+)
+  std::vector<int> ecol_u, ecol_t;
+  std::vector<double> esign_t;
+  std::vector<Vec3> eshift;
+  int ne = 0;
+  std::vector<int> erow;           // row points of the eliminated equations
+  Eigen::Matrix<double, 6, 6> Tv = Eigen::Matrix<double, 6, 6>::Identity();  // copy: Voigt strain into the source frame
   std::vector<int> conn_row0;      // per patch: first row (point index) of its traction points, -1 if free
   std::vector<char> connection;    // per patch: 1 if a connection patch
   int copy_of = -1;                // >= 0: a rotated copy of that region, which holds the matrices (read turned)
@@ -140,6 +154,19 @@ struct BeadRegion {
   int axis = -1;                   // filament axis: its periodic pair is the bead itself (always perfect), not a weld
   double t_assemble = 0.0, t_reduce = 0.0;
   bool reduced_from_cache = false;
+};
+
+// A debond on the welds of one kind: pairs normal to `axis` (internal welds or periodic pairs; region: the + side
+// region, -1 any) are cracked where max_c |x_c - centre_c| > limit over the listed coordinates, i.e. a debond of
+// depth D = half width - limit advancing from the bond edges (a strip: one coordinate; a square: two). Crack faces
+// are traction free. Fronts must be patch edges (python/rve/beads.py debonds=: C0 cuts at every depth), so a debond
+// is a set of whole weld patches (by their centres): tractions are discontinuous at the front, and the solution is
+// consistent (Hill-Mandel exact) with the crack tip on the front.
+struct WeldCrack {
+  bool internal = false;
+  int axis = 2, region = -1;
+  std::vector<std::pair<int, double>> centre;  // (coordinate, centre)
+  double limit = 0.0;
 };
 
 struct BeadPair {
@@ -163,6 +190,8 @@ class BeadCell {
   std::array<Eigen::Matrix3d, 3> weld_periodic{Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Zero()};
   std::array<Eigen::Matrix3d, 3> weld_internal{Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Zero()};
 
+  std::vector<WeldCrack> cracks;  // debonds (FFM energy: compliance against debond depth, same condensed operators)
+
   static Eigen::Matrix3d springCompliance(int a, double Kn, double Kt) {
     const Eigen::Matrix3d nn = Vec3::Unit(a) * Vec3::Unit(a).transpose();
     return Kn > 0 ? Eigen::Matrix3d(nn / Kn + (Eigen::Matrix3d::Identity() - nn) / Kt) : Eigen::Matrix3d::Zero();
@@ -173,9 +202,11 @@ class BeadCell {
   double porosity() const { return 1.0 - volume_solid / volume(); }
   int ndofTotal() const { int n = 0; for (auto& r : regions) n += r.mesh.ndof; return n; }
 
-  // files[i]: region geometry; copies[i] = (j, R): region i is region j rotated by R (and translated), -1: assemble.
+  // files[i]: region geometry; copies[i] = (j, R): region i is region j rotated by R (and translated), -1: assemble;
+  // axes[i]: region i's filament axis (-1: none, every pair is a weld).
   void setup(const std::vector<std::string>& files, const Material& m, const SolverOptions& o,
-             const std::vector<std::pair<int, Eigen::Matrix3d>>& copies = {}, const std::string& cache_dir = "") {
+             const std::vector<std::pair<int, Eigen::Matrix3d>>& copies = {}, const std::string& cache_dir = "",
+             const std::vector<int>& axes = {}) {
     mat = m;
     opt = o;
     regions.assign(files.size(), BeadRegion{});
@@ -192,31 +223,13 @@ class BeadCell {
         hi = hi.cwiseMax(P);
       }
       if (i < copies.size() && copies[i].first >= 0) { r.copy_of = copies[i].first; r.R = copies[i].second; }
+      if (i < axes.size()) r.axis = axes[i];
     }
     tol_ = 1e-9 * (hi - lo).maxCoeff();
     findPairs();
     for (size_t i = 0; i < regions.size(); ++i) {
       BeadRegion& r = regions[i];
-      const int np = int(r.mesh.patches.size());
-      r.conn_row0.assign(np, -1);
-      std::vector<Collocation> rows = r.mesh.colloc;
-      for (int p = 0; p < np; ++p) {
-        if (!r.connection[p]) continue;
-        r.conn_row0[p] = int(rows.size());
-        for (auto& c : tractionCollocation(r.mesh, r.ts, p)) rows.push_back(std::move(c));
-      }
-      r.bpos.assign(r.mesh.ndof, -1);
-      r.bdof.clear(); r.idof.clear(); r.tcon.clear();
-      for (int p = 0; p < np; ++p)
-        if (r.connection[p]) {
-          for (int g : r.mesh.l2g[p]) r.bpos[g] = 0;
-          for (int j = r.ts.offset[p]; j < r.ts.offset[p] + tdofs(r, p); ++j) r.tcon.push_back(j);
-        }
-      for (int g = 0; g < r.mesh.ndof; ++g) {
-        if (r.bpos[g] < 0) { r.idof.push_back(g); continue; }
-        r.bpos[g] = int(r.bdof.size());
-        r.bdof.push_back(g);
-      }
+      const std::vector<Collocation> rows = structure(int(i));
       if (r.copy_of >= 0) {
         copyRotated(regions[r.copy_of], r);
         continue;
@@ -248,14 +261,19 @@ class BeadCell {
     for (size_t k = 0; k < pairs.size(); ++k) {
       const BeadPair& P = pairs[k];
       const BeadRegion &Rm = regions[P.rm], &Rp = regions[P.rp];
-      for (int lm : Rm.mesh.l2g[P.pm]) {
-        int found = -1;
-        for (int lp : Rp.mesh.l2g[P.pp])
-          if ((Rp.mesh.dof_point[lp] - Rm.mesh.dof_point[lm] - P.shift).norm() < ptol) { found = lp; break; }
-        if (found < 0) throw std::runtime_error("BeadCell: pair dof without a partner");
-        edges.push_back({u0[P.rm] + lm, u0[P.rp] + found, int(k)});
-      }
+      if (cracked(P)) continue;  // crack faces: not tied, t+ = t- = 0 (no unknowns, no rows)
+      const bool cont = continuation(P);  // a cross-section: condensed in the bead, only its weld-edge dofs tie here
       const int om = Rm.ts.offset[P.pm], op = Rp.ts.offset[P.pp];
+      for (int lm : Rm.mesh.l2g[P.pm]) {
+        if (cont && Rm.bpos[lm] < 0) continue;
+        int found = -1;
+        const auto& l2gp = Rp.mesh.l2g[P.pp];
+        for (int l = 0; l < int(l2gp.size()) && found < 0; ++l)
+          if ((Rp.mesh.dof_point[l2gp[l]] - Rm.mesh.dof_point[lm] - P.shift).norm() < ptol) found = l;
+        if (found < 0) throw std::runtime_error("BeadCell: pair dof without a partner");
+        edges.push_back({u0[P.rm] + lm, u0[P.rp] + l2gp[found], int(k)});
+      }
+      if (cont) continue;
       const int nm = tdofs(Rm, P.pm), npp = tdofs(Rp, P.pp);
       if (nm != npp) throw std::runtime_error("BeadCell: pair patches with different traction spaces");
       for (int j = 0; j < npp; ++j) {
@@ -266,7 +284,7 @@ class BeadCell {
         tplus_col[t0r[P.rp] + op + j] = int(plus_t.size());
         plus_t.push_back(t0r[P.rp] + op + j);
         minus_t.push_back(t0r[P.rm] + om + found);
-        trow.push_back({P.rp, Rp.conn_row0[P.pp] + j});
+        trow.push_back({P.rp, Rp.rowpos[Rp.conn_row0[P.pp] + j]});
       }
     }
     if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  pairs matched %.2f s\n", since(t0));
@@ -291,7 +309,7 @@ class BeadCell {
       const int r = root(g);
       if (best[r] < 0 || better(g, best[r])) best[r] = g;
     }
-    for (int g = 0; g < nd; ++g)  // free-surface dofs are condensed out (BeadRegion::Xu, Xt): no unknowns
+    for (int g = 0; g < nd; ++g)  // eliminated dofs (free surface, cross-sections) are condensed out
       if (best[root(g)] == g && regions[reg_of[g]].bpos[g - u0[reg_of[g]]] >= 0) { col_of[g] = int(reps.size()); reps.push_back(g); }
     // jumps: walk each class from its representative; crossing pair k from - to + adds -C t+
     std::vector<std::vector<std::pair<int, Eigen::Matrix3d>>> jump(nd);
@@ -300,7 +318,8 @@ class BeadCell {
       const BeadPair& P = pairs[k];
       const BeadRegion& Rp = regions[P.rp];
       for (size_t l = 0; l < Rp.mesh.l2g[P.pp].size(); ++l)
-        tplus_at[{u0[P.rp] + Rp.mesh.l2g[P.pp][l], int(k)}].push_back({tplus_col[t0r[P.rp] + Rp.ts.offset[P.pp] + int(l)], 1.0});
+        if (const int c = tplus_col[t0r[P.rp] + Rp.ts.offset[P.pp] + int(l)]; c >= 0)
+          tplus_at[{u0[P.rp] + Rp.mesh.l2g[P.pp][l], int(k)}].push_back({c, 1.0});
     }
     std::vector<std::vector<std::tuple<int, int, int>>> adj(nd);
     for (const Edge& e : edges) { adj[e.m].push_back({e.p, e.pair, 1}); adj[e.p].push_back({e.m, e.pair, -1}); }
@@ -336,31 +355,32 @@ class BeadCell {
     Eigen::MatrixXd A = Eigen::MatrixXd::Zero(n + 3, n + 3), rhs = Eigen::MatrixXd::Zero(n, 6);
     auto M = A.topLeftCorner(n, n);  // the weld system, bordered below by the three translations
     std::vector<std::pair<int, int>> rowpts;  // (region, row point)
-    for (int g : reps) rowpts.push_back({reg_of[g], g - u0[reg_of[g]]});
+    for (int g : reps) rowpts.push_back({reg_of[g], regions[reg_of[g]].rowpos[g - u0[reg_of[g]]]});
     for (auto& r : trow) rowpts.push_back(r);
     std::vector<int> tmap(ntt, 0);  // global traction dof -> +col+1 or -(col+1)
     for (int j = 0; j < nt; ++j) { tmap[plus_t[j]] = j + 1; tmap[minus_t[j]] = -(j + 1); }
     std::vector<Vec3> shift(nd);
     std::vector<int> ucol(nd);  // dof -> its class's unknown (-1: condensed free-surface dof)
     for (int g = 0; g < nd; ++g) { shift[g] = X[g] - X[best[root(g)]]; ucol[g] = col_of[best[root(g)]]; }
-    for (const auto& [ri, pt] : rowpts)
-      if (pt < regions[ri].mesh.ndof && regions[ri].bpos[pt] < 0) throw std::runtime_error("BeadCell: row on a free-surface dof");
+    for (const auto& [ri, rr] : rowpts)
+      if (rr < 0) throw std::runtime_error("BeadCell: row on an eliminated point");
     std::array<Eigen::Matrix3d, 6> Eu;
     for (int k = 0; k < 6; ++k) Eu[k] = voigtUnit(k, true);
 #pragma omp parallel for schedule(dynamic, 16)
     for (int i = 0; i < int(rowpts.size()); ++i) {  // row block i is written by one thread only
-      const auto [ri, pt] = rowpts[i];
+      const auto [ri, rr] = rowpts[i];
       const BeadRegion& R = regions[ri];
       const BeadRegion& S = source(R);  // a rotated copy reads its source's blocks, turned: Rot B Rot^T
       const bool rot = R.copy_of >= 0;
       const Eigen::Matrix3d& Rot = R.R;
-      const int rr = pt < R.mesh.ndof ? R.bpos[pt] : int(R.bdof.size()) + pt - R.mesh.ndof;
-      const auto Hr = S.Hr.middleRows<3>(3 * rr);
-      const auto Gr = S.Gr.middleRows<3>(3 * rr);
-      for (int j = 0; j < int(R.bdof.size()); ++j) {
+      const auto Kr = S.K.middleRows<3>(3 * rr);
+      auto blk = [&](int c) {
+        return rot ? Eigen::Matrix3d(Rot * Kr.middleCols<3>(3 * c) * Rot.transpose()) : Eigen::Matrix3d(Kr.middleCols<3>(3 * c));
+      };
+      const int nb = int(R.bdof.size());
+      for (int j = 0; j < nb; ++j) {
         const int g = u0[ri] + R.bdof[j];
-        const Eigen::Matrix3d Hb = rot ? Eigen::Matrix3d(Rot * Hr.middleCols<3>(3 * j) * Rot.transpose())
-                                       : Eigen::Matrix3d(Hr.middleCols<3>(3 * j));
+        const Eigen::Matrix3d Hb = blk(j);
         M.block<3, 3>(3 * i, 3 * ucol[g]) += Hb;
         if (shift[g].squaredNorm() > 0)
           for (int k = 0; k < 6; ++k) rhs.block<3, 1>(3 * i, k) -= Hb * (Eu[k] * shift[g]);
@@ -368,11 +388,10 @@ class BeadCell {
       }
       for (int j = 0; j < int(R.tcon.size()); ++j) {
         const int s = tmap[t0r[ri] + R.tcon[j]];
-        if (!s) continue;
-        const Eigen::Matrix3d Gb = rot ? Eigen::Matrix3d(Rot * Gr.middleCols<3>(3 * j) * Rot.transpose())
-                                       : Eigen::Matrix3d(Gr.middleCols<3>(3 * j));
-        M.block<3, 3>(3 * i, nu + 3 * (std::abs(s) - 1)) -= (s > 0 ? 1.0 : -1.0) * Gb;
+        if (!s) continue;  // a crack face (t = 0)
+        M.block<3, 3>(3 * i, nu + 3 * (std::abs(s) - 1)) += (s > 0 ? 1.0 : -1.0) * blk(nb + j);
       }
+      rhs.middleRows<3>(3 * i) += loadRows(R, rr);
     }
     if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  blocks placed %.2f s\n", since(t0));
     // border the three translations
@@ -407,24 +426,21 @@ class BeadCell {
       for (size_t i = 0; i < regions.size(); ++i) {
         const BeadRegion& R = regions[i];
         BoundarySolution s{&R.mesh, &R.ts, mat, Eigen::VectorXd::Zero(3 * R.mesh.ndof), tg.segment(3 * t0r[i], 3 * R.ts.ndof), {}};
-        Eigen::VectorXd ub(3 * R.bdof.size()), tc(3 * R.tcon.size());
-        for (int j = 0; j < int(R.bdof.size()); ++j) {
+        const int nb = int(R.bdof.size());
+        Eigen::VectorXd kv(3 * (nb + R.tcon.size()));
+        for (int j = 0; j < nb; ++j) {
           const int g = u0[i] + R.bdof[j];
           Vec3 u = Xs.col(k).segment<3>(3 * ucol[g]) + Ek * shift[g];
           for (const auto& [col, C] : jump[g]) u += C * Xs.col(k).segment<3>(nu + 3 * col);
-          ub.segment<3>(3 * j) = u;
+          kv.segment<3>(3 * j) = u;
           s.u.segment<3>(3 * R.bdof[j]) = u;
         }
-        for (int j = 0; j < int(R.tcon.size()); ++j) tc.segment<3>(3 * j) = s.t.segment<3>(3 * R.tcon[j]);
-        const BeadRegion& S = source(R);
-        auto turn = [&](Eigen::VectorXd v, bool back) {  // every triplet by R (back: R^T)
-          Eigen::Map<Eigen::MatrixXd> V(v.data(), 3, v.size() / 3);
-          V = (back ? Eigen::Matrix3d(R.R.transpose()) : R.R) * V;
-          return v;
-        };
-        const Eigen::VectorXd ui = R.copy_of < 0 ? Eigen::VectorXd(S.Xu * ub + S.Xt * tc)
-                                                 : turn(S.Xu * turn(ub, true) + S.Xt * turn(tc, true), false);
-        for (int j = 0; j < int(R.idof.size()); ++j) s.u.segment<3>(3 * R.idof[j]) = ui.segment<3>(3 * j);
+        for (int j = 0; j < int(R.tcon.size()); ++j) kv.segment<3>(3 * (nb + j)) = s.t.segment<3>(3 * R.tcon[j]);
+        const Eigen::VectorXd x = eliminated(R, kv, k);
+        for (int g = 0; g < R.mesh.ndof; ++g)
+          if (R.ecol_u[g] >= 0) s.u.segment<3>(3 * g) = x.segment<3>(3 * R.ecol_u[g]) + Ek * R.eshift[g];
+        for (int d = 0; d < R.ts.ndof; ++d)
+          if (R.ecol_t[d] >= 0) s.t.segment<3>(3 * d) = R.esign_t[d] * x.segment<3>(3 * R.ecol_t[d]);
         accumulate(R, s, c, int(i));
         res.solutions.push_back(std::move(s));
       }
@@ -447,9 +463,26 @@ class BeadCell {
   static int tdofs(const BeadRegion& R, int p) {
     return (p + 1 < int(R.ts.offset.size()) ? R.ts.offset[p + 1] : R.ts.ndof) - R.ts.offset[p];
   }
+  bool continuation(const BeadPair& P) const {  // a bead's own cross-section pair (never a weld)
+    return !P.internal && P.rm == P.rp && regions[P.rm].axis == P.axis;
+  }
+  bool cracked(const BeadPair& P) const {  // the + patch lies in a debond (fronts are patch edges: beads.py debonds)
+    if (continuation(P) || cracks.empty()) return false;
+    Vec3 x = Vec3::Zero();
+    const auto& l2g = regions[P.rp].mesh.l2g[P.pp];
+    for (int g : l2g) x += regions[P.rp].mesh.dof_point[g];
+    x /= double(l2g.size());
+    for (const WeldCrack& c : cracks) {
+      if (c.internal != P.internal || c.axis != P.axis || (c.region >= 0 && c.region != P.rp)) continue;
+      double d = 0.0;
+      for (auto [k, x0] : c.centre) d = std::max(d, std::abs(x(k) - x0));
+      if (d > c.limit) return true;
+    }
+    return false;
+  }
   const Eigen::Matrix3d& compliance(const BeadPair& P) const {
     static const Eigen::Matrix3d zero = Eigen::Matrix3d::Zero();
-    if (!P.internal && P.rm == P.rp && regions[P.rm].axis == P.axis) return zero;  // a bead's own cross-section
+    if (continuation(P)) return zero;
     return P.internal ? weld_internal[P.axis] : weld_periodic[P.axis];
   }
 
@@ -534,69 +567,193 @@ class BeadCell {
     return e;
   }
 
-  // Assemble the bead's operator (rows: dof points, then connection traction points) and condense the free-surface
-  // dofs: one LU of H_ii per bead type, cached on disk with the reduced blocks.
+  // Index structure of region ri: weld dofs and tractions (kept), the eliminated unknowns (free-surface dofs, the
+  // - dofs of the bead's own cross-sections, the + cross-section tractions) and their rows; returns all row points
+  // (dof points, then the traction points of every connection patch).
+  std::vector<Collocation> structure(int ri) {
+    BeadRegion& r = regions[ri];
+    const int np = int(r.mesh.patches.size()), nd = r.mesh.ndof;
+    const double ptol = 1e3 * tol_;
+    r.conn_row0.assign(np, -1);
+    std::vector<Collocation> rows = r.mesh.colloc;
+    for (int p = 0; p < np; ++p) {
+      if (!r.connection[p]) continue;
+      r.conn_row0[p] = int(rows.size());
+      for (auto& c : tractionCollocation(r.mesh, r.ts, p)) rows.push_back(std::move(c));
+    }
+    std::vector<char> weld(np, 0);
+    std::vector<const BeadPair*> cont;
+    for (const BeadPair& P : pairs) {
+      if (continuation(P)) { if (P.rm == ri) cont.push_back(&P); continue; }
+      if (P.rm == ri) weld[P.pm] = 1;
+      if (P.rp == ri) weld[P.pp] = 1;
+    }
+    r.bpos.assign(nd, -1);
+    r.bdof.clear();
+    r.tcon.clear();
+    for (int p = 0; p < np; ++p)
+      if (weld[p]) {
+        for (int g : r.mesh.l2g[p]) r.bpos[g] = 0;
+        for (int j = 0; j < tdofs(r, p); ++j) r.tcon.push_back(r.ts.offset[p] + j);
+      }
+    for (int g = 0; g < nd; ++g)
+      if (r.bpos[g] >= 0) { r.bpos[g] = int(r.bdof.size()); r.bdof.push_back(g); }
+    // cross-sections: + dofs follow their - partners (u+ = u- + E s), + tractions are unknowns (t- = -t+)
+    std::vector<int> partner(nd, -1);
+    r.eshift.assign(nd, Vec3::Zero());
+    for (const BeadPair* P : cont)
+      for (int lm : r.mesh.l2g[P->pm]) {
+        int lp = -1;
+        for (int g : r.mesh.l2g[P->pp])
+          if ((r.mesh.dof_point[g] - r.mesh.dof_point[lm] - P->shift).norm() < ptol) { lp = g; break; }
+        if (lp < 0 || (r.bpos[lm] >= 0) != (r.bpos[lp] >= 0)) throw std::runtime_error("BeadCell: cross-section dofs do not match");
+        if (r.bpos[lm] < 0) { partner[lp] = lm; r.eshift[lp] = P->shift; }
+      }
+    r.ecol_u.assign(nd, -1);
+    r.erow.clear();
+    r.ne = 0;
+    for (int g = 0; g < nd; ++g)
+      if (r.bpos[g] < 0 && partner[g] < 0) { r.ecol_u[g] = r.ne++; r.erow.push_back(g); }
+    for (int g = 0; g < nd; ++g)
+      if (partner[g] >= 0) {
+        if (partner[partner[g]] >= 0) throw std::runtime_error("BeadCell: chained cross-sections");
+        r.ecol_u[g] = r.ecol_u[partner[g]];
+      }
+    r.ecol_t.assign(r.ts.ndof, -1);
+    r.esign_t.assign(r.ts.ndof, 0.0);
+    for (const BeadPair* P : cont) {
+      const int om = r.ts.offset[P->pm], op = r.ts.offset[P->pp], n = tdofs(r, P->pp);
+      for (int j = 0; j < n; ++j) {
+        r.ecol_t[op + j] = r.ne;
+        r.esign_t[op + j] = 1.0;
+        r.erow.push_back(r.conn_row0[P->pp] + j);
+        int found = -1;
+        for (int i = 0; i < n && found < 0; ++i)
+          if ((r.ts.points[op + j].x - r.ts.points[om + i].x - P->shift).norm() < ptol) found = i;
+        if (found < 0) throw std::runtime_error("BeadCell: cross-section traction point without a partner");
+        r.ecol_t[om + found] = r.ne++;
+        r.esign_t[om + found] = -1.0;
+      }
+    }
+    r.rowpos.assign(rows.size(), -1);
+    const int nb = int(r.bdof.size());
+    for (int j = 0; j < nb; ++j) r.rowpos[r.bdof[j]] = j;
+    int kt = 0;
+    for (int p = 0; p < np; ++p)
+      if (weld[p])
+        for (int j = 0; j < tdofs(r, p); ++j) r.rowpos[r.conn_row0[p] + j] = nb + kt++;
+    return rows;
+  }
+
+  // Columns of the bead's equations at the row points `pts`: eliminated unknowns (Ae), weld unknowns (Ak: weld dof
+  // displacements, then weld tractions with -G), and the load of the six unit macro strains (F: -H (E s) of the
+  // + cross-section dofs, moved to the right-hand side).
+  void columns(const BeadRegion& r, const Eigen::MatrixXd& H, const Eigen::MatrixXd& G, const std::vector<int>& pts,
+               Eigen::MatrixXd& Ae, Eigen::MatrixXd& Ak, Eigen::MatrixXd& F) const {
+    const auto rows = expand3(pts);
+    const int m = int(rows.size()), nb = int(r.bdof.size());
+    std::vector<int> tpos(r.ts.ndof, -1);
+    for (int j = 0; j < int(r.tcon.size()); ++j) tpos[r.tcon[j]] = j;
+    // sources per target 3-column: (H or G, source block, factor); targets 0..ne-1 eliminated, then kept
+    struct Src { bool g; int col; double f; };
+    std::vector<std::vector<Src>> src(r.ne + nb + r.tcon.size());
+    for (int g = 0; g < r.mesh.ndof; ++g)
+      src[r.bpos[g] >= 0 ? r.ne + r.bpos[g] : r.ecol_u[g]].push_back({false, g, 1.0});
+    for (int d = 0; d < r.ts.ndof; ++d) {
+      if (tpos[d] >= 0) src[r.ne + nb + tpos[d]].push_back({true, d, -1.0});
+      else if (r.ecol_t[d] >= 0) src[r.ecol_t[d]].push_back({true, d, -r.esign_t[d]});
+    }
+    Ae.setZero(m, 3 * r.ne);
+    Ak.setZero(m, 3 * (nb + r.tcon.size()));
+#pragma omp parallel for schedule(dynamic, 8)
+    for (int t = 0; t < int(src.size()); ++t)
+      for (const Src& sc : src[t])
+        for (int c = 0; c < 3; ++c) {
+          const Eigen::MatrixXd& M = sc.g ? G : H;
+          const double* from = M.data() + long(3 * sc.col + c) * M.rows();
+          double* to = t < r.ne ? Ae.data() + long(3 * t + c) * m : Ak.data() + long(3 * (t - r.ne) + c) * m;
+          for (int i = 0; i < m; ++i) to[i] += sc.f * from[rows[i]];
+        }
+    F.setZero(m, 6);
+    for (int g = 0; g < r.mesh.ndof; ++g) {
+      if (r.eshift[g].squaredNorm() == 0) continue;
+      for (int k = 0; k < 6; ++k) {
+        const Vec3 v = voigtUnit(k, true) * r.eshift[g];
+        for (int i = 0; i < m; ++i) F(i, k) -= H.row(rows[i]).segment<3>(3 * g).dot(v);
+      }
+    }
+  }
+
+  // Assemble the bead's operator (rows: dof points, then connection traction points; batched dense assembly) and
+  // condense it onto the weld unknowns with one LU, cached on disk.
   void reduce(BeadRegion& r, const std::vector<Collocation>& rows, const std::string& cache_dir) {
     const auto t0 = std::chrono::steady_clock::now();
+    const int nk = 3 * int(r.bdof.size() + r.tcon.size());
+    std::vector<int> krow;
+    for (int pt = 0; pt < int(rows.size()); ++pt)
+      if (r.rowpos[pt] >= 0) krow.push_back(pt);
+    std::sort(krow.begin(), krow.end(), [&](int a, int b) { return r.rowpos[a] < r.rowpos[b]; });
     std::string path;
     if (!cache_dir.empty()) {
       std::filesystem::create_directories(cache_dir);
-      path = cache_dir + "/" + operatorKey(r.file, "bead_schur", mat, opt, popt) + ".bin";
-      r.reduced_from_cache = loadMatrices(path, {&r.Hr, &r.Gr, &r.Xu, &r.Xt}) &&
-                             r.Hr.cols() == 3 * int(r.bdof.size()) && r.Gr.cols() == 3 * int(r.tcon.size()) &&
-                             r.Xu.rows() == 3 * int(r.idof.size());
+      path = cache_dir + "/" + operatorKey(r.file, "bead_weld_a" + std::to_string(r.axis), mat, opt, popt) + ".bin";
+      r.reduced_from_cache = loadMatrices(path, {&r.K, &r.F, &r.Xk, &r.Xf}) && r.K.rows() == 3 * int(krow.size()) &&
+                             r.K.cols() == nk && r.Xk.rows() == 3 * r.ne;
       if (r.reduced_from_cache) { r.t_reduce = since(t0); return; }
     }
     OperatorRows A;
     batchedHG(r.mesh, r.ts, mat, opt, rows, A.H, A.G);
     r.t_assemble = since(t0);
-    const int nd = r.mesh.ndof, nct = int(r.tcon.size());
-    std::vector<int> brow = r.bdof;  // boundary rows: connection dof points, then the connection traction points
-    for (int j = 0; j < nct; ++j) brow.push_back(nd + j);
-    const auto I = expand3(r.idof), B = expand3(r.bdof), Bt = expand3(brow), T = expand3(r.tcon);
     const auto t1 = std::chrono::steady_clock::now();
-    if (I.empty()) {  // nothing to condense
-      r.Hr = gather(A.H, Bt, B);
-      r.Gr = gather(A.G, Bt, T);
-      r.Xu.resize(0, B.size());
-      r.Xt.resize(0, T.size());
-      r.t_reduce = since(t1);
-      return;
-    }
-    const DenseLU lu(gather(A.H, I, I));
-    if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  lu %.2f s (n %zu)\n", since(t1), I.size());
-    Eigen::MatrixXd rhs(I.size(), B.size() + T.size());
-    gather(A.H, I, B, rhs, 0, -1.0);
-    gather(A.G, I, T, rhs, int(B.size()), 1.0);
+    Eigen::MatrixXd Ae, Ak, F, Ake, Akk, Fk;
+    columns(r, A.H, A.G, r.erow, Ae, Ak, F);
+    columns(r, A.H, A.G, krow, Ake, Akk, Fk);
+    A = OperatorRows();
+    if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  columns %.2f s (eliminated %d, kept %d)\n", since(t1), 3 * r.ne, nk);
+    const DenseLU lu(std::move(Ae));
+    Eigen::MatrixXd rhs(3 * r.ne, nk + 6);
+    rhs << -Ak, F;
     const Eigen::MatrixXd X = lu.solve(std::move(rhs));
-    if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  solve %.2f s (rhs %zu)\n", since(t1), B.size() + T.size());
-    r.Xu = X.leftCols(B.size());
-    r.Xt = X.rightCols(T.size());
-    const Eigen::MatrixXd Hbi = gather(A.H, Bt, I);
-    Eigen::MatrixXd HG(Bt.size(), B.size() + T.size());
-    gather(A.H, Bt, B, HG, 0, 1.0);
-    gather(A.G, Bt, T, HG, int(B.size()), -1.0);
-    if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  gathers %.2f s\n", since(t1));
-    gemmAdd(1.0, Hbi, X, HG);
-    if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  gemm %.2f s\n", since(t1));  // [Hr, -Gr] = [H_bb, -G_bc] + H_bi [Xu, Xt]
-    r.Hr = HG.leftCols(B.size());
-    r.Gr = -HG.rightCols(T.size());
+    r.Xk = X.leftCols(nk);
+    r.Xf = X.rightCols(6);
+    Eigen::MatrixXd KF(Akk.rows(), nk + 6);
+    KF << Akk, -Fk;
+    gemmAdd(1.0, Ake, X, KF);  // [K, -F] = [A_kk, -F_k] + A_ke [Xk, Xf]
+    r.K = KF.leftCols(nk);
+    r.F = -KF.rightCols(6);
     r.t_reduce = since(t1);
-    if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  products done %.2f s (rows %zu)\n", since(t1), Bt.size());
-    if (!path.empty()) saveMatrices(path, {&r.Hr, &r.Gr, &r.Xu, &r.Xt});
+    if (!path.empty()) saveMatrices(path, {&r.K, &r.F, &r.Xk, &r.Xf});
   }
 
-  // Reduced operator of a region that is a rotated + translated copy of another with the same patch structure:
-  // every 3 x 3 block turns as R B R^T (isotropic kernels are rotation- and translation-equivariant).
+  // A rotated + translated copy of a region with the same patch structure: nothing stored, solve() turns the
+  // source's 3 x 3 blocks (R B R^T) and load columns (Voigt strain into the source frame, Tv) on the fly.
   void copyRotated(const BeadRegion& S, BeadRegion& T) const {
-    if (S.mesh.ndof != T.mesh.ndof || S.ts.ndof != T.ts.ndof || S.bdof != T.bdof || S.tcon != T.tcon)
+    if (S.copy_of >= 0) throw std::runtime_error("BeadCell: copy of a copy");
+    if (S.mesh.ndof != T.mesh.ndof || S.ts.ndof != T.ts.ndof || S.bdof != T.bdof || S.tcon != T.tcon ||
+        S.ecol_u != T.ecol_u || S.ecol_t != T.ecol_t || S.rowpos != T.rowpos)
       throw std::runtime_error("BeadCell: copied region does not match its source (patches or connections)");
     const Vec3 d = T.mesh.dof_point[0] - T.R * S.mesh.dof_point[0];
     for (int g = 0; g < S.mesh.ndof; ++g)
       if ((T.mesh.dof_point[g] - T.R * S.mesh.dof_point[g] - d).norm() > 1e3 * tol_)
         throw std::runtime_error("BeadCell: copied region is not a rigid copy (dof order or geometry)");
-    if (S.copy_of >= 0) throw std::runtime_error("BeadCell: copy of a copy");
-    // nothing stored: solve() turns the source's blocks on the fly (3 x 3 products, cheap next to the LU)
+    for (int k = 0; k < 6; ++k) T.Tv.col(k) = toVoigt(Eigen::Matrix3d(T.R.transpose() * voigtUnit(k, true) * T.R), true);
+  }
+  static Eigen::VectorXd turn(Eigen::VectorXd v, const Eigen::Matrix3d& R) {  // every triplet by R
+    Eigen::Map<Eigen::MatrixXd> V(v.data(), 3, v.size() / 3);
+    V = (R * V).eval();
+    return v;
+  }
+  // Load rows (3 x 6) of kept row rr of region R.
+  Eigen::Matrix<double, 3, 6> loadRows(const BeadRegion& R, int rr) const {
+    const BeadRegion& S = source(R);
+    const Eigen::Matrix<double, 3, 6> Fv = S.F.middleRows<3>(3 * rr);
+    return R.copy_of < 0 ? Fv : Eigen::Matrix<double, 3, 6>(R.R * Fv * R.Tv);
+  }
+  // Eliminated unknowns of region R for the kept values kv and unit macro strain k.
+  Eigen::VectorXd eliminated(const BeadRegion& R, const Eigen::VectorXd& kv, int k) const {
+    const BeadRegion& S = source(R);
+    if (R.copy_of < 0) return S.Xk * kv + S.Xf.col(k);
+    return turn(S.Xk * turn(kv, R.R.transpose()) + S.Xf * R.Tv.col(k), R.R);
   }
   const BeadRegion& source(const BeadRegion& R) const { return R.copy_of >= 0 ? regions[R.copy_of] : R; }
   static double since(std::chrono::steady_clock::time_point t) {
