@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Printed-material card (IgBEM bead cells)</title>
+<style>
+:root{--surface:#fcfcfb;--plane:#f9f9f7;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;
+--s1:#2a78d6;--s2:#eb6834;--warn:#fab219;--ring:rgba(11,11,11,.10);--crit:#d03b3b}
+@media (prefers-color-scheme:dark){:root{--surface:#1a1a19;--plane:#0d0d0d;--ink:#f0efec;--ink2:#c3c2b7;--grid:#2c2c2a;
+--axis:#383835;--s1:#3987e5;--s2:#d95926;--ring:rgba(255,255,255,.10)}}
+*{box-sizing:border-box}body{margin:0;background:var(--plane);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:18px 24px 6px}h1{font-size:19px;margin:0 0 2px}header p{margin:0;color:var(--ink2);max-width:900px}
+main{display:grid;grid-template-columns:320px 1fr;gap:16px;padding:12px 24px 28px}
+@media (max-width:860px){main{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--ring);border-radius:10px;padding:14px 16px}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink2);margin:0 0 10px}
+label{display:block;font-size:12.5px;color:var(--ink2);margin:10px 0 3px}
+.row{display:flex;gap:8px;align-items:center}.row input[type=range]{flex:1}
+input[type=number]{width:78px;padding:3px 5px;border:1px solid var(--axis);border-radius:5px;background:var(--surface);color:var(--ink);font:inherit}
+select{width:100%;padding:5px;border:1px solid var(--axis);border-radius:6px;background:var(--surface);color:var(--ink);font:inherit}
+.hint{font-size:11.5px;color:var(--muted)}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.tile{background:var(--surface);border:1px solid var(--ring);border-radius:10px;padding:10px 12px}
+.tile .k{font-size:12px;color:var(--ink2)}.tile .v{font-size:24px;font-weight:600;font-variant-numeric:tabular-nums}
+.tile .u{font-size:12px;color:var(--muted);margin-left:3px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media (max-width:1100px){.cols{grid-template-columns:1fr}}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+td,th{padding:4px 6px;text-align:right;border-bottom:1px solid var(--grid);font-size:13px}
+th{color:var(--ink2);font-weight:500}td:first-child,th:first-child{text-align:left}
+.flags{margin:0;padding-left:18px;color:var(--ink2);font-size:12.5px}.flags li{margin:3px 0}
+.flags li::marker{content:"⚠  ";color:var(--warn)}
+button{padding:6px 12px;border:1px solid var(--axis);border-radius:6px;background:var(--surface);color:var(--ink);font:inherit;cursor:pointer}
+svg text{fill:var(--ink2);font-size:11px}
+#tip{position:fixed;pointer-events:none;background:var(--surface);border:1px solid var(--ring);border-radius:6px;padding:4px 8px;font-size:12px;display:none;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--ink2);margin-top:4px}.legend i{display:inline-block;width:14px;height:2px;vertical-align:middle;margin-right:5px}
+pre{white-space:pre-wrap;font-size:11.5px;max-height:220px;overflow:auto;background:var(--plane);padding:8px;border-radius:6px}
+</style>
+</head>
+<body>
+<header>
+<h1>Printed-material card</h1>
+<p>Homogenized orthotropic stiffness and bond strength of an FDM print, from IgBEM periodic bead cells (precomputed grid, 100 geometries). Porosity is an output: it follows from the bead geometry, and the bond widths set the out-of-plane properties.</p>
+</header>
+<main>
+<section class="card" aria-label="inputs">
+<h2>Inputs</h2>
+<label for="mat">Material</label><select id="mat"></select>
+<div class="hint" id="matinfo"></div>
+<label for="layup">Layup</label>
+<select id="layup"><option value="cross">Cross-ply (θ / θ−90)</option><option value="aligned">Aligned (all layers at θ)</option></select>
+<label for="raster">Raster angle θ (deg)</label><div class="row"><input type="range" id="raster" min="-90" max="90" step="1" value="45"><input type="number" id="raster_n" step="1"></div>
+<label for="w">Filament pitch w (mm)</label><div class="row"><input type="range" id="w" min="0.2" max="1.2" step="0.01" value="0.45"><input type="number" id="w_n" step="0.01"></div>
+<label for="h">Layer height h (mm)</label><div class="row"><input type="range" id="h" min="0.06" max="0.9" step="0.01" value="0.2"><input type="number" id="h_n" step="0.01"></div>
+<label for="bi">Interlayer weld width b<sub>int</sub> (mm)</label><div class="row"><input type="range" id="bi" min="0.06" max="1.08" step="0.005" value="0.27"><input type="number" id="bi_n" step="0.005"></div>
+<label for="bl">In-layer weld height b<sub>lat</sub> (mm)</label><div class="row"><input type="range" id="bl" min="0.01" max="0.63" step="0.005" value="0.06"><input type="number" id="bl_n" step="0.005"></div>
+<div class="hint" id="range"></div>
+<label for="eta">Weld strength / filament strength</label><div class="row"><input type="range" id="eta" min="0.2" max="1" step="0.01" value="0.7"><input type="number" id="eta_n" step="0.01"></div>
+<label for="gc">Weld toughness G<sub>c</sub> (N/mm, optional)</label><input type="number" id="gc" step="0.1" placeholder="—" style="width:100%">
+</section>
+<section>
+<div class="tiles">
+<div class="tile"><div class="k">Porosity</div><div><span class="v" id="t_phi"></span><span class="u">%</span></div></div>
+<div class="tile"><div class="k">E<sub>x</sub> (in plane)</div><div><span class="v" id="t_e1"></span><span class="u">MPa</span></div></div>
+<div class="tile"><div class="k">E<sub>z</sub> (build)</div><div><span class="v" id="t_e3"></span><span class="u">MPa</span></div></div>
+<div class="tile"><div class="k">Z strength (interlayer)</div><div><span class="v" id="t_z"></span><span class="u">MPa</span></div></div>
+</div>
+<div class="cols">
+<div class="card"><h2>Engineering constants (part frame)</h2><table id="eng"></table>
+<h2 style="margin-top:14px">Strength, ply frame (MPa)</h2><table id="str"></table></div>
+<div class="card"><h2>In-plane modulus E(θ)</h2><svg id="polar" viewBox="0 0 320 320" width="100%" role="img" aria-label="polar plot of in-plane modulus"></svg>
+<div class="legend"><span><i style="background:var(--s1)"></i>this print</span><span><i style="background:var(--muted);height:0;border-top:1px dashed var(--muted)"></i>solid filament E</span></div></div>
+</div>
+<div class="cols" style="margin-top:14px">
+<div class="card"><h2>Stiffness C (MPa), Voigt 11 22 33 23 13 12</h2><table id="cmat"></table></div>
+<div class="card"><h2>Notes</h2><ul class="flags" id="flags"></ul>
+<h2 style="margin-top:12px">Orientation card (failure/aniso.py)</h2><button id="copy">Copy card JSON</button> <span class="hint" id="copied"></span><pre id="cardjson"></pre></div>
+</div>
+</section>
+</main>
+<div id="tip"></div>
+<script>
+const D=/*__DATA__*/null;
+const $=id=>document.getElementById(id);
+const VO=[[0,0],[1,1],[2,2],[1,2],[0,2],[0,1]];
+function lerpIdx(ax,v){let i=0;while(i<ax.length-2&&v>ax[i+1])i++;return [i,(v-ax[i])/(ax[i+1]-ax[i])];}
+function tri(A,ax,x){ // A[i][j][k] -> value or nested arrays; trilinear
+  const [i,a]=lerpIdx(ax[0],x[0]),[j,b]=lerpIdx(ax[1],x[1]),[k,c]=lerpIdx(ax[2],x[2]);
+  const comb=(ws)=>{let out=null;for(const [w,v] of ws){if(w===0)continue;out=out===null?scale(v,w):add(out,scale(v,w));}return out;};
+  const ws=[];for(const di of [0,1])for(const dj of [0,1])for(const dk of [0,1]){
+    const w=(di?a:1-a)*(dj?b:1-b)*(dk?c:1-c);ws.push([w,A[i+di][j+dj][k+dk]]);}
+  return comb(ws);}
+function scale(v,w){return Array.isArray(v)?v.map(x=>scale(x,w)):v*w;}
+function add(a,b){return Array.isArray(a)?a.map((x,i)=>add(x,b[i])):a+b;}
+function mul(a,b){return Array.isArray(a)?a.map((x,i)=>mul(x,b[i])):a*b;}
+function inv6(M){const n=6,A=M.map((r,i)=>r.concat([...Array(n)].map((_,j)=>i===j?1:0)));
+  for(let c=0;c<n;c++){let p=c;for(let r=c+1;r<n;r++)if(Math.abs(A[r][c])>Math.abs(A[p][c]))p=r;[A[c],A[p]]=[A[p],A[c]];
+    const d=A[c][c];for(let j=0;j<2*n;j++)A[c][j]/=d;for(let r=0;r<n;r++)if(r!==c){const f=A[r][c];for(let j=0;j<2*n;j++)A[r][j]-=f*A[c][j];}}
+  return A.map(r=>r.slice(n));}
+function rotZ(C,deg){const t=deg*Math.PI/180,R=[[Math.cos(t),-Math.sin(t),0],[Math.sin(t),Math.cos(t),0],[0,0,1]];
+  const T=(p,q,r,s)=>{const a=VO.findIndex(([i,j])=>(i===p&&j===q)||(i===q&&j===p)),b=VO.findIndex(([i,j])=>(i===r&&j===s)||(i===s&&j===r));return C[a][b];};
+  const out=[...Array(6)].map(()=>Array(6).fill(0));
+  for(let A=0;A<6;A++)for(let B=0;B<6;B++){const [i,j]=VO[A],[k,l]=VO[B];let s=0;
+    for(let a=0;a<3;a++){if(!R[i][a])continue;for(let b=0;b<3;b++){if(!R[j][b])continue;for(let c=0;c<3;c++){if(!R[k][c])continue;for(let d=0;d<3;d++){if(!R[l][d])continue;
+      s+=R[i][a]*R[j][b]*R[k][c]*R[l][d]*T(a,b,c,d);}}}}out[A][B]=s;}return out;}
+function eng(C){const S=inv6(C);return {E1:1/S[0][0],E2:1/S[1][1],E3:1/S[2][2],G23:1/S[3][3],G13:1/S[4][4],G12:1/S[5][5],
+  nu12:-S[0][1]/S[0][0],nu13:-S[0][2]/S[0][0],nu23:-S[1][2]/S[1][1]};}
+const AX=[D.axes.h,D.axes.b_int,D.axes.beta];
+const NUS=Object.keys(D.c00).map(Number).sort((a,b)=>a-b);
+let CORR=null;if(D.corr){const cax=[0,1,2].map(i=>[...new Set(D.corr.points.map(p=>p[i]))].sort((a,b)=>a-b));
+  const R=[[[0,0],[0,0]],[[0,0],[0,0]]];D.corr.points.forEach((p,n)=>{R[cax[0].indexOf(p[0])][cax[1].indexOf(p[1])][cax[2].indexOf(p[2])]=D.corr.ratio[n];});CORR={cax,R};}
+function key(nu){return nu.toFixed(2);}
+function cOverE(layup,x,nu){let i=0;while(i<NUS.length-2&&nu>NUS[i+1])i++;const t=(nu-NUS[i])/(NUS[i+1]-NUS[i]);
+  const a00=add(scale(tri(D.c00[key(NUS[i])],AX,x),1-t),scale(tri(D.c00[key(NUS[i+1])],AX,x),t));
+  if(layup==="aligned")return a00;
+  let a=tri(D.c090,AX,x);if(CORR)a=mul(a,tri(CORR.R,CORR.cax,x));
+  const b00=D.c00["0.35"]?tri(D.c00["0.35"],AX,x):a00;
+  return a.map((r,p)=>r.map((v,q)=>Math.abs(b00[p][q])>1e-9?v*a00[p][q]/b00[p][q]:v));}
+function compute(s){
+  const m=D.materials.find(m=>m.id===s.mat),flags=[];
+  const x=[s.h/s.w,s.bi/s.w,s.bl/s.h];const names=["h/w","b_int/w","b_lat/h"];
+  for(let i=0;i<3;i++)if(x[i]<AX[i][0]-1e-9||x[i]>AX[i][AX[i].length-1]+1e-9)return {error:`${names[i]} = ${x[i].toFixed(3)} is outside the computed range ${AX[i][0]}–${AX[i][AX[i].length-1]}`};
+  const nu=Math.min(Math.max(m.nu,NUS[0]),NUS[NUS.length-1]);
+  if(nu!==m.nu)flags.push(`ν ${m.nu} outside the grid; clamped to ${nu}`);
+  let Cp=scale(cOverE(s.layup,x,nu),m.E);
+  if(s.layup==="cross"){Cp=scale(add(Cp,rotZ(Cp,90)),0.5);if(Math.abs(nu-0.35)>0.005)flags.push(`0/90 cell computed at ν 0.35; ν ${nu} applied through the aligned cell's ν dependence`);}
+  const C=rotZ(Cp,s.raster),e=eng(C),S=inv6(C);
+  const Et=[];for(let t=0;t<=360;t+=3){const c=Math.cos(t*Math.PI/180),sn=Math.sin(t*Math.PI/180),v=[c*c,sn*sn,0,0,0,c*sn];
+    let q=0;for(let i=0;i<6;i++)for(let j=0;j<6;j++)q+=v[i]*S[i][j]*v[j];Et.push([t,1/q]);}
+  const phi=tri(D.porosity,AX,x);
+  const T=s.eta*m.uts,k=D.ffm[s.layup],fint=s.layup==="cross"?x[1]**2:x[1];
+  const Y=k*T*x[2],Z=k*T*fint;
+  const st={X:m.uts,Y:s.layup==="aligned"?Y:null,Z,S12:s.layup==="aligned"?Y:null,S13:Z,S23:s.layup==="aligned"?Math.min(Y,Z):Z,T};
+  if(s.layup==="cross")flags.push("Cross-ply in-plane strength is filament-controlled (bond strengths in plane are ~3× the weld strength): use the F mode per ply.");
+  if(s.gc>0){const lch=m.E*s.gc/T**2,half=0.5*Math.min(s.bi,s.bl);
+    if(lch<=5*half)flags.push(`Brittle weld: cohesive length ${lch.toPrecision(3)} mm vs half bond ${half.toPrecision(3)} mm. Net-section strengths are upper bounds; run python3 -m rve.strength for finite-fracture values.`);
+    else flags.push(`Cohesive length ${lch.toPrecision(3)} mm ≫ half bond ${half.toPrecision(3)} mm: net-section regime, confirmed by the FFM runs to 2–4 %.`);}
+  else flags.push("No G_c given: net-section regime assumed (cohesive length ≫ bond, true of polymer welds measured so far).");
+  flags.push("Out-of-plane values (E_z, G_xz, Z) depend on the weld widths; porosity alone does not fix them. Use measured widths for design.");
+  const card={rve:{material:m.id,layup:s.layup,raster_deg:s.raster,geometry_mm:{w:s.w,h:s.h,b_int:s.bi,b_lat:s.bl},porosity:+phi.toFixed(5),
+    weld_T_MPa:+T.toFixed(3),C_ply_MPa:Cp.map(r=>r.map(v=>+v.toFixed(3))),source:"IgBEM rve grid (net-section bond strength)"},
+    modes:{F:{S0_MPa:m.uts},T:{S0_MPa:+(T*x[2]*D.ffm.aligned).toFixed(3),shear_ratio:1.0},L:{S0_MPa:+Z.toFixed(3),shear_ratio:1.0}}};
+  return {C,Cp,e,Et,phi,st,flags,card,m};}
+// ---------------------------------------------------------------- UI
+const sel=$("mat");D.materials.forEach(m=>{const o=document.createElement("option");o.value=m.id;o.textContent=m.name;sel.appendChild(o);});
+sel.value=D.materials.some(m=>m.id==="ABS-M30-iso")?"ABS-M30-iso":D.materials[0].id;
+const pairs=[["raster","raster_n"],["w","w_n"],["h","h_n"],["bi","bi_n"],["bl","bl_n"],["eta","eta_n"]];
+pairs.forEach(([a,b])=>{$(b).value=$(a).value;$(a).addEventListener("input",()=>{$(b).value=$(a).value;render();});
+  $(b).addEventListener("change",()=>{$(a).value=$(b).value;render();});});
+["mat","layup","gc"].forEach(id=>$(id).addEventListener("input",render));
+const f=(v,d=0)=>v===null||v===undefined||!isFinite(v)?"–":v.toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d});
+function render(){
+  const s={mat:sel.value,layup:$("layup").value,raster:+$("raster").value,w:+$("w").value,h:+$("h").value,bi:+$("bi").value,bl:+$("bl").value,eta:+$("eta").value,gc:+$("gc").value||0};
+  const w=s.w;$("range").textContent=`Computed range at this w and h: h ${(AX[0][0]*w).toFixed(2)}–${(AX[0][4]*w).toFixed(2)} mm, b_int ${(AX[1][0]*w).toFixed(2)}–${(AX[1][4]*w).toFixed(2)} mm, b_lat ${(AX[2][0]*s.h).toFixed(3)}–${(AX[2][3]*s.h).toFixed(3)} mm.`;
+  const m=D.materials.find(m=>m.id===s.mat);$("matinfo").textContent=`E ${m.E} MPa, ν ${m.nu}, filament strength ${m.uts??"–"} MPa`;
+  const r=compute(s);
+  if(r.error){["t_phi","t_e1","t_e3","t_z"].forEach(id=>$(id).textContent="–");$("flags").innerHTML=`<li>${r.error}. Move the inputs back into range; the card is not extrapolated.</li>`;
+    ["eng","str","cmat"].forEach(id=>$(id).innerHTML="");$("polar").innerHTML="";$("cardjson").textContent="";return;}
+  $("t_phi").textContent=f(100*r.phi,1);$("t_e1").textContent=f(r.e.E1);$("t_e3").textContent=f(r.e.E3);$("t_z").textContent=f(r.st.Z,1);
+  const E=r.e,solid=r.m.E;
+  $("eng").innerHTML="<tr><th>constant</th><th>value</th><th>/ solid</th></tr>"+[["E_x",E.E1,1],["E_y",E.E2,1],["E_z",E.E3,1],["G_yz",E.G23,0],["G_xz",E.G13,0],["G_xy",E.G12,0]]
+    .map(([k,v,isE])=>`<tr><td>${k} (MPa)</td><td>${f(v)}</td><td>${f(v/(isE?solid:solid/(2*(1+r.m.nu))),3)}</td></tr>`).join("")
+    +[["ν_xy",E.nu12],["ν_xz",E.nu13],["ν_yz",E.nu23]].map(([k,v])=>`<tr><td>${k}</td><td>${f(v,3)}</td><td></td></tr>`).join("");
+  const st=r.st;$("str").innerHTML="<tr><th>mode</th><th>MPa</th><th>controlled by</th></tr>"+
+    [["X (along filament)",st.X,"filament (registry)"],["Y (across, in layer)",st.Y,st.Y===null?"filament (cross-ply)":"in-layer weld, net section"],["Z (build)",st.Z,"interlayer weld, net section"],
+     ["S12",st.S12,st.S12===null?"filament (cross-ply)":"in-layer weld"],["S13",st.S13,"interlayer weld"],["S23",st.S23,"weakest weld"],["weld strength T",st.T,"input"]]
+    .map(([k,v,c])=>`<tr><td>${k}</td><td>${f(v,1)}</td><td style="text-align:left;color:var(--muted)">${c}</td></tr>`).join("");
+  $("cmat").innerHTML=r.C.map(row=>"<tr>"+row.map(v=>`<td>${Math.abs(v)<5e-3*r.C[0][0]?"0":f(v)}</td>`).join("")+"</tr>").join("");
+  $("flags").innerHTML=r.flags.map(t=>`<li>${t}</li>`).join("");
+  $("cardjson").textContent=JSON.stringify(r.card,null,1);window._card=r.card;
+  polar(r.Et,solid);}
+function polar(Et,solid){const svg=$("polar"),cx=160,cy=160,R=130,mx=Math.max(solid,...Et.map(p=>p[1]));const sc=v=>v/mx*R;
+  let h="";[0.25,0.5,0.75,1].forEach(q=>{h+=`<circle cx="${cx}" cy="${cy}" r="${R*q}" fill="none" stroke="var(--grid)" stroke-width="1"/>`;
+    h+=`<text x="${cx+4}" y="${cy-R*q-2}">${f(mx*q)}</text>`;});
+  for(let t=0;t<360;t+=45){const a=t*Math.PI/180;h+=`<line x1="${cx}" y1="${cy}" x2="${cx+R*Math.cos(a)}" y2="${cy-R*Math.sin(a)}" stroke="var(--grid)"/>`;
+    h+=`<text x="${cx+(R+14)*Math.cos(a)}" y="${cy-(R+14)*Math.sin(a)+4}" text-anchor="middle">${t}°</text>`;}
+  h+=`<circle cx="${cx}" cy="${cy}" r="${sc(solid)}" fill="none" stroke="var(--muted)" stroke-dasharray="4 3" stroke-width="1.2"/>`;
+  const pts=Et.map(([t,v])=>{const a=t*Math.PI/180;return [cx+sc(v)*Math.cos(a),cy-sc(v)*Math.sin(a)];});
+  h+=`<path d="M${pts.map(p=>p.map(v=>v.toFixed(1)).join(",")).join("L")}Z" fill="none" stroke="var(--s1)" stroke-width="2"/>`;
+  h+=`<circle id="pdot" r="4" fill="var(--s1)" stroke="var(--surface)" stroke-width="2" style="display:none"/>`;
+  h+=`<rect x="0" y="0" width="320" height="320" fill="transparent" id="phit"/>`;svg.innerHTML=h;
+  const tip=$("tip"),dot=$("pdot");
+  $("phit").addEventListener("mousemove",ev=>{const b=svg.getBoundingClientRect(),x=(ev.clientX-b.left)/b.width*320-cx,y=cy-(ev.clientY-b.top)/b.height*320;
+    let t=Math.round(((Math.atan2(y,x)*180/Math.PI)+360)%360/3)*3%360;const p=Et.find(q=>q[0]===t),a=t*Math.PI/180;
+    dot.setAttribute("cx",cx+sc(p[1])*Math.cos(a));dot.setAttribute("cy",cy-sc(p[1])*Math.sin(a));dot.style.display="";
+    tip.style.display="block";tip.style.left=(ev.clientX+12)+"px";tip.style.top=(ev.clientY+12)+"px";tip.innerHTML=`θ ${t}°<br><b>${f(p[1])} MPa</b>`;});
+  $("phit").addEventListener("mouseleave",()=>{tip.style.display="none";dot.style.display="none";});}
+$("copy").addEventListener("click",async()=>{try{await navigator.clipboard.writeText(JSON.stringify(window._card,null,1));$("copied").textContent="copied";}
+  catch(e){$("copied").textContent="copy blocked: select the text below";}});
+render();
+</script>
+</body>
+</html>

@@ -97,5 +97,79 @@ class TestStrength(unittest.TestCase):
         self.assertLess(abs(fam["int"]["check"] - 1), 0.01)
 
 
+@unittest.skipUnless(os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "grid.json")),
+                     "no precomputed grid")
+class TestApi(unittest.TestCase):
+    """rve.api against the cells it interpolates, its symmetries, and the page's JavaScript engine."""
+
+    def test_node_exact(self):
+        """At a grid node the card returns the computed cell (0/0, nu on the grid)."""
+        import json
+        from rve import api
+        g = api._grid()[0]
+        i, j, k = 2, 1, 1
+        h, bi, be = g["axes"]["h"][i], g["axes"]["b_int"][j], g["axes"]["beta"][k]
+        r = api.printed_card({"E_MPa": 1000.0, "nu": 0.35, "sigma_uts_MPa": 40.0}, layup="aligned", w=1.0, h=h,
+                             b_int=bi, b_lat=be * h)
+        C = 1000.0 * np.array(g["c00"]["0.35"][i][j][k])
+        self.assertLess(np.abs(np.array(r["C_ply_MPa"]) - C).max() / np.abs(C).max(), 1e-12)
+        self.assertAlmostEqual(r["porosity"], g["porosity"][i][j][k], places=4)
+        json.dumps(r)                                          # JSON-ready for the MCP tool
+
+    def test_cross_ply_symmetry_and_strength(self):
+        from rve import api
+        m = {"E_MPa": 2200.0, "nu": 0.35, "sigma_uts_MPa": 30.0}
+        a = api.printed_card(m, layup="cross", raster_deg=0, w=0.6, h=0.3, b_int=0.36, b_lat=0.1,
+                             weld_strength_MPa=15.26)
+        b = api.printed_card(m, layup="cross", raster_deg=90, w=0.6, h=0.3, b_int=0.36, b_lat=0.1,
+                             weld_strength_MPa=15.26)
+        self.assertAlmostEqual(a["engineering"]["E1"], a["engineering"]["E2"], delta=1e-9 * a["engineering"]["E1"])
+        self.assertAlmostEqual(a["engineering"]["E1"], b["engineering"]["E1"], delta=1e-9 * a["engineering"]["E1"])
+        self.assertAlmostEqual(a["strength"]["Z"], 5.28, places=2)            # the FFM run (README)
+        al = api.printed_card(m, layup="aligned", w=0.6, h=0.3, b_int=0.36, b_lat=0.1, weld_strength_MPa=15.26)
+        self.assertAlmostEqual(al["strength"]["Z"], 8.98, places=2)
+        with self.assertRaises(ValueError):
+            api.printed_card(m, layup="cross", w=0.6, h=0.6, b_int=0.36, b_lat=0.1)   # h/w = 1 outside
+
+    def test_from_porosity(self):
+        from rve import api
+        m = "ABS-M30-iso"
+        r = api.printed_card(m, layup="aligned", w=1.0, h=0.5, b_int=0.6, b_lat=0.15)
+        q = api.printed_card(m, layup="aligned", w=1.0, h=0.5, b_lat=0.15, porosity=r["porosity"],
+                             bond="from_porosity")
+        self.assertAlmostEqual(q["geometry"]["b_int"], 0.6, places=3)
+        self.assertTrue(any("porosity" in f for f in q["flags"]))
+
+    def test_page_engine(self):
+        """The interactive page's JavaScript engine gives the same card as rve.api."""
+        import json
+        import shutil
+        import subprocess
+        import tempfile
+        from rve import api, card_page
+        if shutil.which("node") is None:
+            self.skipTest("node not installed")
+        with open(card_page.TEMPLATE) as f:
+            html = f.read()
+        js = html.split("<script>")[1].split("// ---------------------------------------------------------------- UI")[0]
+        js = js.replace("/*__DATA__*/null", json.dumps(card_page.payload()))
+        cases = [("cross", 30.0, 0.45, 0.2, 0.27, 0.06), ("aligned", -20.0, 0.5, 0.3, 0.2, 0.1)]
+        js += "\nconst out=[];\n"
+        for lay, th, w, h, bi, bl in cases:
+            js += ("{const r=compute({mat:'PA12',layup:'%s',raster:%g,w:%g,h:%g,bi:%g,bl:%g,eta:0.7,gc:0});"
+                   "out.push({C:r.C,phi:r.phi,Z:r.st.Z});}\n" % (lay, th, w, h, bi, bl))
+        js += "console.log(JSON.stringify(out));\n"
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+            f.write(js)
+        got = json.loads(subprocess.run(["node", f.name], capture_output=True, text=True, check=True).stdout)
+        os.remove(f.name)
+        for (lay, th, w, h, bi, bl), g in zip(cases, got):
+            r = api.printed_card("PA12", layup=lay, raster_deg=th, w=w, h=h, b_int=bi, b_lat=bl, weld_efficiency=0.7)
+            C = np.array(r["C_MPa"])
+            self.assertLess(np.abs(np.array(g["C"]) - C).max() / np.abs(C).max(), 2e-5)   # page data: 6 digits
+            self.assertAlmostEqual(g["Z"], r["strength"]["Z"], places=6)
+            self.assertAlmostEqual(g["phi"], r["porosity"], delta=2e-3)                 # cubic vs trilinear
+
+
 if __name__ == "__main__":
     unittest.main()
