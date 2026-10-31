@@ -44,7 +44,7 @@ def style(ax, title):
 
 def validation(out):
     r = json.load(open(os.path.join(RES, "failure", "pla_orient.json")))
-    e = r["models"]["modes+support"]
+    e = r["models"]["tcd-line-modes"]
     obs = np.array([x["P"] for x in r["rows"]]) / 1000
     pred = np.array(e["lofo_predicted_N"]) / 1000
     fam = np.array([x["family"] for x in r["rows"]])
@@ -65,7 +65,7 @@ def validation(out):
     a.set_xlabel("predicted mean failure load (kN), family left out", fontsize=8)
     a.set_ylabel("measured failure load (kN)", fontsize=8)
     a.legend(fontsize=6.5, ncol=2, frameon=False, loc="upper left")
-    style(a, f"(a) PLA, one card for 0/30/45 rasters: LOFO RMSE {e['lofo_RMSE_percent']:.1f} %")
+    style(a, f"(a) PLA, one TCD card (line, F+T) for 0/30/45: LOFO {e['lofo_RMSE_percent']:.1f} %")
 
     b = ax[0, 1]
     z = np.sort(np.log(obs / pred))
