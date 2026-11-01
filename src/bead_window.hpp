@@ -34,8 +34,8 @@ class BeadWindow : public BeadCell {
  public:
   // Prescribed displacement at a dof: (region, dof of that region, its point). Point-only drives (u_d = E x, the part
   // solution) ignore the first two; a corrector drive (u = E x + chi E, chi the periodic cell's fluctuation at the
-  // same dof of the same piece) uses them, and returns its smooth part alone for region -1 (the periodic jumps: the
-  // window's own weld springs make the fluctuation's jumps).
+  // same dof of the same piece) uses them, and returns its smooth part alone for region -1 - i (the periodic jumps:
+  // the window's own weld springs make the fluctuation's jumps).
   using Drive = std::function<Vec3(int, int, const Vec3&)>;
 
   struct Result {
@@ -49,6 +49,7 @@ class BeadWindow : public BeadCell {
   bool direct = false;       // UMFPACK on the assembled matrix instead of GMRES
   double tol = 1e-10;        // GMRES relative residual
   mutable int iterations = 0;  // GMRES iterations of the last solve (max over drives)
+  bool warm = false;           // start GMRES from the previous solve (a coupling iteration: the drive changes little)
 
   // Window of bead pieces: files[i] placed at offsets[i], copies as in BeadCell::setup, filament axis per region,
   // periodic box axes (the rest are cut).
@@ -93,44 +94,43 @@ class BeadWindow : public BeadCell {
   }
 
   // Solve for each drive u_d (displacements on the cut faces and the periodic jumps).
-  Result solve(const std::vector<Drive>& drives) const {
+  // Optional traction jumps on the periodic pairs, per drive: t+ + t- at a - side traction point (region, traction
+  // dof, point), e.g. (sigma(x + L e_z) - sigma(x)) e_z of a part whose stress varies through the thickness (the
+  // slab is then quasi-periodic: it carries the part's d(sigma_zj)/dz instead of zero).
+  using TDrive = std::function<Vec3(int, int, const Vec3&)>;
+
+  Result solve(const std::vector<Drive>& drives, const std::vector<TDrive>& tdrives = {}) const {
     const auto t0 = std::chrono::steady_clock::now();
     const int nq = int(drives.size()), nreg = int(regions.size());
-    // fixed part of every kept dof: u_d(x) on a known class, the drive's periodic jump on an unknown class
-    std::vector<Eigen::MatrixXd> fixed(nreg);
+    std::vector<Eigen::MatrixXd> fixed = fixedParts(drives);
+    std::vector<Eigen::MatrixXd> fixt(nreg);  // known part of the - side periodic tractions (unit-mu system)
     for (int i = 0; i < nreg; ++i) {
       const BeadRegion& R = regions[i];
-      fixed[i].setZero(3 * R.bdof.size(), nq);
-      for (size_t j = 0; j < R.bdof.size(); ++j) {
-        const int g = u0_[i] + R.bdof[j], r = rep_[g], rr = reg_of_[r];
-        const bool known = ucol_[g] < 0, jumps = shift_[g].squaredNorm() > 0;
-        if (!known && !jumps) continue;
-        for (int q = 0; q < nq; ++q) {  // every member is its representative plus the drive's periodic jump
-          const Vec3 ur = drives[q](rr, r - u0_[rr], X_[r]);
-          Vec3 v = known ? ur : Vec3::Zero();
-          if (jumps) v += drives[q](-1, -1, X_[g]) - drives[q](-1, -1, X_[r]);  // smooth part only (no corrector)
-          fixed[i].block<3, 1>(3 * j, q) = v;
-        }
-      }
+      fixt[i].setZero(3 * R.tcon.size(), nq);
+      if (tdrives.empty()) continue;
+      for (size_t j = 0; j < R.tcon.size(); ++j)
+        if (tminus_per_[t0r_[i] + R.tcon[j]])
+          for (int q = 0; q < nq; ++q) fixt[i].block<3, 1>(3 * j, q) = tdrives[q](i, R.tcon[j], R.ts.points[R.tcon[j]].x) / mu_;
     }
     Eigen::MatrixXd B = Eigen::MatrixXd::Zero(n_, nq);
     for (int i = 0; i < nreg; ++i) turned(i);  // fill the cache before the threads read it
 #pragma omp parallel for schedule(dynamic, 1)
     for (int i = 0; i < nreg; ++i) {
       const BeadRegion& R = regions[i];
-      const int nb = int(R.bdof.size()), m = int(rows_[i].size());
-      if (!m || fixed[i].isZero(0)) continue;
+      const int nb = int(R.bdof.size()), m = int(rows_[i].size()), nt = int(R.tcon.size());
+      if (!m || (fixed[i].isZero(0) && fixt[i].isZero(0))) continue;
       const Eigen::MatrixXd& K = turned(i);
-      Eigen::MatrixXd Kr(3 * m, 3 * nb);
-      for (int k = 0; k < m; ++k) Kr.middleRows<3>(3 * k) = K.block(3 * rows_[i][k], 0, 3, 3 * nb);
-      B.middleRows(3 * row0_[i], 3 * m) -= Kr * fixed[i];
+      Eigen::MatrixXd Kr(3 * m, 3 * (nb + nt));
+      for (int k = 0; k < m; ++k) Kr.middleRows<3>(3 * k) = K.middleRows<3>(3 * rows_[i][k]);
+      B.middleRows(3 * row0_[i], 3 * m) -= Kr.leftCols(3 * nb) * fixed[i] + Kr.rightCols(3 * nt) * fixt[i];
     }
     Eigen::MatrixXd Xs(n_, nq);
     iterations = 0;
     if (direct) Xs = lu_->solve(B);
     else {
       double r;
-      iterations = gmresBatch(B, Xs, r);
+      iterations = gmresBatch(B, Xs, r, warm && last_.rows() == n_ && last_.cols() == nq ? &last_ : nullptr);
+      last_ = Xs;
       if (r > 10 * tol) std::fprintf(stderr, "BeadWindow: GMRES stopped at residual %.2e after %d iterations\n", r, iterations);
     }
     Result res;
@@ -145,12 +145,54 @@ class BeadWindow : public BeadCell {
           for (const auto& [col, C] : jump_[g]) u += scale_(taxis_[col]) * C * Xs.col(q).segment<3>(nu_ + 3 * col);
           s.u.segment<3>(3 * R.bdof[j]) = u;
         }
-        for (int d : R.tcon)
-          if (const int c = tmap_[t0r_[i] + d]) s.t.segment<3>(3 * d) = (c > 0 ? mu_ : -mu_) * Xs.col(q).segment<3>(nu_ + 3 * (std::abs(c) - 1));
+        for (size_t j = 0; j < R.tcon.size(); ++j)
+          if (const int d = R.tcon[j], c = tmap_[t0r_[i] + d]; c)
+            s.t.segment<3>(3 * d) = (c > 0 ? mu_ : -mu_) * Xs.col(q).segment<3>(nu_ + 3 * (std::abs(c) - 1)) + mu_ * fixt[i].block<3, 1>(3 * j, q);
         res.solutions.push_back(std::move(s));
       }
     res.t_solve = since(t0);
     return res;
+  }
+
+  // The fixed part of every kept dof of every region (3 x drives): u_d at a known class (its representative's value),
+  // the drive's smooth periodic jump on an unknown class. Drive calls: (region, dof, x) for a representative,
+  // (-1 - region, dof, x) for the smooth part (a corrector drive leaves its fluctuation out).
+  std::vector<Eigen::MatrixXd> fixedParts(const std::vector<Drive>& drives) const {
+    const int nq = int(drives.size()), nreg = int(regions.size());
+    std::vector<Eigen::MatrixXd> fixed(nreg);
+    for (int i = 0; i < nreg; ++i) {
+      const BeadRegion& R = regions[i];
+      fixed[i].setZero(3 * R.bdof.size(), nq);
+      for (size_t j = 0; j < R.bdof.size(); ++j) {
+        const int g = u0_[i] + R.bdof[j], r = rep_[g], rr = reg_of_[r];
+        const bool known = ucol_[g] < 0, jumps = shift_[g].squaredNorm() > 0;
+        if (!known && !jumps) continue;
+        for (int q = 0; q < nq; ++q) {
+          Vec3 v = known ? drives[q](rr, r - u0_[rr], X_[r]) : Vec3::Zero();
+          if (jumps) v += drives[q](-1 - i, R.bdof[j], X_[g]) - drives[q](-1 - rr, r - u0_[rr], X_[r]);
+          fixed[i].block<3, 1>(3 * j, q) = v;
+        }
+      }
+    }
+    return fixed;
+  }
+
+  // Every (region, dof, point) a drive is asked for (a drive from a part solution evaluates these and nothing else).
+  std::vector<std::tuple<int, int, Vec3>> drivePoints() const {
+    std::map<std::pair<int, int>, Vec3> seen;
+    fixedParts({[&](int r, int g, const Vec3& x) { seen[{r < 0 ? -1 - r : r, g}] = x; return Vec3(Vec3::Zero()); }});
+    std::vector<std::tuple<int, int, Vec3>> out;
+    for (const auto& [k, x] : seen) out.push_back({k.first, k.second, x});
+    return out;
+  }
+
+  // The - side traction points of the periodic pairs (region, traction dof, point): where a TDrive is asked.
+  std::vector<std::tuple<int, int, Vec3>> tdrivePoints() const {
+    std::vector<std::tuple<int, int, Vec3>> out;
+    for (size_t i = 0; i < regions.size(); ++i)
+      for (int d : regions[i].tcon)
+        if (tminus_per_[t0r_[i] + d]) out.push_back({int(i), d, regions[i].ts.points[d].x});
+    return out;
   }
 
   // Tractions at Gauss points of every weld + side and every cut face, one line each: kind (0 periodic, 1 internal,
@@ -196,6 +238,7 @@ class BeadWindow : public BeadCell {
  private:
   // numbering and classes (independent of the weld scale)
   std::vector<int> u0_, t0r_, ucol_, rep_, reg_of_, taxis_, tmap_, row0_;
+  std::vector<char> tminus_per_;  // global traction dof: the - side of a periodic pair
   std::vector<Vec3> X_, shift_;
   std::vector<std::vector<int>> rows_;                                   // per region: kept row points it holds
   std::vector<std::vector<std::pair<int, Eigen::Matrix3d>>> jump_;      // dof -> (+ traction unknown, C)
@@ -210,6 +253,7 @@ class BeadWindow : public BeadCell {
   std::vector<int> gfirst_;                // per group: first region
   Eigen::SparseMatrix<double> A_;  // UmfPackLU keeps a reference to it
   std::unique_ptr<Eigen::UmfPackLU<Eigen::SparseMatrix<double>>> lu_;
+  mutable Eigen::MatrixXd last_;  // previous GMRES solution (warm start)
   mutable std::map<std::pair<int, std::array<double, 9>>, std::shared_ptr<Eigen::MatrixXd>> turned_;
 
   // The condensed operator of region i in its own frame (a copy: its source's, every 3 x 3 block turned R B R^T).
@@ -252,6 +296,7 @@ class BeadWindow : public BeadCell {
     std::vector<int> tplus_col(ntt, -1);
     std::vector<std::pair<int, int>> trow;  // per traction unknown: (region, kept row)
     tmap_.assign(ntt, 0);
+    tminus_per_.assign(ntt, 0);
     taxis_.clear();
     for (size_t k = 0; k < pairs.size(); ++k) {
       const BeadPair& P = pairs[k];
@@ -276,6 +321,7 @@ class BeadWindow : public BeadCell {
         tplus_col[t0r_[P.rp] + op + j] = c;
         tmap_[t0r_[P.rp] + op + j] = c + 1;
         tmap_[t0r_[P.rm] + om + found] = -(c + 1);
+        if (!P.internal) tminus_per_[t0r_[P.rm] + om + found] = 1;
         taxis_.push_back(P.axis);
         trow.push_back({P.rp, Rp.rowpos[Rp.conn_row0[P.pp] + j]});
       }
@@ -431,11 +477,13 @@ class BeadWindow : public BeadCell {
 
   // Restarted right-preconditioned GMRES on all right-hand sides in lockstep (each its own Krylov space; the
   // operator and the preconditioner act on all columns at once: GEMMs instead of GEMVs). Returns the iterations.
-  int gmresBatch(const Eigen::MatrixXd& B, Eigen::MatrixXd& X, double& res, int restart = 150, int maxit = 3000) const {
+  int gmresBatch(const Eigen::MatrixXd& B, Eigen::MatrixXd& X, double& res, const Eigen::MatrixXd* X0 = nullptr,
+                 int restart = 150, int maxit = 3000) const {
     const int n = int(B.rows()), q = int(B.cols());
-    X.setZero(n, q);
+    if (X0) X = *X0;
+    else X.setZero(n, q);
     const Eigen::VectorXd nb = B.colwise().norm().transpose().cwiseMax(1e-300);
-    Eigen::MatrixXd R = B;
+    Eigen::MatrixXd R = X0 ? Eigen::MatrixXd(B - apply(X)) : B;
     int it = 0;
     res = 0.0;
     while (it < maxit) {

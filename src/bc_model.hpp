@@ -97,6 +97,9 @@ struct LoadCase {
   std::function<Vec3(const Vec3& x)> displacement;           // overrides the supports' values (optional)
   std::vector<std::pair<int, std::function<Vec3(const Vec3&)>>> support_values;  // per support index (optional)
   std::vector<std::pair<int, Vec6>> master_wrench;           // per RBE2 index: force, moment about its ref
+  // Interior point forces (y, f): a body source, rhs += U(x, y) f on every row (global-local feedback). The fields
+  // of a solution leave the particular (Kelvin) part sum_i U(x, y_i) f_i out: the caller adds it.
+  std::vector<std::pair<Vec3, Vec3>> point_forces;
 };
 
 // Resultant force and moment (about the origin) of a traction field.
@@ -636,6 +639,18 @@ class BcModel {
         b.middleRows(3 * a, 3) = acc;
       }
       rhs += b(rowsel, Eigen::all);
+    }
+    for (int k = 0; k < K; ++k) {
+      const auto& pf = cases[c0 + k].point_forces;
+      if (pf.empty()) continue;
+      Eigen::VectorXd b(3 * rowpts.size());
+#pragma omp parallel for schedule(static)
+      for (long a = 0; a < long(rowpts.size()); ++a) {
+        Vec3 acc = Vec3::Zero();
+        for (const auto& [y, f] : pf) acc += kelvinU(Kv, y - rowpts[a].x) * f;
+        b.segment<3>(3 * a) = acc;
+      }
+      rhs.col(k) += b(rowsel);
     }
     Eigen::MatrixXd bb = Eigen::MatrixXd::Zero(n + m, K);
     bb.topRows(n) = rhs;

@@ -146,4 +146,132 @@ class InteriorEvaluator {
   std::vector<RegionIntegrator> region_;
 };
 
+// Several solutions on the same mesh (load cases of one operator, e.g. unit load sets): the kernels and their
+// gradients at each quadrature point are evaluated once and applied to all of them (u, t of the Q solutions as
+// 3 x Q blocks), so Q cases cost little more than one. Same near-boundary subtraction as InteriorEvaluator; region
+// densities (per solution) are visited per solution.
+class MultiInteriorEvaluator {
+ public:
+  using RowMat = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+
+  MultiInteriorEvaluator(const std::vector<const BoundarySolution*>& s, const SolverOptions& o)
+      : s_(s), m_(*s.at(0)->mesh), K_(s[0]->mat), KT_(s[0]->mat), quad_(m_, o) {
+    if (o.far_tol <= 0.0) throw std::runtime_error("MultiInteriorEvaluator needs SolverOptions::far_tol > 0");
+    const int Q = int(s.size());
+    U_.resize(s[0]->u.size(), Q);
+    T_.resize(s[0]->t.size(), Q);
+    for (int q = 0; q < Q; ++q) {
+      if (s[q]->mesh != s[0]->mesh || s[q]->ts != s[0]->ts) throw std::runtime_error("MultiInteriorEvaluator: solutions on different meshes");
+      U_.col(q) = s[q]->u;
+      T_.col(q) = s[q]->t;
+      for (const auto& d : s[q]->region) region_.emplace_back(*d->R, o);
+    }
+  }
+
+  // out[q][i]: solution q at xs[i] (on_surface[i]: boundary recovery).
+  std::vector<std::vector<FieldSample>> eval(const std::vector<Vec3>& xs, const std::vector<char>& on_surface = {}) const {
+    const int Q = int(s_.size());
+    std::vector<std::vector<FieldSample>> out(Q, std::vector<FieldSample>(xs.size()));
+#pragma omp parallel for schedule(dynamic)
+    for (long i = 0; i < long(xs.size()); ++i) {
+      std::vector<FieldSample> f = (!on_surface.empty() && on_surface[i]) ? surface(xs[i]) : eval(xs[i]);
+      for (int q = 0; q < Q; ++q) out[q][i] = f[q];
+    }
+    return out;
+  }
+
+ private:
+  std::vector<FieldSample> surface(const Vec3& x) const {
+    std::vector<FieldSample> f(s_.size());
+    const SurfacePoint sp = locate(m_, x, [](int) { return true; });
+    for (size_t q = 0; q < s_.size(); ++q) {
+      f[q].x = sp.E.x;
+      f[q].u = s_[q]->displacement(sp);
+      f[q].grad = s_[q]->gradient(sp);
+      f[q].winding = 0.5;
+      f[q].on_boundary = true;
+      f[q].strain = strainOf(f[q].grad);
+      f[q].stress = s_[q]->mat.stress(f[q].grad);
+    }
+    return f;
+  }
+
+  std::vector<FieldSample> eval(const Vec3& x) const {
+    const int Q = int(s_.size());
+    const SurfacePoint sp = locate(m_, x, [](int) { return true; });
+    const Vec3 xb = sp.E.x;
+    if ((x - xb).norm() < 1e-10) return surface(x);
+    // linear field at xb per solution: ub (3 x Q), columns j of grad u (Gj) and of stress (Sj), each 3 x Q
+    Eigen::Matrix3Xd ub(3, Q), Gj[3], Sj[3];
+    std::vector<Eigen::Matrix3d> Gb(Q);
+    for (int j = 0; j < 3; ++j) Gj[j].resize(3, Q), Sj[j].resize(3, Q);
+    for (int q = 0; q < Q; ++q) {
+      ub.col(q) = s_[q]->displacement(sp);
+      Gb[q] = s_[q]->gradient(sp);
+      const Eigen::Matrix3d Sb = s_[q]->mat.stress(Gb[q]);
+      for (int j = 0; j < 3; ++j) Gj[j].col(q) = Gb[q].col(j), Sj[j].col(q) = Sb.col(j);
+    }
+    const SourcePoint src{-1, Vec2(0.0, 0.0), x};
+    Eigen::Matrix3Xd du = Eigen::Matrix3Xd::Zero(3, Q), uy(3, Q), ty(3, Q), eu(3, Q), et(3, Q);
+    Eigen::Matrix<double, 9, Eigen::Dynamic> dG = Eigen::Matrix<double, 9, Eigen::Dynamic>::Zero(9, Q);
+    double wind = 0.0;
+    for (const auto& e : m_.elements) {
+      const int off = s_[0]->ts->offset[e.patch];
+      const auto& l2g = m_.l2g[e.patch];
+      quad_.integrate(src, e, [&](const QPoint& qp, double w) {
+        const Vec3 nJ = qp.normal() * m_.normal_sign;
+        const double J = nJ.norm();
+        const Vec3 n = nJ / J, d = qp.x - x, dx = qp.x - xb;
+        uy.setZero();
+        ty.setZero();
+        for (int l = 0; l < qp.n_loc; ++l) {
+          uy.noalias() += qp.R[l] * U_.middleRows<3>(3 * l2g[qp.idx[l]]);
+          ty.noalias() += qp.R[l] * T_.middleRows<3>(3 * (off + qp.idx[l]));
+        }
+        eu = uy - ub - dx(0) * Gj[0] - dx(1) * Gj[1] - dx(2) * Gj[2];
+        et = ty - n(0) * Sj[0] - n(1) * Sj[1] - n(2) * Sj[2];
+        Eigen::Matrix3d U, T, P[3], Qg[3];
+        K_.eval(d, n, U, T);
+        KT_.gradients(d, n, P, Qg);
+        Eigen::Matrix<double, 9, 3> Pc, Qc;
+        for (int mm = 0; mm < 3; ++mm) Pc.col(mm) = P[mm].reshaped(), Qc.col(mm) = Qg[mm].reshaped();
+        const double wJ = w * J;
+        du.noalias() += wJ * (U * et - T * eu);
+        dG.noalias() += wJ * (Pc * et - Qc * eu);
+        const double r = d.norm();
+        wind += wJ * d.dot(n) / (4.0 * M_PI * r * r * r);
+      });
+    }
+    std::vector<FieldSample> f(Q);
+    size_t ir = 0;
+    for (int q = 0; q < Q; ++q) {
+      Vec3 dq = du.col(q);
+      Eigen::Matrix3d gq = dG.col(q).reshaped(3, 3);
+      for (size_t k = 0; k < s_[q]->region.size(); ++k, ++ir)
+        region_[ir].visit(src, *s_[q]->region[k], [&](const Vec3& y, const Vec3& n, const RegionBlock& tw) {
+          Eigen::Matrix3d U, T, P[3], Qg[3];
+          K_.eval(y - x, n, U, T);
+          KT_.gradients(y - x, n, P, Qg);
+          dq += U * tw.col(0);
+          for (int mm = 0; mm < 3; ++mm) gq += P[mm] * tw(mm, 0);
+        });
+      f[q].x = x;
+      f[q].u = ub.col(q) + Gb[q] * (x - xb) + dq;
+      f[q].grad = Gb[q] + gq;
+      f[q].winding = wind;
+      f[q].strain = strainOf(f[q].grad);
+      f[q].stress = s_[q]->mat.stress(f[q].grad);
+    }
+    return f;
+  }
+
+  std::vector<const BoundarySolution*> s_;
+  const Mesh& m_;
+  Kelvin K_;
+  KelvinTraction KT_;
+  ElementIntegrator quad_;
+  RowMat U_, T_;
+  std::vector<RegionIntegrator> region_;
+};
+
 }  // namespace igabem

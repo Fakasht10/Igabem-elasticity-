@@ -14,12 +14,20 @@
 //   --drive corrector  u = E_k x + chi_k, chi_k the periodic cell's fluctuation at the same dof (same weld laws and
 //                  scale): the window then reproduces the periodic cell exactly (the consistency check)
 //   --direct       UMFPACK on the assembled matrix (small windows; default GMRES + block Jacobi over cells)
+//   --points-out f the points a field drive needs, then stop: "0 region dof x y z" (displacement) and "1 region
+//                  traction-dof x y z" (- side of a z-periodic weld: the drive may give the jump t+ + t- there)
+//   --drive field:f | field+chi:f   a part solution at those points ("0 region dof u(3) eps(6)", engineering
+//                  shear; optional "1 region tdof jump(3) 0 0 0 0 0 0"),
+//                  without / with the periodic fluctuation chi : eps (the consistent drive)
+//   --serve        (field drives) after the first solve keep everything and answer "solve <field> <tractions>"
+//                  requests on stdin ("ready" after each; GMRES warm-started from the previous solution)
 //   --tractions f  weld and cut-face tractions per drive (BeadWindow::tractions; f.q per scale with --scales)
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 
 #include "bead_window.hpp"
@@ -32,9 +40,9 @@ int main(int argc, char** argv) {
   std::vector<std::tuple<bool, int, double, double>> welds;
   double E = 2200.0, nu = 0.35, w = 0.6;
   int ng = 12, nx = 3, ny = 3;
-  bool direct = false;
+  bool direct = false, serve = false;
   double tol = 1e-10;
-  std::string cache = "none", json, tractions, drive = "strain";
+  std::string cache = "none", json, tractions, drive = "strain", points_out;
   std::vector<Vec3> scales{Vec3::Ones()};
   auto weld = [](const char* s, bool internal) {
     double Kn, Kt;
@@ -56,6 +64,8 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--direct")) direct = true;
     else if (!std::strcmp(argv[i], "--tol")) tol = std::stod(next());
     else if (!std::strcmp(argv[i], "--tractions")) tractions = next();
+    else if (!std::strcmp(argv[i], "--points-out")) points_out = next();
+    else if (!std::strcmp(argv[i], "--serve")) serve = true;
     else if (!std::strcmp(argv[i], "--weld")) welds.push_back(weld(next(), false));
     else if (!std::strcmp(argv[i], "--weld-int")) welds.push_back(weld(next(), true));
     else if (!std::strcmp(argv[i], "--scales")) {
@@ -71,7 +81,11 @@ int main(int argc, char** argv) {
       return 2;
     }
   }
-  if (files.size() != 2 || (drive != "strain" && drive != "corrector")) {
+  // field drive: a part solution at the drive points (--points-out): lines "region dof ux uy uz e11 e22 e33 g23 g13
+  // g12" (window frame, engineering shear); field+chi adds the periodic fluctuation chi : eps
+  const bool field = drive.rfind("field:", 0) == 0 || drive.rfind("field+chi:", 0) == 0;
+  const bool use_chi = drive == "corrector" || drive.rfind("field+chi:", 0) == 0;
+  if (files.size() != 2 || (drive != "strain" && drive != "corrector" && !field)) {
     std::fprintf(stderr, "usage: bead_window <A.dat> <B.dat> --cells nx:ny [--weld a:Kn:Kt] [--json f]\n");
     return 2;
   }
@@ -110,10 +124,48 @@ int main(int argc, char** argv) {
   std::printf("%d x %d cells, %zu pieces (%d dofs each, %zu kept, %s %.2f s, condense %.2f s), %d periodic + %d internal "
               "pairs, %d cut patches, setup %.2f s\n", nx, ny, m.regions.size(), r0.mesh.ndof, r0.bdof.size() + r0.tcon.size(),
               r0.reduced_from_cache ? "cached" : "assembly", r0.t_assemble, r0.t_reduce, nper, nint, ncut, t_setup);
+  if (!points_out.empty()) {  // the points a field drive needs, then stop
+    std::ofstream os(points_out);
+    os.precision(17);
+    for (const auto& [r, g, x] : m.drivePoints()) os << "0 " << r << ' ' << g << ' ' << x(0) << ' ' << x(1) << ' ' << x(2) << '\n';
+    for (const auto& [r, d, x] : m.tdrivePoints()) os << "1 " << r << ' ' << d << ' ' << x(0) << ' ' << x(1) << ' ' << x(2) << '\n';
+    return 0;
+  }
+  // per point: Q blocks of 9 values (several drives in one file, solved together)
+  using Vals = std::vector<Eigen::Matrix<double, 9, 1>>;
+  auto fptr = std::make_shared<std::map<std::pair<int, int>, Vals>>();
+  auto tptr = std::make_shared<std::map<std::pair<int, int>, Vals>>();
+  auto& fval = *fptr;
+  auto& tval = *tptr;
+  int nfield = 0;
+  auto readField = [&](const std::string& path) {  // type 0: region dof [u(3) eps(6)] x Q; type 1: region tdof
+    fval.clear();                                  // [jump(3) 0(6)] x Q
+    tval.clear();
+    std::ifstream in(path);
+    if (!in) throw std::runtime_error("field drive: cannot read " + path);
+    std::string line;
+    while (std::getline(in, line)) {
+      std::istringstream ls(line);
+      int type, r, g;
+      if (!(ls >> type >> r >> g)) continue;
+      std::vector<double> x;
+      for (double v; ls >> v;) x.push_back(v);
+      if (x.size() % 9) throw std::runtime_error("field drive: values not a multiple of 9");
+      Vals vs(x.size() / 9);
+      for (size_t q = 0; q < vs.size(); ++q)
+        for (int c = 0; c < 9; ++c) vs[q](c) = x[9 * q + c];
+      nfield = int(vs.size());
+      (type == 0 ? fval : tval)[{r, g}] = vs;
+    }
+  };
+  if (field) {
+    readField(drive.substr(drive.find(':') + 1));
+    std::printf("field drive: %zu points, %zu periodic traction jumps\n", fval.size(), tval.size());
+  }
   // corrector drive: the periodic cell of the same two pieces and weld laws (window internal x, y = the cell's
   // periodic lateral welds; internal z = A to B; periodic z = B top to the next A bottom)
   BeadCell cell;
-  if (drive == "corrector") {
+  if (use_chi) {
     cell.weld_periodic = {m.weld_internal[0], m.weld_internal[1], m.weld_periodic[2]};
     cell.weld_internal[2] = m.weld_internal[2];
     cell.setup(files, materialEnu(E, nu), o, {{-1, Eigen::Matrix3d::Identity()}, {0, R90}}, cache == "none" ? "" : cache, {0, 1});
@@ -123,7 +175,7 @@ int main(int argc, char** argv) {
   for (size_t q = 0; q < scales.size(); ++q) {
     std::vector<BeadWindow::Drive> drives;
     std::shared_ptr<std::vector<Eigen::MatrixXd>> chi;  // per piece: fluctuation (3 x ndof) per unit strain
-    if (drive == "corrector") {
+    if (use_chi) {
       const RveResult rc = cell.solveScales(std::vector<Vec3>{scales[q]})[0];
       chi = std::make_shared<std::vector<Eigen::MatrixXd>>();
       for (int k = 0; k < 6; ++k)
@@ -136,13 +188,34 @@ int main(int argc, char** argv) {
         }
       std::printf("periodic cell for the corrector drive: C11 %.2f, %d unknowns\n", rc.C(0, 0), rc.unknowns);
     }
-    for (int k = 0; k < 6; ++k) {
+    for (int f = 0; field && f < nfield; ++f) {
+      auto F = fptr;
+      drives.push_back([F, chi, f](int r, int g, const Vec3&) {
+        const int rr = r < 0 ? -1 - r : r;
+        const auto it = F->find({rr, g});
+        if (it == F->end()) throw std::runtime_error("field drive: no value for region " + std::to_string(rr) + " dof " + std::to_string(g));
+        const auto& v = it->second[f];
+        Vec3 u = v.head<3>();
+        if (chi && r >= 0)
+          for (int k = 0; k < 6; ++k) u += v(3 + k) * (*chi)[2 * k + rr % 2].col(g);
+        return u;
+      });
+    }
+    for (int k = 0; k < 6 && !field; ++k) {
       const Eigen::Matrix3d Ek = voigtUnit(k, true);
       if (chi) drives.push_back([Ek, chi, k](int r, int g, const Vec3& x) { return r < 0 ? Vec3(Ek * x) : Vec3(Ek * x + (*chi)[2 * k + r % 2].col(g)); });
       else drives.push_back([Ek](int, int, const Vec3& x) { return Vec3(Ek * x); });
     }
+    std::vector<BeadWindow::TDrive> tdrives;
+    for (int f = 0; field && f < nfield; ++f) {
+      auto Tv = tptr;
+      tdrives.push_back([Tv, f](int r, int d, const Vec3&) {
+        const auto it = Tv->find({r, d});
+        return it == Tv->end() ? Vec3(Vec3::Zero()) : Vec3(it->second[f].head<3>());
+      });
+    }
     m.factor(scales[q]);
-    const BeadWindow::Result r = m.solve(drives);
+    const BeadWindow::Result r = m.solve(drives, tdrives);
     std::printf("scale %g:%g:%g: %d unknowns, %ld block entries (%.1f GB), assembly %.2f s, %s %.2f s, solve %.2f s%s\n",
                 scales[q](0), scales[q](1), scales[q](2), m.unknowns(), m.nonzeros(), 8e-9 * m.nonzeros(), m.t_build,
                 direct ? "UMFPACK factor" : "block-Jacobi LU", m.t_factor, r.t_solve,
@@ -150,6 +223,27 @@ int main(int argc, char** argv) {
     if (!tractions.empty()) {
       std::ofstream os(scales.size() == 1 ? tractions : tractions + "." + std::to_string(q));
       m.tractions(r, os);
+    }
+    if (serve && field) {  // keep everything (operator, preconditioner, chi); "solve <field> <tractions>" per request
+      m.warm = true;
+      std::printf("ready\n");
+      std::fflush(stdout);
+      std::string cmd, a, b;
+      while (std::cin >> cmd) {
+        if (cmd == "quit") break;
+        if (cmd == "solve" && (std::cin >> a >> b)) {
+          const auto ts = std::chrono::steady_clock::now();
+          readField(a);
+          const BeadWindow::Result rs = m.solve(drives, tdrives);
+          std::ofstream os(b);
+          m.tractions(rs, os);
+          std::printf("# solved in %.2f s (GMRES %d iterations, warm), output %.2f s\n", rs.t_solve, m.iterations,
+                      std::chrono::duration<double>(std::chrono::steady_clock::now() - ts).count() - rs.t_solve);
+        } else std::printf("# unknown command %s\n", cmd.c_str());
+        std::printf("ready\n");
+        std::fflush(stdout);
+      }
+      return 0;
     }
     all << (q ? ",\n " : "") << "{\"scale\": [" << scales[q](0) << ", " << scales[q](1) << ", " << scales[q](2)
         << "], \"unknowns\": " << m.unknowns() << ", \"iterations\": " << m.iterations << ", \"nonzeros\": " << m.nonzeros() << ", \"t_build\": " << m.t_build
