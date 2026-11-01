@@ -852,13 +852,44 @@ not depend on the weld law, so a kappa sweep is one cold run and then cached sol
   assembled for mu = 1 (H depends on nu only, G on 1/mu), so one bead serves every material of that Poisson ratio;
   the 0/90 A-layer debond cells are the B-layer cells turned 90 deg (8e-5 apart) and are not built. A cell is solved
   once over 17 weld-compliance nodes s = 1/kappa (0 and kappa 0.01 - 1e4); C(kappa)/E and the FFM weld-traction
-  means are rational in s (A(s) = A0 + s U E^T) and an AAA fit through the nodes reproduces direct solves to 1e-5
-  (strengths 1.6e-5). `rve.strength` keeps these responses in a persistent library
+  means are rational in s (A(s) = A0 + s U E^T) and a set-valued AAA fit through the nodes (one denominator for
+  all entries) reproduces direct solves to 1e-5 (worst seen 7e-6, 0/90 cell at kappa 4; per-entry AAA had 3e-4
+  there from spurious pole-zero pairs). The strengths of the sweep moved by at most 3e-5 with that change. `rve.strength` keeps these responses in a persistent library
   (`/mnt/project-files/igabem-rve/responses`, or `IGABEM_RESPONSES`), ~25 KB per cell keyed by the bead files, nu
   and quadrature; operators are only a local scratch cache (`IGABEM_OPLIB`). Full sweep (9 kappas + perfect bond):
   14 s from the library (616 KB for both cells, against 3.2 GB of operators), 5 min 44 s to build it from nothing.
 - `python3 -m rve.strength 090 out.json --kappa 10 --grade 2 [--T ...] [--Gc ...]`; `--stress weld` without
   `--kappa` gives the perfect-bond strength from the weld tractions.
+
+#### Laminates and separate lateral / interlayer welds (`rve.laminate`, `rve.clt_check`)
+
+- Two weld stiffnesses: `bead_cell --scales sx:sy:sz` scales the welds normal to each axis apart (lateral: x, y;
+  interlayer: z), still one LU (A(S) = A0 + U S E^T, Woodbury; equal to the direct solve with the two laws to
+  2e-16). `strength.cell_response(..., two=True)` adds a 17 x 17 grid over (kappa_lat, kappa_int) to the stored
+  response (one more run, 20 s for a small 0/0 cell) and `response_eval2(resp, kappa_lat, kappa_int)` reads any
+  pair (nested rational fits, 1e-7 to 2e-8 against direct solves off the nodes).
+- `rve.laminate.stack_C(C_lamina, layup("[0, +-30, +-60, 0, 90]"))`: exact homogenization of a periodic layer
+  stack (in-plane strains and out-of-plane stresses continuous); with s_o = 0 it is classical laminate theory's
+  membrane A / t. On the Agotnes et al. 2026 inputs (E1 988.41, E2 706.44, G12 257.97 MPa, nu12 0.36) it gives
+  Ex 817.84, Ey 778.66, Gxy 287.48 against their 819.09, 777.04, 287.58 (0.15 %; A / t is order-independent, their
+  residual is presumably the finite unsymmetric stack).
+- In-plane moduli do not see the interlayer weld: at kappa_lat 17, kappa_int from 0.57 to 513 moves E2, E45 and
+  the laminate Ex by 0.1 % while E3 / E1 goes 0.12 -> 0.95. In-plane coupons identify only the lateral weld;
+  kappa_int needs a z coupon (E3 or G13).
+- Stacked laminae miss the crossing of one-bead-high layers: at equal porosity the 0/90 bead cell is stiffer than
+  0/0 laminae stacked [0/90] by 2.6-3.8 % and [+-45] by 3 % (perfect bond), 8 % (kappa 17), 37 % (kappa 1). The
+  next layer's filaments bridge a layer's welds; laminate theory assumes the layer is thick against its
+  microstructure, which a printed layer is not.
+- `python3 -m rve.clt_check` (`data/results/fig_clt_check.*`, `clt_check.json`; 11 s from the library, 3 min 10 s
+  cold): fit kappa_lat and b_lat / h on the paper's E2 / E1 and E45 / E1 (b_int / w 0.7 or 0.9 assumed), predict the
+  [0, +-30, +-60, 0, 90] laminate. Modelling the [+-45] coupon as stacked laminae (the paper's own assumption):
+  kappa 17-23, Ex / E1 0.825 against 0.841 measured (-2.0 %; the paper's CLT -1.5 %). Modelling it as the 0/90 bead
+  cell (its real geometry): kappa 4-8, -3.7 to -4.7 %, a lower estimate because the 30 / 60 deg crossings of the
+  laminate are still stacked laminae. Test scatter is 13 % (1 SD) on the laminate and 27 % on [+-45], so both are
+  within it; the two fits differ by 4x in kappa, so two in-plane coupons do not pin the weld. Their strain is
+  from the crosshead: removing a machine compliance of 20-40 % of the measured 1/E1 lowers every ratio and the
+  stacked-laminae fit fails (b_int 0.7 w at 20 %, both at 40 %: no bond height reaches both ratios); the cell fit lands at -3 to
+  -5 %.
 
 ## Next steps
 

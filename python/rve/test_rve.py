@@ -99,6 +99,29 @@ class TestStrength(unittest.TestCase):
 
 @unittest.skipUnless(os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "grid.json")),
                      "no precomputed grid")
+class TestLaminate(unittest.TestCase):
+    def test_layup(self):
+        from rve.laminate import layup
+        self.assertEqual(layup("[0, +-30, ±60, 0, 90]_R"), [0, 30, -30, 60, -60, 0, 90])
+        self.assertEqual(layup("[0, 90]_s"), [0, 90, 90, 0])
+        self.assertEqual(layup("[45, -45]_2"), [45, -45, 45, -45])
+
+    def test_stack(self):
+        """One angle: the lamina turned; the paper's own CLT inputs (Agotnes 2026 Table 1) give their laminate
+        moduli within 0.25 % (the classical A-matrix: Ex 817.84 vs their 819.09); an aligned 3D stack keeps C."""
+        from rve.laminate import inplane, lamina_from_engineering, layup, stack_C
+        C = lamina_from_engineering(988.41, 706.44, 257.97, 0.36)
+        self.assertLess(np.abs(stack_C(C, [30]) - rotate_z(C, 30)).max() / np.abs(C).max(), 1e-12)
+        self.assertLess(np.abs(stack_C(C, [0, 0, 0]) - C).max() / np.abs(C).max(), 1e-12)
+        e = inplane(stack_C(C, layup("[0, +-30, +-60, 0, 90]")))
+        for k, v in (("Ex", 819.09), ("Ey", 777.04), ("Gxy", 287.58), ("nuxy", 0.352)):
+            self.assertLess(abs(e[k] / v - 1), 2.5e-3, k)
+        # +-45 laminate of an orthotropic ply: Gxy and Ex from the plane-stress closed form
+        Q = np.linalg.inv(np.linalg.inv(C)[np.ix_([0, 1, 5], [0, 1, 5])])
+        U = (Q[0, 0] + Q[1, 1] - 2 * Q[0, 1]) / 4
+        self.assertAlmostEqual(inplane(stack_C(C, [45, -45]))["Gxy"], U, places=6)
+
+
 class TestApi(unittest.TestCase):
     """rve.api against the cells it interpolates, its symmetries, and the page's JavaScript engine."""
 
@@ -288,6 +311,45 @@ class TestBeadCell(unittest.TestCase):
                 S = strength.bead_compliance("00", g, 1, 1, d, "direct", 1300.0, 0.35, kappa)
                 C = 1300.0 * strength.response_eval(r, "C", kappa)
                 self.assertLess(np.abs(np.linalg.inv(S) - C).max() / np.abs(C).max(), 1e-5, kappa)
+
+    def test_00_two_kappa_response(self):
+        """Separate lateral and interlayer weld stiffnesses: the per-axis multi-scale solve (bead_cell --scales
+        sx:sy:sz, one LU) equals the direct solve with the two laws; the 2D response (C2 grid, nested rational fits)
+        gives it off the nodes to 1e-5, and the in-plane moduli do not move with the interlayer stiffness."""
+        import json
+        import subprocess
+        import tempfile
+        from rve import strength
+        from rve.laminate import inplane
+        g = dict(G, alpha=15.0, wc=math.sqrt(0.5), L=G["h"])
+        lib, strength.RESPONSES = strength.RESPONSES, None
+        self.addCleanup(setattr, strength, "RESPONSES", lib)
+        nu = 0.35
+
+        def law(k):
+            Kn = k / G["w"]
+            return "%.12g:%.12g" % (Kn, Kn * (1 - 2 * nu) / (2 * (1 - nu)))
+        with tempfile.TemporaryDirectory() as d:
+            r = strength.cell_response("00", g, 1, 1, d, "cell", nu, two=True)
+            base = [strength.BEAD_CELL, os.path.join(d, "cell.dat"), "--axes", "x", "--E", "1", "--nu", str(nu),
+                    "--ng", "12", "--cache", os.path.join(d, "cache")]
+            out = os.path.join(d, "o.json")
+            subprocess.run(base + ["--weld", "y:" + law(1), "--weld", "z:" + law(1), "--scales", "0:0.25:2,0",
+                                   "--json", out], check=True, stdout=subprocess.DEVNULL)
+            def rd():
+                with open(out) as fh:
+                    return json.load(fh)
+            W = np.array(rd()["runs"][0]["C"])
+            subprocess.run(base + ["--weld", "y:" + law(4), "--weld", "z:" + law(0.5), "--json", out], check=True,
+                           stdout=subprocess.DEVNULL)
+            D = np.array(rd()["C"])
+            self.assertLess(np.abs(W - D).max() / np.abs(D).max(), 1e-10)
+            C = strength.response_eval2(r, 4.0, 0.5)
+            self.assertLess(np.abs(C - D).max() / np.abs(D).max(), 1e-5)
+            soft, stiff = (inplane(strength.response_eval2(r, 4.0, ki)) for ki in (0.1, 100.0))
+            self.assertLess(abs(soft["Ey"] / stiff["Ey"] - 1), 2e-3)
+            self.assertGreater(engineering(strength.response_eval2(r, 4.0, 100.0))["E3"] /
+                               engineering(strength.response_eval2(r, 4.0, 0.1))["E3"], 5)
 
     def test_00_weld_tractions(self):
         """Weld tractions (bead_cell --tractions, FFM stress part): the force on each weld per unit macro stress is
