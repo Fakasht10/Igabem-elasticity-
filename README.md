@@ -911,6 +911,26 @@ not depend on the weld law, so a kappa sweep is one cold run and then cached sol
   surface, so the expansion does not converge where onset is decided (fig_notch_onset b). A window that resolves
   the root beads (two-way global-local) is the consistent next step; a periodic corrector is not.
 
+#### Bead window (`app/bead_window`, `src/bead_window.hpp`, `rve.window`)
+
+- A window of nx x ny 0/90 cells of bead pieces, periodic in z (build direction), cut in x and y. Every piece is a
+  rigid copy of one condensed operator (`BeadCell::copyRotated`); pieces meet on welds (spring laws), filament joints
+  (the cross-sections between pieces of one filament, always perfect: `BeadRegion::filament`) and the z-periodic
+  welds. Cut faces (unpaired planar patches on a non-periodic box face, `BeadCell::periodic`) carry a prescribed
+  displacement with the traction as unknown (the reaction for a global-local coupling).
+- Solver: the system is block-sparse (one dense block per piece), but a cell is mostly interface, so a sparse LU
+  fills in to nearly dense (UMFPACK + METIS: 2 x 2 cells 35 s, 3 x 3 out of memory). Default: GMRES on the piece
+  blocks, all right-hand sides in lockstep (GEMMs), right-preconditioned by block Jacobi over cells (every unknown
+  owned by the cell holding its row: one square ~3.5k LU per cell). 3 x 3 cells, grade 0: 30k unknowns, 70-77
+  iterations for kappa 1-1000, 16 s for the six unit strains; equals the direct solve to 3e-9 (`--direct`).
+- Drives: `strain` (u = E x, kinematic uniform) or `corrector` (u = E x + chi E, chi the periodic cell's
+  fluctuation at the same dof and weld law). `python3 -m rve.window --out rve/data/results` (~3 min,
+  `fig_window_g2.*`): against the periodic cell, the affine drive leaves the centre cell of 3 x 3 off by 28 / 6 /
+  1.7 % (lateral welds, kappa 1 / 10 / >= 100): soft welds cannot open at an affine cut, and the boundary layer
+  spans the window. The corrector drive gives <= 2.0 % in every cell for every kappa (gate G2); the residual is the
+  grade-0 mesh (cut-face collocation vs the cell's condensed cross-sections: 0.3 % at grade 2). So the coupling to
+  the part (next) drives the window with u_part + chi : eps_part, not with u_part.
+
 ## Next steps
 
 1. Exterior Neumann (Eshelby) patch test; move geometry

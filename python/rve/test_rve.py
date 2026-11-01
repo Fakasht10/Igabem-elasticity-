@@ -166,6 +166,46 @@ class TestOnset(unittest.TestCase):
         self.assertAlmostEqual(f1 / f2, 2.0, places=12)
 
 
+class TestWindow(unittest.TestCase):
+    """app/bead_window on grade-0 pieces: the corrector drive reproduces the periodic cell, GMRES the direct solve."""
+
+    @classmethod
+    def setUpClass(cls):
+        import tempfile
+        from rve import window
+        if not os.path.exists(window.BEAD_WINDOW):
+            raise unittest.SkipTest("bead_window not built")
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.files = window.pieces(window.BASE, 1, 0, cls.tmp.name)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_corrector_drive_is_the_periodic_cell(self):
+        """2 x 2 cells, cut faces driven by E x + chi E: the weld net tractions of a corner cell (both lateral welds
+        inside) = the periodic cell's to the mesh level (2 % at grade 0; 0.3 % at grade 2), with springs too."""
+        from rve import window
+        ks = [None, 10.0]
+        refs = window.cell_tractions(self.files, ks, self.tmp.name)
+        Ts, _ = window.run_window(self.files, (2, 2), ks, "corrector", self.tmp.name)
+        for k, T, Tr in zip(ks, Ts, refs):
+            for f, e in window.error(window.window_means(T, 2, 0, 0), window.cell_means(Tr)).items():
+                self.assertLess(e, 2.5, msg="%s kappa %s" % (f, k))
+
+    def test_gmres_matches_direct(self):
+        """2 x 1 cells, affine drive: GMRES with the cell block preconditioner = UMFPACK."""
+        import subprocess
+        from rve import window
+        out = []
+        for extra in ([], ["--direct"]):
+            t = os.path.join(self.tmp.name, "t%d.txt" % len(out))
+            subprocess.run([window.BEAD_WINDOW] + self.files + ["--cells", "2:1", "--cache", os.path.join(self.tmp.name, "cache"),
+                                                                "--tractions", t] + extra, check=True, stdout=subprocess.DEVNULL)
+            out.append(np.loadtxt(t)[:, 10:])
+        self.assertLess(np.abs(out[0] - out[1]).max() / np.abs(out[1]).max(), 1e-7)
+
+
 class TestApi(unittest.TestCase):
     """rve.api against the cells it interpolates, its symmetries, and the page's JavaScript engine."""
 
