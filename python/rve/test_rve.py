@@ -274,6 +274,21 @@ class TestBeadCell(unittest.TestCase):
             for run, C in zip(r["runs"], (Cp, C10, C1)):
                 self.assertLess(np.abs(np.array(run["C"]) - C).max() / np.abs(C).max(), 1e-10)
 
+    def test_00_response_matches_direct_solve(self):
+        """The stored response (C(kappa) / E at RESPONSE_S, rational fit in 1 / kappa) gives the compliance of the direct
+        spring-weld solve at kappas off the nodes (1e-5) and the perfect bond, for any E."""
+        import tempfile
+        from rve import strength
+        g = dict(G, alpha=15.0, wc=math.sqrt(0.5), L=G["h"])
+        lib, strength.RESPONSES = strength.RESPONSES, None   # keep test responses out of the shared library
+        self.addCleanup(setattr, strength, "RESPONSES", lib)
+        with tempfile.TemporaryDirectory() as d:
+            r = strength.cell_response("00", g, 1, 1, d, "cell", 0.35)
+            for kappa in (None, 0.7, 7.0, 300.0):
+                S = strength.bead_compliance("00", g, 1, 1, d, "direct", 1300.0, 0.35, kappa)
+                C = 1300.0 * strength.response_eval(r, "C", kappa)
+                self.assertLess(np.abs(np.linalg.inv(S) - C).max() / np.abs(C).max(), 1e-5, kappa)
+
     def test_00_weld_tractions(self):
         """Weld tractions (bead_cell --tractions, FFM stress part): the force on each weld per unit macro stress is
         the net section exactly (the weld is the cell's only load path across its plane), perfect or spring; a soft
@@ -285,6 +300,8 @@ class TestBeadCell(unittest.TestCase):
         from make_geometries import write_dat
         g = dict(G, alpha=15.0, wc=math.sqrt(0.5), L=G["h"])
         fams = strength.families("00", G["w"], G["h"], G["b_int"], G["b_lat"], G["h"])
+        lib, strength.OPLIB = strength.OPLIB, None   # keep test operators out of the shared library
+        self.addCleanup(setattr, strength, "OPLIB", lib)
         with tempfile.TemporaryDirectory() as d:
             for kappa in (None, 0.3):
                 S, T = strength.bead_compliance("00", g, 1, 1, d, "k%s" % kappa, 2200.0, 0.35, kappa, True)
