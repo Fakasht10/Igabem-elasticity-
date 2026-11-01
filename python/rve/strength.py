@@ -59,7 +59,8 @@ RESPONSES = os.environ.get("IGABEM_RESPONSES") or (
     _PROJECT_RESP if os.path.isdir(os.path.dirname(_PROJECT_RESP)) else None)
 OPLIB = os.environ.get("IGABEM_OPLIB")
 # weld compliance scale s = 1 / kappa (laws at kappa = 1): 0 (perfect bond) and 16 nodes over kappa 0.01 - 1e4. The
-# response is rational in s (A(s) = A0 + s U E^T); AAA through these nodes reproduces the direct solve to ~1e-6.
+# response is rational in s (A(s) = A0 + s U E^T); set-valued AAA through these nodes reproduces the direct solve
+# to <= 1e-5 (7e-6 worst seen, 0/90 cell at kappa 4).
 RESPONSE_S = (0.0,) + tuple(float(x) for x in np.geomspace(1e-4, 1e2, 16))
 RESPONSE_VERSION = 1
 FRACTIONS = (0.05, 0.15, 0.3, 0.5, 0.7, 0.9)   # debond length / half bond width (compliance runs)
@@ -304,21 +305,39 @@ def bead_compliance(kind, g, refine, grade, work, tag, E, nu, kappa=None, tracti
 _FITS = {}
 
 
-def _aaa(s_nodes, y):
-    """Rational interpolant in s through the response nodes, entry by entry (scipy AAA); constant entries exact."""
-    from scipy.interpolate import AAA
+def _aaa(s_nodes, y, tol=1e-13):
+    """Rational interpolant in s through the response nodes: AAA with ONE barycentric denominator for all entries
+    (set-valued AAA, Lietaert, Meerbergen, Perez & Vandereycken 2022), each entry scaled by its max. C(s) of a cell
+    is a matrix rational function whose entries share the poles of the weld system, so a common denominator is
+    the right model; entry-by-entry AAA (scipy) put Froissart doublets in some entries (3e-4 errors on 0/90 cells,
+    against <= 1e-5 for this one)."""
+    z = np.asarray(s_nodes, float)
     y = np.asarray(y, float)
-    flat = y.reshape(len(s_nodes), -1)
-    scale = max(np.abs(flat).max(), 1e-300)
-    fits = []
-    for c in range(flat.shape[1]):
-        v = flat[:, c]
-        if np.ptp(v) <= 1e-14 * scale:
-            fits.append(float(v[0]))
-        else:
-            fits.append(AAA(np.asarray(s_nodes), v, rtol=1e-13))
-    shape = y.shape[1:]
-    return lambda s: np.array([f if isinstance(f, float) else float(np.real(f(s))) for f in fits]).reshape(shape)
+    F = y.reshape(len(z), -1)
+    nrm = np.maximum(np.abs(F).max(0), 1e-300)
+    G = F / nrm
+    m = len(z)
+    J, w = [], None
+    R = np.tile(G.mean(0), (m, 1))
+    for _ in range(m - 1):
+        J.append(int(np.argmax(np.abs(G - R).max(1))))
+        I = [k for k in range(m) if k not in J]
+        Cc = 1.0 / (z[I, None] - z[None, J])
+        L = np.vstack([G[I, k:k + 1] * Cc - Cc * G[J, k][None, :] for k in range(G.shape[1])])
+        w = np.linalg.svd(L, full_matrices=False)[2][-1]
+        R = G.copy()
+        R[I] = (Cc @ (w[:, None] * G[J])) / (Cc @ w)[:, None]
+        if np.abs(G - R).max() <= tol:
+            break
+    zj, fj, shape = z[J], G[J] * nrm, y.shape[1:]
+
+    def ev(x):
+        d = x - zj
+        if np.any(d == 0):
+            return fj[int(np.argmin(np.abs(d)))].reshape(shape)
+        c = w / d
+        return ((c @ fj) / c.sum()).reshape(shape)
+    return ev
 
 
 def response_eval(resp, field, kappa, values=None):
@@ -333,12 +352,34 @@ def response_eval(resp, field, kappa, values=None):
     return _FITS[key](s)
 
 
-def cell_response(kind, g, refine, grade, work, tag, nu, means=None):
+def response_eval2(resp, kappa_lat, kappa_int):
+    """C / E at separate lateral and interlayer weld stiffnesses (None: perfect bond) from the C2 grid of
+    cell_response(two=True): AAA in the lateral scale along every interlayer node (memoized), then AAA in the
+    interlayer scale through those values. Equal kappas read the 1D response."""
+    if kappa_lat == kappa_int:
+        return response_eval(resp, "C", kappa_lat)
+    sl, si = (0.0 if k is None else 1.0 / k for k in (kappa_lat, kappa_int))
+    nodes = resp["s"]
+    if max(sl, si) > nodes[-1] * (1 + 1e-9):
+        raise ValueError("kappa below the response range (%g)" % (1 / nodes[-1]))
+    C2 = np.asarray(resp["C2"], float)
+    col = []
+    for j in range(len(nodes)):
+        key = (resp["key"], "C2", j)
+        if key not in _FITS:
+            _FITS[key] = _aaa(nodes, C2[:, j])
+        col.append(_FITS[key](sl))
+    return _aaa(nodes, np.array(col))(si)
+
+
+def cell_response(kind, g, refine, grade, work, tag, nu, means=None, two=False):
     """Response of the bead-boundary cell for the geometry g against the weld stiffness, from the response library
     (built on a miss: one bead_cell run at E = 1 over RESPONSE_S, laws Kn = kappa E / w, Kt from nu as weld_args):
       C        (nodes, 6, 6) stiffness / E;  porosity, box
       means    {mkey: {family: [tn, ts, tedge] per node}} FFM weld-traction means per unit macro stress (MPa / MPa:
                independent of E) when means = (mkey, fn) is given, fn(T, S) -> weld_means(...) dict
+      C2       (nodes, nodes, 6, 6) stiffness / E on the RESPONSE_S x RESPONSE_S grid of (lateral, interlayer) weld
+               scales when two (separate kappas, response_eval2): one more bead_cell run, built on first request
     Responses do not depend on E, raster angle or layup; the bead operators are not kept beyond the local cache."""
     import hashlib
     title = "bead cell"   # fixed: the operator cache and the response key hash the whole file
@@ -364,11 +405,21 @@ def cell_response(kind, g, refine, grade, work, tag, nu, means=None):
     if os.path.exists(path):
         with open(path) as fh:
             resp = json.load(fh)
-        if means is None or means[0] in resp.get("means", {}):
+        if (means is None or means[0] in resp.get("means", {})) and (not two or "C2" in resp):
             return dict(resp, key=h.hexdigest())
     out, tfile = os.path.join(work, tag + "_resp.json"), os.path.join(work, tag + "_resp_t")
     cmd += ["--E", "1", "--nu", str(nu), "--ng", "12", "--cache", OPLIB or os.path.join(work, "cache"),
             "--json", out] + weld_args(kind, 1.0, 1.0, nu, g["w"])
+    if resp is not None and two and "C2" not in resp and (means is None or means[0] in resp["means"]):
+        # lateral welds: normal x or y; interlayer: normal z (periodic and internal)
+        grid = ",".join("%.17g:%.17g:%.17g" % (a, a, b) for a in RESPONSE_S for b in RESPONSE_S)
+        subprocess.run(cmd + ["--scales", grid], check=True, stdout=subprocess.DEVNULL)
+        with open(out) as fh:
+            runs = json.load(fh)["runs"]
+        n = len(RESPONSE_S)
+        resp["C2"] = [[runs[i * n + j]["C"] for j in range(n)] for i in range(n)]
+        _save_response(path, resp)
+        return dict(resp, key=h.hexdigest())
     cmd += ["--scales", ",".join("%.17g" % x for x in RESPONSE_S)] + (["--tractions", tfile] if means else [])
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
     with open(out) as fh:
@@ -382,10 +433,16 @@ def cell_response(kind, g, refine, grade, work, tag, nu, means=None):
         resp["means"][mk] = {fam: [[np.asarray(p[fam][c]).tolist() for p in per] for c in range(3)] for fam in per[0]}
         for q in range(len(runs)):
             os.remove(tfile + ".%d" % q)
+    _save_response(path, resp)
+    if two:
+        return cell_response(kind, g, refine, grade, work, tag, nu, means, two)
+    return dict(resp, key=h.hexdigest())
+
+
+def _save_response(path, resp):
     with open(path + ".tmp%d" % os.getpid(), "w") as fh:
         json.dump(resp, fh)
     os.replace(path + ".tmp%d" % os.getpid(), path)
-    return dict(resp, key=h.hexdigest())
 
 
 # Weld of each family in the bead cell (src/bead_cell.hpp pairs): normal axis, internal flags allowed.

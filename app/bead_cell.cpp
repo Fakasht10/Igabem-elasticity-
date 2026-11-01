@@ -12,7 +12,8 @@
 //                       Kn <= 0: perfect weld (default everywhere)
 //   --crack P|I:a:r:c=v[,c=v]:lim  debond on the periodic (P) or internal (I) welds normal to axis a with + side in
 //                  region r (-1: any): cracked where max |x_c - v| > lim (src/bead_cell.hpp WeldCrack); repeatable
-//   --scales s1,s2,... every weld compliance times s (0: perfect bond), one solve per entry sharing one LU
+//   --scales s1,s2,... every weld compliance times s (0: perfect bond), one solve per entry sharing one LU;
+//                  an entry sx:sy:sz scales the welds normal to x, y, z apart (lateral vs interlayer)
 //                  (BeadCell::solveScales; JSON {"runs": [...]}, tractions f.0, f.1, ...): a kappa sweep in one run
 //   --tractions f  weld tractions of the six unit macro strains at Gauss points of every weld (BeadCell::weldTractions)
 //   JSON: C (Voigt 11 22 33 23 13 12, engineering shear), engineering constants, porosity, timings, Hill-Mandel.
@@ -36,7 +37,7 @@ int main(int argc, char** argv) {
   double E = 2200.0, nu = 0.35;
   int ng = 12;
   std::string cache = "none", json, axes, tractions;
-  std::vector<double> scales{1.0};
+  std::vector<Vec3> scales{Vec3::Ones()};
   std::vector<WeldCrack> cracks;
   auto weld = [](const char* s, bool internal) {
     double Kn, Kt;
@@ -57,7 +58,11 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--scales")) {
       scales.clear();
       std::stringstream ss(next());
-      for (std::string t; std::getline(ss, t, ',');) scales.push_back(std::stod(t));
+      for (std::string t; std::getline(ss, t, ',');) {  // s (all welds) or sx:sy:sz (per weld normal axis)
+        double a, b, c;
+        if (std::sscanf(t.c_str(), "%lf:%lf:%lf", &a, &b, &c) == 3) scales.push_back(Vec3(a, b, c));
+        else scales.push_back(Vec3::Constant(std::stod(t)));
+      }
     }
     else if (!std::strcmp(argv[i], "--crack")) {
       std::stringstream ss(next());
@@ -129,7 +134,12 @@ int main(int argc, char** argv) {
   for (size_t q = 0; q < runs.size(); ++q) {
     const RveResult& r = runs[q];
     const Engineering e = engineering(r.C);
-    std::printf("scale %g: Hill-Mandel %.1e, asymmetry %.1e\n", scales[q], r.hill_mandel, r.asymmetry);
+    const Vec3& sq = scales[q];
+    const bool uni = sq(0) == sq(1) && sq(1) == sq(2);
+    char stag[96];
+    if (uni) std::snprintf(stag, sizeof stag, "%.12g", sq(0));
+    else std::snprintf(stag, sizeof stag, "[%.12g, %.12g, %.12g]", sq(0), sq(1), sq(2));
+    std::printf("scale %s: Hill-Mandel %.1e, asymmetry %.1e\n", stag, r.hill_mandel, r.asymmetry);
     for (int i = 0; i < 6; ++i) {
       std::printf("  ");
       for (int j = 0; j < 6; ++j) std::printf("%11.3f", r.C(i, j));
@@ -143,7 +153,7 @@ int main(int argc, char** argv) {
     }
     std::ostringstream js;
     js.precision(10);
-    js << "{\"E\": " << E << ", \"nu\": " << nu << ", \"scale\": " << scales[q] << ", \"porosity\": " << m.porosity()
+    js << "{\"E\": " << E << ", \"nu\": " << nu << ", \"scale\": " << stag << ", \"porosity\": " << m.porosity()
        << ", \"box\": [" << L(0) << ", " << L(1) << ", " << L(2) << "], \"dofs\": " << m.ndofTotal()
        << ", \"unknowns\": " << r.unknowns << ", \"t_setup\": " << t_setup << ", \"t_solve\": " << t_all
        << ", \"hill_mandel\": " << r.hill_mandel << ", \"C\": [";

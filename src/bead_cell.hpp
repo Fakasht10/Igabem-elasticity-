@@ -246,13 +246,20 @@ class BeadCell {
     }
   }
 
-  RveResult solve() const { return solveScales({1.0})[0]; }
+  RveResult solve() const { return solveScales(std::vector<double>{1.0})[0]; }
+  std::vector<RveResult> solveScales(const std::vector<double>& scales) const {
+    std::vector<Vec3> s3;
+    for (double s : scales) s3.push_back(Vec3::Constant(s));
+    return solveScales(s3);
+  }
 
   // One solve per weld-compliance scale s (every weld compliance times s; s = 0: perfect bond, s = kappa_ref / kappa
   // for a kappa sweep). The scale enters the weld system as A(s) = A0 + s U E^T (U: the spring columns of the + side
   // displacement jumps, E^T: the weld traction unknowns), so several scales share one LU of A0 and the solves
   // Z = A0^-1 U, then each costs one LU of I + s E^T Z (Woodbury, size 3 x weld tractions) and the averages.
-  std::vector<RveResult> solveScales(const std::vector<double>& scales) const {
+  // Per-axis form: scales[q](a) multiplies the compliance of every weld normal to axis a (lateral and interlayer
+  // welds apart: A(S) = A0 + U S E^T, S diagonal over the traction unknowns by their pair's axis).
+  std::vector<RveResult> solveScales(const std::vector<Vec3>& scales) const {
     RveResult res;
     res.bc = RveBc::Pbc;
     const auto t0 = std::chrono::steady_clock::now();
@@ -271,6 +278,7 @@ class BeadCell {
     std::vector<Edge> edges;
     std::vector<int> tplus_col(ntt, -1);  // + side traction dof -> unknown column
     std::vector<int> plus_t, minus_t;     // per unknown traction: global + and - traction dof
+    std::vector<int> taxis;               // per unknown traction: its pair's normal axis (weld scale family)
     std::vector<std::pair<int, int>> trow;  // per unknown traction: (region, row point) of its + side point
     for (size_t k = 0; k < pairs.size(); ++k) {
       const BeadPair& P = pairs[k];
@@ -297,6 +305,7 @@ class BeadCell {
         if (found < 0) throw std::runtime_error("BeadCell: pair traction point without a partner");
         tplus_col[t0r[P.rp] + op + j] = int(plus_t.size());
         plus_t.push_back(t0r[P.rp] + op + j);
+        taxis.push_back(P.axis);
         minus_t.push_back(t0r[P.rm] + om + found);
         trow.push_back({P.rp, Rp.rowpos[Rp.conn_row0[P.pp] + j]});
       }
@@ -423,8 +432,13 @@ class BeadCell {
     Eigen::MatrixXd B = Eigen::MatrixXd::Zero(n + 3, 6);
     B.topRows(n) = rhs;
     std::vector<Eigen::MatrixXd> sols;
+    auto svec = [&](const Vec3& s) {  // the diagonal of S
+      Eigen::VectorXd v(3 * nt);
+      for (int j = 0; j < nt; ++j) v.segment<3>(3 * j).setConstant(s(taxis[j]));
+      return v;
+    };
     if (scales.size() == 1 || !springs) {  // one scale: factor A(s) itself
-      if (springs) A.middleCols(nu, 3 * nt) += scales[0] * U;
+      if (springs) A.middleCols(nu, 3 * nt) += U * svec(scales[0]).asDiagonal();
       const DenseLU lu(std::move(A));
       const Eigen::MatrixXd Xs = lu.solve(B);
       sols.assign(scales.size(), Xs);
@@ -433,13 +447,14 @@ class BeadCell {
       const Eigen::MatrixXd Y = lu.solve(B), Z = lu.solve(U);
       if (std::getenv("IGABEM_PROFILE")) std::fprintf(stderr, "  A0 factor and Z = A0^-1 U (%d x %d) %.2f s\n", n + 3, 3 * nt, since(t0));
       const Eigen::MatrixXd W = Z.middleRows(nu, 3 * nt);
-      for (double sc : scales) {
-        if (sc == 0.0) { sols.push_back(Y); continue; }
-        Eigen::MatrixXd S = sc * W;
+      for (const Vec3& sc : scales) {
+        if (sc.isZero()) { sols.push_back(Y); continue; }
+        const Eigen::VectorXd sv = svec(sc);
+        Eigen::MatrixXd S = W * sv.asDiagonal();
         S.diagonal().array() += 1.0;
         const DenseLU ls(std::move(S));
         Eigen::MatrixXd Xs = Y;
-        gemmAdd(-sc, Z, ls.solve(Y.middleRows(nu, 3 * nt)), Xs);
+        gemmAdd(-1.0, Z * sv.asDiagonal(), ls.solve(Y.middleRows(nu, 3 * nt)), Xs);
         sols.push_back(std::move(Xs));
       }
     }
@@ -447,7 +462,7 @@ class BeadCell {
     res.t_factor = std::chrono::duration<double>(t1 - t0).count();
     std::vector<RveResult> out;
     for (size_t si = 0; si < scales.size(); ++si) {
-    const double scale = springs ? scales[si] : 0.0;
+    const Vec3 scale = springs ? scales[si] : Vec3::Zero();
     const Eigen::MatrixXd& Xs = sols[si];
     res.solutions.clear();
     res.hill_mandel = 0.0;
@@ -473,7 +488,7 @@ class BeadCell {
         for (int j = 0; j < nb; ++j) {
           const int g = u0[i] + R.bdof[j];
           Vec3 u = Xs.col(k).segment<3>(3 * ucol[g]) + Ek * shift[g];
-          for (const auto& [col, C] : jump[g]) u += scale * C * Xs.col(k).segment<3>(nu + 3 * col);
+          for (const auto& [col, C] : jump[g]) u += scale(taxis[col]) * C * Xs.col(k).segment<3>(nu + 3 * col);
           kv.segment<3>(3 * j) = u;
           s.u.segment<3>(3 * R.bdof[j]) = u;
         }
@@ -860,7 +875,7 @@ class BeadCell {
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - t).count();
   }
 
-  void accumulate(const BeadRegion& R, const BoundarySolution& s, RveCaseResult& c, int ri, double scale) const {
+  void accumulate(const BeadRegion& R, const BoundarySolution& s, RveCaseResult& c, int ri, const Vec3& scale) const {
     const GaussRule g = gaussLegendre(std::max(6, opt.n_gauss / 2));
     PatchEval E;
     std::vector<int> plus_kind(R.mesh.patches.size(), -1);  // + side of a pair: index into pairs
@@ -876,7 +891,7 @@ class BeadCell {
             const Vec3 u = s.displacement(e.patch, E), t = s.traction(e.patch, E);
             c.sigma += w * t * E.x.transpose();
             c.energy += w * t.dot(u);
-            if (plus_kind[e.patch] >= 0) c.energy += scale * w * t.dot(compliance(pairs[plus_kind[e.patch]]) * t);
+            if (const int k = plus_kind[e.patch]; k >= 0) c.energy += scale(pairs[k].axis) * w * t.dot(compliance(pairs[k]) * t);
           }
     }
   }
