@@ -1,0 +1,254 @@
+{
+ "sutura_commit": "158d9ab688fd43098cdd7fe8ad58f8f0049c34f9",
+ "python": "3.13.18",
+ "summary": {
+  "pass": 25,
+  "fail": 1,
+  "timeout": 0,
+  "missing": 0
+ },
+ "tests": [
+  {
+   "test": "test_mesh_io.py",
+   "result": "pass",
+   "seconds": 0.17,
+   "tail": [
+    "mesh_io reader regressions passed"
+   ]
+  },
+  {
+   "test": "test_units.py",
+   "result": "pass",
+   "seconds": 1.87,
+   "tail": [
+    "ok  test_validate_3mf_declared_mm_silent",
+    "ok  test_validate_reports_unit_warning",
+    "unit tests passed"
+   ]
+  },
+  {
+   "test": "test_adversarial.py",
+   "result": "pass",
+   "seconds": 1.53,
+   "tail": [
+    "ok  empty         exit=1  repair failed: input mesh is empty (no triangles)",
+    "ok  wrong_ext     exit=1  repair failed: input mesh contains malformed STL (no triangle count)",
+    "PASS: all adversarial inputs rejected with a clear error"
+   ]
+  },
+  {
+   "test": "test_cli_hardening.py",
+   "result": "pass",
+   "seconds": 1.49,
+   "tail": [
+    "ok  test_subcommand_human_error_is_text",
+    "ok  test_unexpected_error_guard_human_debug",
+    "ok  test_unexpected_error_guard_machine"
+   ]
+  },
+  {
+   "test": "test_reload_n2m.py",
+   "result": "pass",
+   "seconds": 0.2,
+   "tail": [
+    "ok  stage-1-only n2m verdict",
+    "ok  synthetic save/reload pinch",
+    "reload-n2m tests passed"
+   ]
+  },
+  {
+   "test": "test_defects.py",
+   "result": "pass",
+   "seconds": 0.12,
+   "tail": [
+    "ok  test_stdlib_only",
+    "ok  test_v2_colours_never_lose_legacy_kinds",
+    "defects tests passed"
+   ]
+  },
+  {
+   "test": "test_diagnostics.py",
+   "result": "pass",
+   "seconds": 0.17,
+   "tail": [
+    "ok  test_run_diagnostics_cli",
+    "ok  test_sanitize_value",
+    "diagnostics tests passed"
+   ]
+  },
+  {
+   "test": "test_diagnosis_v2.py",
+   "result": "pass",
+   "seconds": 4.43,
+   "tail": [
+    "diagnosis v2 phase-3 ok"
+   ]
+  },
+  {
+   "test": "test_diagnosis_determinism.py",
+   "result": "pass",
+   "seconds": 7.48,
+   "tail": [
+    "diagnosis v2 determinism ok"
+   ]
+  },
+  {
+   "test": "test_order_independence.py",
+   "result": "pass",
+   "seconds": 0.13,
+   "tail": [
+    "ok  test_detect_non_manifold_single_region",
+    "ok  test_mesh_topology_order_independent",
+    "order-independence tests passed"
+   ]
+  },
+  {
+   "test": "test_connected_components.py",
+   "result": "pass",
+   "seconds": 0.13,
+   "tail": [
+    "ok  test_sparse_like_coordinate_object",
+    "ok  test_tuple_coordinate_format",
+    "connected-components tests passed"
+   ]
+  },
+  {
+   "test": "test_surface_metrics.py",
+   "result": "pass",
+   "seconds": 1.37,
+   "tail": [
+    "growth: fill=192.000 recall=0.0000 | shrink: removed=220.368 recall=0.0000",
+    "translated: recall=0.3021 fill=60.000",
+    "OK"
+   ]
+  },
+  {
+   "test": "test_si_definition.py",
+   "result": "pass",
+   "seconds": 0.11,
+   "tail": [
+    "fixture OK: diagnosis SI bit == si_faces_exact (scan_si)",
+    "candidate corpus not present; skipped the real-mesh cross-check"
+   ]
+  },
+  {
+   "test": "test_si_caps.py",
+   "result": "pass",
+   "seconds": 0.42,
+   "tail": [
+    "no-cache OK (in-place mutation is re-measured)",
+    "report site OK (skipped classifier -> None, not 0)",
+    "test_si_caps: all passed"
+   ]
+  },
+  {
+   "test": "test_validate.py",
+   "result": "pass",
+   "seconds": 2.28,
+   "tail": [
+    "ok  test_validate_does_not_modify_input",
+    "ok  test_validate_multi_object_3mf",
+    "validate tests passed"
+   ]
+  },
+  {
+   "test": "test_topology_parity.py",
+   "result": "pass",
+   "seconds": 130.63,
+   "tail": [
+    "Phase 2 filter parity OK on 40 corpus meshes (bit-for-bit array match)",
+    "hard error OK (missing kernel -> RuntimeError in auto/rust; python oracle works)",
+    "topology parity tests passed"
+   ]
+  },
+  {
+   "test": "test_hole_parity.py",
+   "result": "pass",
+   "seconds": 2.41,
+   "tail": [
+    "    thingi10k_1038439    in b/nm=184/0 -> ours 0/0 (closed=3) vs pml 22/0",
+    "  PyMeshLab quality comparison OK on 3 sample(s)",
+    "close_holes parity tests passed"
+   ]
+  },
+  {
+   "test": "test_closing.py",
+   "result": "pass",
+   "seconds": 5.62,
+   "tail": [
+    "  \u2713 test_defensive_error_handling passed",
+    "",
+    "All tests passed in 4.87 s (< 30 s target)."
+   ]
+  },
+  {
+   "test": "test_pinched_vertices.py",
+   "result": "pass",
+   "seconds": 4.24,
+   "tail": [
+    "ok  test_open_mesh_is_left_alone",
+    "ok  test_real_world_pinched_sample",
+    "pinched-vertex tests passed"
+   ]
+  },
+  {
+   "test": "test_adopt_guard.py",
+   "result": "pass",
+   "seconds": 0.22,
+   "tail": [
+    "test_adopt_guard: ok"
+   ]
+  },
+  {
+   "test": "test_policy_adoption.py",
+   "result": "pass",
+   "seconds": 0.25,
+   "tail": [
+    "policy adoption-guard tests passed"
+   ]
+  },
+  {
+   "test": "test_policy_stage1.py",
+   "result": "pass",
+   "seconds": 0.22,
+   "tail": [
+    "policy stage1 tests passed"
+   ]
+  },
+  {
+   "test": "test_no_scipy.py",
+   "result": "pass",
+   "seconds": 0.66,
+   "tail": [
+    "no-scipy guard passed"
+   ]
+  },
+  {
+   "test": "test_no_trimesh.py",
+   "result": "pass",
+   "seconds": 0.65,
+   "tail": [
+    "no-trimesh guard passed"
+   ]
+  },
+  {
+   "test": "test_no_runtime_pymeshlab.py",
+   "result": "pass",
+   "seconds": 0.69,
+   "tail": [
+    "OK: 0 allowlisted files with pymeshlab imports.",
+    "OK: allowlist structure valid."
+   ]
+  },
+  {
+   "test": "test_engine_no_pymeshlab.py",
+   "result": "fail",
+   "seconds": 0.65,
+   "tail": [
+    "  File \"/tmp/ext/sutura/sutura/heatmap.py\", line 29, in <module>",
+    "    from PySide6.QtCore import Qt, QPoint",
+    "ModuleNotFoundError: No module named 'PySide6'"
+   ]
+  }
+ ]
+}

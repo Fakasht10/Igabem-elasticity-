@@ -1,0 +1,15 @@
+{
+ "ours_pass": 15,
+ "ours25_pass": 15,
+ "s1_wt": 35,
+ "full_wt": 38,
+ "full_timeout": 1,
+ "n": 40,
+ "s1_si_left": 22,
+ "full_si_left": 15,
+ "s1_comp_loss": 5,
+ "full_comp_change": 10,
+ "full_dev_gt_1e3": 12,
+ "s1_dev_gt_1e3": 4,
+ "ours_dev_gt_0": 0
+}
