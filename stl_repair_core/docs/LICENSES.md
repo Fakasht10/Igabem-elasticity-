@@ -12,7 +12,8 @@
 - At the pinned commit, the 90 Python source files carry `SPDX-License-Identifier: Apache-2.0` headers.
 - The `sutura-geom` Rust crate declares `MIT OR Apache-2.0` in its Cargo.toml, its pyproject and Sutura's own `docs/ATTRIBUTION.md`, which says it is "separate from Sutura's PolyForm Noncommercial application license".
 - This package follows the most restrictive reading, PolyForm NC for everything, until the licensor clarifies. The Rust kernel here was written against the contract of `triangle_intersection.rs`, which lives in the MIT/Apache crate. The Python modules follow the PolyForm-licensed application code.
-- **Consequence:** the package must not be linked into or distributed with MIT- or GPL-licensed IgBEM code for any commercial purpose. It is kept as a separate top-level directory. Nothing in `python/geomio` imports it.
+- **Owner's decision (2026-11-01):** use is for noncommercial research, which PolyForm NC permits. `python/geomio/stlgate.py` calls the package as an **optional runtime import** (`read_stl_gated`, `load(..., gate=...)`, `python -m geomio --gate`). No code is copied into geomio, and geomio works without it.
+- **Consequence:** the repository is GPLv3, and PolyForm NC is not GPL-compatible. So the two stay separately licensed works: this directory keeps its own LICENSE and NOTICE, and anyone redistributing geomio for commercial use must leave out `stl_repair_core` and the `--gate` path.
 - **Options:** (a) ask the licensor for a permissive grant on this extraction; (b) re-derive from Sutura **v0.1.9** (Apache-2.0), which lacks the native exact core but whose STL intake and Stage 1 chain cover most of this scope; (c) a clean-room rewrite from public algorithms only (Shewchuk predicates, Liepa 2003, Ericson closest point). The current code is already close to (c), but provenance was taken from 0.9.8, so (c) would need an independent author.
 
 ## Runtime dependencies (not vendored)

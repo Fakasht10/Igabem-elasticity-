@@ -302,3 +302,52 @@ def test_tet10_fold_is_straightened():
         assert r["tet_folded"] >= 1 and r["tet_inverted"] == 0 and r["tet_edges_straightened"] >= 6
     finally:
         gmsh.finalize()
+
+
+# ---------------------------------------------------------------- gated STL intake (optional stl_repair_core)
+def _gated_box(tmp_path, drop=None):
+    pytest.importorskip("stl_repair_core")
+    m = box()
+    if drop is not None:
+        keep = np.ones(len(m.T), bool); keep[drop] = False
+        m = gio.TriMesh(m.V, m.T[keep], m.fid[keep])
+    p = str(tmp_path / "b.stl")
+    gio.write_stl(p, m)
+    return p
+
+
+def test_gate_clean_part_passes_unchanged(tmp_path):
+    p = _gated_box(tmp_path)
+    m, info = gio.read_stl_gated(p)
+    assert info["gate"]["status"] == "PASS" and info["gate"]["adopted"] == [] and info["watertight"]
+    assert same_surface(m, box())
+
+
+def test_gate_fills_hole_and_keeps_face_ids(tmp_path):
+    """one missing triangle on face 3 (y = 0 side): closed, and the patch takes id 3, not 0 or a neighbouring side's."""
+    p = _gated_box(tmp_path, drop=5)
+    rep = str(tmp_path / "r.json")
+    m, info = gio.load(p, gate=dict(max_hole_diameter=3.0, report=rep))
+    assert info["gate"]["new_faces"] == 1 and info["gate"]["adopted"] == ["fill_hole"]
+    assert same_surface(m, box()) and os.path.exists(rep)
+    _, ri = gio.read_stl(p)                      # geomio's own reader leaves the hole open
+    assert not ri["watertight"]
+
+
+def test_gate_keeps_opening_above_limit(tmp_path):
+    p = _gated_box(tmp_path, drop=5)
+    with pytest.raises(gio.StlGateError) as e:  # watertightness required by default; hole limit 0 = no filling
+        gio.read_stl_gated(p)
+    assert e.value.report["status"] == "FAIL"
+    m, info = gio.read_stl_gated(p, require_watertight=False)   # an intentional opening is accepted when allowed
+    assert len(m.T) == 11 and not info["watertight"]
+
+
+def test_gate_rejects_self_intersecting_part(tmp_path):
+    pytest.importorskip("stl_repair_core")
+    a, b = box(), box(lo=(1, 0.5, 0.25), hi=(3, 1.5, 0.75))
+    m = gio.TriMesh(np.vstack([a.V, b.V]), np.vstack([a.T, b.T + len(a.V)]), np.r_[a.fid, b.fid + 6])
+    p = str(tmp_path / "o.stl")
+    gio.write_stl(p, m)
+    with pytest.raises(gio.StlGateError, match="self_intersections"):
+        gio.read_stl_gated(p)

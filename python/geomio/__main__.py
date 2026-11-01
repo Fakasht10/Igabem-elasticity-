@@ -1,7 +1,7 @@
 import argparse
 import time
 
-from . import load, save, segment_faces
+from . import StlGateError, load, save, segment_faces
 
 
 def main(argv=None):
@@ -16,6 +16,10 @@ def main(argv=None):
     ap.add_argument("--order", type=int, default=1, choices=(1, 2),
                     help="2: curved tri6 (+ TET10 with --volume), mid-edge nodes on the CAD; output .vtu or .msh")
     ap.add_argument("--volume", action="store_true", help="--order 2: also mesh the volume with TET10")
+    ap.add_argument("--gate", action="store_true",
+                    help="STL input: check and conservatively repair with stl_repair_core; FAIL stops (exit 1)")
+    ap.add_argument("--max-hole", type=float, default=0.0, help="--gate: close holes up to this diameter (model units)")
+    ap.add_argument("--report", default=None, help="--gate: JSON report path")
     a = ap.parse_args(argv)
     t0 = time.perf_counter()
     if a.order == 2:
@@ -32,7 +36,13 @@ def main(argv=None):
             print("%-24s %s" % (k, v))
         return
     cad = a.inp.lower().rsplit(".", 1)[-1] in ("step", "stp", "iges", "igs", "brep")
-    m, info = load(a.inp, **(dict(h=a.h, curvature=a.curvature) if cad else {}))
+    kw = dict(h=a.h, curvature=a.curvature) if cad else {}
+    if a.gate and not cad:
+        kw["gate"] = dict(max_hole_diameter=a.max_hole, report=a.report)
+    try:
+        m, info = load(a.inp, **kw)
+    except StlGateError as e:
+        raise SystemExit("%s\nreport: %s" % (e, a.report or "(pass --report to keep it)"))
     if a.segment is not None:
         m = segment_faces(m, a.segment)
     save(a.out, m, **(dict(binary=not a.ascii) if a.out.lower().endswith(".stl") else {}))
