@@ -656,6 +656,9 @@ class BeadCell {
             regions[ri].connection[pi] = regions[rj].connection[pj] = 1;
           }
       }
+    if (std::getenv("IGABEM_DEBUG_PAIRS"))
+      for (const auto& P : pairs)
+        std::fprintf(stderr, "pair %d:%d %d:%d axis %d %s\n", P.rm, P.pm, P.rp, P.pp, P.axis, P.internal ? "internal" : "periodic");
     for (auto& r : regions) {  // cut faces: unpaired planar patches on a non-periodic box face
       r.driven.assign(r.mesh.patches.size(), 0);
       for (size_t pi = 0; pi < r.mesh.patches.size(); ++pi) {
@@ -872,7 +875,10 @@ class BeadCell {
     if (S.copy_of >= 0) throw std::runtime_error("BeadCell: copy of a copy");
     if (S.mesh.ndof != T.mesh.ndof || S.ts.ndof != T.ts.ndof || S.bdof != T.bdof || S.tcon != T.tcon ||
         S.ecol_u != T.ecol_u || S.ecol_t != T.ecol_t || S.rowpos != T.rowpos || S.xsel != T.xsel)
-      throw std::runtime_error("BeadCell: copied region does not match its source (patches or connections)");
+      throw std::runtime_error("BeadCell: copied region " + std::to_string(&T - regions.data()) + " (" + T.file + ") does not match its source " + std::to_string(&S - regions.data()) + " (" + S.file + ")" +
+                               " (patches or connections: ndof " + std::to_string(S.mesh.ndof) + "/" + std::to_string(T.mesh.ndof) +
+                               ", kept " + std::to_string(S.bdof.size()) + "/" + std::to_string(T.bdof.size()) + ", tcon " +
+                               std::to_string(S.tcon.size()) + "/" + std::to_string(T.tcon.size()) + ")");
     const Vec3 d = T.mesh.dof_point[0] - T.R * S.mesh.dof_point[0];
     for (int g = 0; g < S.mesh.ndof; ++g)
       if ((T.mesh.dof_point[g] - T.R * S.mesh.dof_point[g] - d).norm() > 1e3 * tol_)

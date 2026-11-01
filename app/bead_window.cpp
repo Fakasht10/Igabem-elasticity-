@@ -30,7 +30,10 @@
 #include <iostream>
 #include <sstream>
 
+#include <map>
+
 #include "bead_window.hpp"
+#include "recovery.hpp"
 #include "multi_region.hpp"
 
 using namespace igabem;
@@ -42,7 +45,7 @@ int main(int argc, char** argv) {
   int ng = 12, nx = 3, ny = 3;
   bool direct = false, serve = false;
   double tol = 1e-10;
-  std::string cache = "none", json, tractions, drive = "strain", points_out;
+  std::string cache = "none", json, tractions, drive = "strain", points_out, manifest;
   std::vector<Vec3> scales{Vec3::Ones()};
   auto weld = [](const char* s, bool internal) {
     double Kn, Kt;
@@ -66,6 +69,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--tractions")) tractions = next();
     else if (!std::strcmp(argv[i], "--points-out")) points_out = next();
     else if (!std::strcmp(argv[i], "--serve")) serve = true;
+    else if (!std::strcmp(argv[i], "--pieces")) manifest = next();
     else if (!std::strcmp(argv[i], "--weld")) welds.push_back(weld(next(), false));
     else if (!std::strcmp(argv[i], "--weld-int")) welds.push_back(weld(next(), true));
     else if (!std::strcmp(argv[i], "--scales")) {
@@ -92,18 +96,41 @@ int main(int argc, char** argv) {
   Eigen::Matrix3d R90;
   R90 << 0, -1, 0, 1, 0, 0, 0, 0, 1;
   std::vector<std::string> fs;
-  std::vector<Vec3> off;
+  std::vector<Vec3> off, cell_at;   // cell_at: centre of the region's cell (corrector lookup)
   std::vector<std::pair<int, Eigen::Matrix3d>> cp;
   std::vector<int> fil, grp;
-  for (int i = 0; i < nx; ++i)
-    for (int j = 0; j < ny; ++j)
-      for (int b = 0; b < 2; ++b) {
-        fs.push_back(files[b]);
-        off.push_back(Vec3(i * w, j * w, 0.0));
-        cp.push_back(fs.size() == 1 ? std::make_pair(-1, Eigen::Matrix3d::Identity()) : std::make_pair(0, b ? R90 : Eigen::Matrix3d::Identity()));
-        fil.push_back(b ? 1 : 0);
-        grp.push_back(i * ny + j);
-      }
+  if (manifest.empty()) {
+    for (int i = 0; i < nx; ++i)
+      for (int j = 0; j < ny; ++j)
+        for (int b = 0; b < 2; ++b) {
+          fs.push_back(files[b]);
+          off.push_back(Vec3(i * w, j * w, 0.0));
+          cell_at.push_back(off.back());
+          cp.push_back(fs.size() == 1 ? std::make_pair(-1, Eigen::Matrix3d::Identity()) : std::make_pair(0, b ? R90 : Eigen::Matrix3d::Identity()));
+          fil.push_back(b ? 1 : 0);
+          grp.push_back(i * ny + j);
+        }
+  } else {
+    // arbitrary pieces (python/rve/notch.py): "file type(0 A, 1 B) ox oy oz cx cy src group"; src = -1: own operator,
+    // else the region whose operator it copies (turned 90 deg if the types differ)
+    std::ifstream in(manifest);
+    if (!in) throw std::runtime_error("cannot read " + manifest);
+    std::string f;
+    int t, src, gr;
+    double ox, oy, oz, cx, cy;
+    std::vector<int> types;
+    while (in >> f >> t >> ox >> oy >> oz >> cx >> cy >> src >> gr) {
+      fs.push_back(f);
+      off.push_back(Vec3(ox, oy, oz));
+      cell_at.push_back(Vec3(cx, cy, 0.0));
+      types.push_back(t);
+      cp.push_back(src < 0 ? std::make_pair(-1, Eigen::Matrix3d::Identity())
+                           : std::make_pair(src, t != types[src] ? R90 : Eigen::Matrix3d::Identity()));
+      fil.push_back(t);
+      grp.push_back(gr);
+    }
+    nx = ny = 0;
+  }
   SolverOptions o;
   o.n_gauss = ng;
   o.far_tol = 1e-10;
@@ -174,19 +201,58 @@ int main(int argc, char** argv) {
   all.precision(10);
   for (size_t q = 0; q < scales.size(); ++q) {
     std::vector<BeadWindow::Drive> drives;
-    std::shared_ptr<std::vector<Eigen::MatrixXd>> chi;  // per piece: fluctuation (3 x ndof) per unit strain
+    // per window region, per unit strain k: the fluctuation (3 x ndof) of the periodic cell at its dofs
+    std::shared_ptr<std::vector<std::vector<Eigen::MatrixXd>>> chi;
     if (use_chi) {
       const RveResult rc = cell.solveScales(std::vector<Vec3>{scales[q]})[0];
-      chi = std::make_shared<std::vector<Eigen::MatrixXd>>();
+      std::vector<Eigen::MatrixXd> cc;  // cc[2 k + b]: cell piece b
       for (int k = 0; k < 6; ++k)
         for (int b = 0; b < 2; ++b) {
           const BeadRegion& P = cell.regions[b];
           Eigen::MatrixXd X(3, P.mesh.ndof);
           const Eigen::Matrix3d Ek = voigtUnit(k, true);
           for (int g = 0; g < P.mesh.ndof; ++g) X.col(g) = rc.solutions[k * 2 + b].u.segment<3>(3 * g) - Ek * P.mesh.dof_point[g];
-          chi->push_back(X);
+          cc.push_back(X);
         }
-      std::printf("periodic cell for the corrector drive: C11 %.2f, %d unknowns\n", rc.C(0, 0), rc.unknowns);
+      chi = std::make_shared<std::vector<std::vector<Eigen::MatrixXd>>>(m.regions.size());
+      int nmatch = 0, nlocate = 0;
+      for (size_t r = 0; r < m.regions.size(); ++r) {
+        const int b = fil[r];
+        auto& out = (*chi)[r];
+        const BeadRegion& R = m.regions[r];
+        if (R.file == files[b]) {  // a copy of the cell's piece: same dofs
+          for (int k = 0; k < 6; ++k) out.push_back(cc[2 * k + b]);
+          continue;
+        }
+        // own geometry (a cut piece): the cell's coefficient at a coinciding dof point, else chi at the closest
+        // point of the cell piece (the cut-face dofs of a trimmed patch)
+        const BeadRegion& C = cell.regions[b];
+        const double tl = 1e-7 * w;
+        std::map<std::array<long, 3>, int> at;
+        auto key = [&](const Vec3& x) { return std::array<long, 3>{std::lround(x(0) / tl), std::lround(x(1) / tl), std::lround(x(2) / tl)}; };
+        for (int g = 0; g < C.mesh.ndof; ++g) at[key(C.mesh.dof_point[g])] = g;
+        for (int k = 0; k < 6; ++k) out.push_back(Eigen::MatrixXd::Zero(3, R.mesh.ndof));
+        std::vector<char> drv(R.mesh.ndof, 0);  // only the cut-face dofs are driven
+        for (size_t p = 0; p < R.driven.size(); ++p)
+          if (R.driven[p])
+            for (int g : R.mesh.l2g[p]) drv[g] = 1;
+        for (int g = 0; g < R.mesh.ndof; ++g) {
+          if (!drv[g]) continue;
+          const Vec3 x = R.mesh.dof_point[g] - cell_at[r];
+          const auto it = at.find(key(x));
+          if (it != at.end()) {
+            for (int k = 0; k < 6; ++k) out[k].col(g) = cc[2 * k + b].col(it->second);
+            ++nmatch;
+            continue;
+          }
+          const SurfacePoint sp = locate(C.mesh, x, [](int) { return true; });
+          for (int k = 0; k < 6; ++k)
+            for (int l = 0; l < sp.E.n_loc; ++l) out[k].col(g) += sp.E.R[l] * cc[2 * k + b].col(C.mesh.l2g[sp.patch][sp.E.idx[l]]);
+          ++nlocate;
+        }
+      }
+      std::printf("periodic cell for the corrector drive: C11 %.2f, %d unknowns (cut pieces: %d dofs matched, %d located)\n",
+                  rc.C(0, 0), rc.unknowns, nmatch, nlocate);
     }
     for (int f = 0; field && f < nfield; ++f) {
       auto F = fptr;
@@ -197,13 +263,13 @@ int main(int argc, char** argv) {
         const auto& v = it->second[f];
         Vec3 u = v.head<3>();
         if (chi && r >= 0)
-          for (int k = 0; k < 6; ++k) u += v(3 + k) * (*chi)[2 * k + rr % 2].col(g);
+          for (int k = 0; k < 6; ++k) u += v(3 + k) * (*chi)[rr][k].col(g);
         return u;
       });
     }
     for (int k = 0; k < 6 && !field; ++k) {
       const Eigen::Matrix3d Ek = voigtUnit(k, true);
-      if (chi) drives.push_back([Ek, chi, k](int r, int g, const Vec3& x) { return r < 0 ? Vec3(Ek * x) : Vec3(Ek * x + (*chi)[2 * k + r % 2].col(g)); });
+      if (chi) drives.push_back([Ek, chi, k](int r, int g, const Vec3& x) { return r < 0 ? Vec3(Ek * x) : Vec3(Ek * x + (*chi)[r][k].col(g)); });
       else drives.push_back([Ek](int, int, const Vec3& x) { return Vec3(Ek * x); });
     }
     std::vector<BeadWindow::TDrive> tdrives;
