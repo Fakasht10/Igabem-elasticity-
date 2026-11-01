@@ -60,7 +60,7 @@ class NotchWindow:
         x, y = X[:, 0], X[:, 1]
         return np.where(y >= 0, np.hypot(x, y) - self.rho, np.abs(x) - self.rho)
 
-    def solve(self, u, eps, tjump, tag="m3"):
+    def solve(self, u, eps, tjump, tag="m3", probe=None):
         """Tractions (BeadWindow::tractions rows) of Q drives u + chi:eps (u (n, 3, Q), eps (n, 6, Q))."""
         Q = u.shape[-1]
         f = os.path.join(self.work, tag + "_field.txt")
@@ -70,13 +70,18 @@ class NotchWindow:
                                  np.column_stack([np.ones(len(tjump)), self.tkeys, j])]),
                    fmt=["%d", "%d", "%d"] + ["%.17g"] * (9 * Q))
         t = os.path.join(self.work, tag + "_tractions.txt")
-        r = subprocess.run(self.base + ["--drive", "field+chi:" + f, "--tractions", t], check=True,
+        extra = []
+        if probe is not None:                                           # interior stress at points (window frame)
+            pin, self.probe_out = os.path.join(self.work, tag + "_probe_in.txt"), os.path.join(self.work, tag + "_probe.txt")
+            np.savetxt(pin, probe, fmt="%.17g")
+            extra = ["--probe", pin, self.probe_out]
+        r = subprocess.run(self.base + ["--drive", "field+chi:" + f, "--tractions", t] + extra, check=True,
                            capture_output=True, text=True)
         self.report = r.stdout + r.stderr
         return np.loadtxt(t)
 
 
-def run(rho=1.0, cells=(8, 6), below=1, refine=0, kappa=None, work="/tmp/rve_notch", phase=None, log=print):
+def run(rho=1.0, cells=(8, 6), below=1, refine=0, kappa=None, work="/tmp/rve_notch", phase=None, probe=None, log=print):
     t0 = time.time()
     tm = {}
     win = NotchWindow(rho, cells, below, refine, kappa, work=work, phase=phase)
@@ -91,6 +96,8 @@ def run(rho=1.0, cells=(8, 6), below=1, refine=0, kappa=None, work="/tmp/rve_not
         t1 = time.time()
         Xs = np.vstack([X, Xt, Xt + [0, 0, win.Lz]])
         F = P.fields_all(Xs, on_surface=np.r_[on, np.zeros(2 * len(Xt), bool)])[P.cases[0]]
+        if probe is not None:                                           # homogeneous part at the same points
+            res["probe_part"] = P.fields_all(np.asarray(probe) + win.o)[P.cases[0]][1].reshape(-1, 9).tolist()
         tm["part_eval"] = time.time() - t1
     wind = F[2]
     inside = np.r_[wind[:len(X)][~on], wind[len(X):]]
@@ -101,7 +108,9 @@ def run(rho=1.0, cells=(8, 6), below=1, refine=0, kappa=None, work="/tmp/rve_not
     eps = strain(S[:n1, ..., None])[..., 0]
     tj = win.square * (S[n1 + nt:, :, 2] - S[n1:n1 + nt, :, 2])
     t1 = time.time()
-    T = win.solve(u[..., None], eps[..., None], tj[..., None])
+    T = win.solve(u[..., None], eps[..., None], tj[..., None], probe=probe)
+    if probe is not None:
+        res["probe"] = np.loadtxt(win.probe_out).tolist()
     tm["window_solve"] = time.time() - t1
     np.save(os.path.join(work, "m3_tractions_rho%g_r%d_%dx%d.npy" % ((rho, refine) + tuple(cells))), T)
     res["faces"] = face_averages(T, win)
@@ -141,6 +150,32 @@ def face_averages(T, win, top=5):
         out[name] = [dict(axis=int(u[i, 1]), avg_tn=float(Fn[i] / A[i]), area=float(A[i]), force=float(Fn[i]),
                           centre=xc[i].round(4).tolist(), dist_to_notch=float(d[i])) for i in o]
     return out
+
+
+def tcd(rho=1.0, L=0.44, cells=(5, 5), below=-1, refine=0, nz=30, dd=0.005, work="/tmp/rve_notch", log=print):
+    """TCD on the bisector from the bead window against the homogeneous part: hoop stress sxx (the bisector is +y)
+    on x = 0 at distance d from the root, per layer centre line (A z = 0, B z = h) and averaged through one
+    two-layer period (voids count zero: the homogenized stress the part sees). Point method at L/2, line method
+    over 2L. Per N of SENB load."""
+    h = notch.CICERO["h"]
+    d = np.arange(dd / 2, 2 * L + 1e-12, dd)
+    zc = -h / 2 + (np.arange(nz) + 0.5) * (2 * h / nz)
+    zs = np.r_[zc, 0.0, h]
+    D, Z = np.meshgrid(d, zs, indexing="ij")
+    probe = np.column_stack([np.zeros(D.size), rho + D.ravel(), Z.ravel()])
+    res = run(rho, cells, below, refine, None, work, probe=probe, log=log)
+    W = np.array(res.pop("probe")).reshape(len(d), len(zs), -1)
+    Sp = np.array(res.pop("probe_part")).reshape(len(d), len(zs), 3, 3)
+    sxx = np.where(W[..., 3] >= 0, W[..., 4], 0.0)
+    prof = dict(d=d, part=Sp[:, -1, 0, 0], homog=sxx[:, :nz].mean(1), A=sxx[:, nz], B=sxx[:, nz + 1],
+                solid=(W[:, :nz, 3] >= 0).mean(1))
+    out = {}
+    for k in ("part", "homog", "A", "B"):
+        y = prof[k]
+        out[k] = dict(PM=float(np.interp(L / 2, d, y)), LM=float(y.mean()))
+    res["tcd"] = dict(L=L, **out)
+    np.savez(os.path.join(work, "tcd_profile_rho%g.npz" % rho), **prof)
+    return res, prof
 
 
 def main(argv=None):

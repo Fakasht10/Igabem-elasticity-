@@ -34,6 +34,7 @@
 
 #include "bead_window.hpp"
 #include "recovery.hpp"
+#include "interior.hpp"
 #include "multi_region.hpp"
 
 using namespace igabem;
@@ -45,7 +46,7 @@ int main(int argc, char** argv) {
   int ng = 12, nx = 3, ny = 3;
   bool direct = false, serve = false;
   double tol = 1e-10;
-  std::string cache = "none", json, tractions, drive = "strain", points_out, manifest;
+  std::string cache = "none", json, tractions, drive = "strain", points_out, manifest, probe_in, probe_out;
   std::vector<Vec3> scales{Vec3::Ones()};
   auto weld = [](const char* s, bool internal) {
     double Kn, Kt;
@@ -67,6 +68,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--direct")) direct = true;
     else if (!std::strcmp(argv[i], "--tol")) tol = std::stod(next());
     else if (!std::strcmp(argv[i], "--tractions")) tractions = next();
+    else if (!std::strcmp(argv[i], "--probe")) { probe_in = next(); probe_out = next(); }
     else if (!std::strcmp(argv[i], "--points-out")) points_out = next();
     else if (!std::strcmp(argv[i], "--serve")) serve = true;
     else if (!std::strcmp(argv[i], "--pieces")) manifest = next();
@@ -289,6 +291,49 @@ int main(int argc, char** argv) {
     if (!tractions.empty()) {
       std::ofstream os(scales.size() == 1 ? tractions : tractions + "." + std::to_string(q));
       m.tractions(r, os);
+    }
+    if (!probe_in.empty()) {  // interior stress at points (window frame), first drive: full data of the hit pieces
+      const auto tp = std::chrono::steady_clock::now();
+      std::vector<Vec3> P;
+      {
+        std::ifstream is(probe_in);
+        double a, b, c;
+        while (is >> a >> b >> c) P.push_back(Vec3(a, b, c));
+      }
+      const int nreg = int(m.regions.size());
+      std::vector<int> owner(P.size(), -1);
+      std::vector<FieldSample> val(P.size());
+      SolverOptions po = m.opt;
+      if (po.far_tol <= 0.0) po.far_tol = 1e-10;
+      int nrec = 0;
+      for (int i = 0; i < nreg; ++i) {
+        Vec3 lo = Vec3::Constant(1e300), hi = -lo;
+        for (const auto& pa : m.regions[i].mesh.patches)
+          for (int k = 0; k < int(pa.Pw.size()); ++k) { lo = lo.cwiseMin(pa.cp(k)); hi = hi.cwiseMax(pa.cp(k)); }
+        std::vector<int> idx;
+        for (size_t k = 0; k < P.size(); ++k)
+          if (owner[k] < 0 && (P[k] - lo).minCoeff() >= -1e-12 && (hi - P[k]).minCoeff() >= -1e-12) idx.push_back(int(k));
+        if (idx.empty()) continue;
+        const BoundarySolution full = m.recoverFull(i, r.solutions[i]);
+        ++nrec;
+        const InteriorEvaluator ev(full, po);
+        std::vector<Vec3> xs;
+        for (int k : idx) xs.push_back(P[k]);
+        const std::vector<FieldSample> f = ev.eval(xs);
+        for (size_t j = 0; j < idx.size(); ++j)
+          if (f[j].winding > 0.5) { owner[idx[j]] = i; val[idx[j]] = f[j]; }
+      }
+      std::ofstream os(probe_out);
+      os.precision(10);
+      for (size_t k = 0; k < P.size(); ++k) {
+        const Eigen::Matrix3d& S = val[k].stress;
+        os << P[k](0) << ' ' << P[k](1) << ' ' << P[k](2) << ' ' << owner[k];
+        if (owner[k] >= 0) os << ' ' << S(0, 0) << ' ' << S(1, 1) << ' ' << S(2, 2) << ' ' << S(0, 1) << ' ' << S(1, 2) << ' ' << S(2, 0) << ' ' << val[k].winding;
+        else os << " 0 0 0 0 0 0 0";
+        os << '\n';
+      }
+      std::printf("probe: %zu points, %d pieces recovered, %.2f s\n", P.size(), nrec,
+                  std::chrono::duration<double>(std::chrono::steady_clock::now() - tp).count());
     }
     if (serve && field) {  // keep everything (operator, preconditioner, chi); "solve <field> <tractions>" per request
       m.warm = true;

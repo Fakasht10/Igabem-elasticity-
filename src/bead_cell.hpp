@@ -258,6 +258,31 @@ class BeadCell {
     }
   }
 
+  // Full boundary data of region ri from a solution s that holds its kept values (weld dofs, connection
+  // tractions; physical units): the eliminated unknowns (free-surface displacements, cross-sections) follow from
+  // the region's own eliminated rows, re-assembled (one region: ~1 s at grade 0). For interior probes of a few
+  // regions; the condensation cache keeps only the cross-section part (Xk), so the free surface is re-solved here.
+  BoundarySolution recoverFull(int ri, const BoundarySolution& s) {
+    BeadRegion& R = regions[ri];
+    const std::vector<Collocation> rows = structure(ri);
+    Eigen::MatrixXd H, G, Ae, Ak, F;
+    batchedHG(R.mesh, R.ts, unit_, opt, rows, H, G);
+    columns(R, H, G, R.erow, Ae, Ak, F);
+    H.resize(0, 0);
+    G.resize(0, 0);
+    const int nb = int(R.bdof.size());
+    Eigen::VectorXd kv(3 * (nb + R.tcon.size()));
+    for (int j = 0; j < nb; ++j) kv.segment<3>(3 * j) = s.u.segment<3>(3 * R.bdof[j]);
+    for (int j = 0; j < int(R.tcon.size()); ++j) kv.segment<3>(3 * (nb + j)) = s.t.segment<3>(3 * R.tcon[j]) / mu_;
+    const Eigen::VectorXd x = DenseLU(std::move(Ae)).solve(Eigen::MatrixXd(-Ak * kv)).col(0);
+    BoundarySolution f = s;
+    for (int g = 0; g < R.mesh.ndof; ++g)
+      if (R.ecol_u[g] >= 0) f.u.segment<3>(3 * g) = x.segment<3>(3 * R.ecol_u[g]);
+    for (int d = 0; d < R.ts.ndof; ++d)
+      if (R.ecol_t[d] >= 0) f.t.segment<3>(3 * d) = mu_ * R.esign_t[d] * x.segment<3>(3 * R.ecol_t[d]);
+    return f;
+  }
+
   RveResult solve() const { return solveScales(std::vector<double>{1.0})[0]; }
   std::vector<RveResult> solveScales(const std::vector<double>& scales) const {
     std::vector<Vec3> s3;
