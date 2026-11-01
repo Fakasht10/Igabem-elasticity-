@@ -891,6 +891,26 @@ not depend on the weld law, so a kappa sweep is one cold run and then cached sol
   stacked-laminae fit fails (b_int 0.7 w at 20 %, both at 40 %: no bond height reaches both ratios); the cell fit lands at -3 to
   -5 %.
 
+#### Weld onset at notches (`rve.onset`, `rve.notch_check`)
+
+- `rve.onset`: the part stress at every point of a bisector line, turned into the print's cell frame, gives the
+  mean traction on every bond family of the bead cell by superposition of its six stored unit-stress solutions
+  (`strength.weld_means`, response library; no cell solve per point). Equivalent weld traction
+  sqrt(<tn>^2 + (r ts)^2) against the weld strength T, filament mode s11 / X per layer, TCD point or line method.
+  Net-section means by default (exact by equilibrium: the interlayer squares carry s33 at w^2 / b_int^2 to 1e-6).
+- `python3 -m rve.notch_check --out rve/data/results` (Cicero et al. 2020 ABS SENB, 3 cross-ply layups x 4 radii;
+  ~40 s once the four SENB lines are cached, `fig_notch_onset.*`): four parameters (X 62.0, T 169 MPa, T/S 1.55,
+  L 0.47 mm) give 4.0 % rms in sample and 7.4 % leave one layup out, the same as the ply-mode card of
+  `failure.cicero_orient` (4.2 / 7.5 %). Bond geometry b_lat 0.06 mm: 3.8 / 7.1 %; kappa 10 or D = 0.3 half bond:
+  4.0 / 9.1-9.3 %; the line method 3.0 % in sample but 16 % held out (one layup jumps). With 12 loads the weld map is
+  not distinguishable from the ply modes; what it adds is that its strengths are weld properties and it sees the
+  whole stress tensor (s33 and the out-of-plane shears at a thick notch).
+- The second-order (gradient) correction of a periodic cell is an expansion in the stress variation across one
+  cell. On these SENB bisectors the second-order term over a 0.6 mm cell is 7-93 % at d = 0.3 mm (rho 2-0.25 mm)
+  and the TCD point L / 2 = 0.24 mm lies closer to the root than half a cell: a cell centred there crosses the notch
+  surface, so the expansion does not converge where onset is decided (fig_notch_onset b). A window that resolves
+  the root beads (two-way global-local) is the consistent next step; a periodic corrector is not.
+
 ## Next steps
 
 1. Exterior Neumann (Eshelby) patch test; move geometry

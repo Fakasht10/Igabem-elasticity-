@@ -122,6 +122,50 @@ class TestLaminate(unittest.TestCase):
         self.assertAlmostEqual(inplane(stack_C(C, [45, -45]))["Gxy"], U, places=6)
 
 
+class TestOnset(unittest.TestCase):
+    """rve.onset on a small 0/90 bead cell (perfect bond, net-section means)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import tempfile
+        from rve import onset, strength
+        cls.lib, strength.RESPONSES = strength.RESPONSES, None
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.g = dict(G, alpha=15.0, wc=math.sqrt(0.5))
+        cls.wm = onset.weld_map("090", cls.g, 0.35, grade=1, work=cls.tmp.name)
+
+    @classmethod
+    def tearDownClass(cls):
+        from rve import strength
+        strength.RESPONSES = cls.lib
+        cls.tmp.cleanup()
+
+    def test_equilibrium_and_symmetry(self):
+        """The interlayer squares alone carry s33: mean traction = cell section / bond area exactly; latA under s22
+        equals latB under s11 (B = A turned 90 deg)."""
+        from rve import onset
+        for f, (got, lig) in onset.lig_check(self.wm, "090", self.g).items():
+            self.assertAlmostEqual(got / lig, 1.0, places=6, msg=f)
+        self.assertAlmostEqual(self.wm["latA"]["N"][1] / self.wm["latB"]["N"][0], 1.0, places=4)
+
+    def test_frame_and_scaling(self):
+        """A stress given in a frame turned with the print gives the same weld tractions; onset scales linearly."""
+        from rve import onset
+        rng = np.random.default_rng(1)
+        A = rng.normal(size=(5, 3, 3))
+        sig = A + np.swapaxes(A, 1, 2)
+        R = onset.cell_frame(30.0)
+        ref = onset.weld_tractions(onset.cell_stress(sig, np.eye(3)), self.wm)
+        rot = onset.weld_tractions(onset.cell_stress(np.einsum("ia,jb,nab->nij", R, R, sig), R), self.wm)
+        for f in ref:
+            for a, b in zip(ref[f], rot[f]):
+                self.assertLess(np.abs(a - b).max(), 1e-12)
+        d = np.linspace(0, 2, 5)
+        f1 = onset.onset(sig, d, self.wm, R, 50.0, 1.5, 0.4, 60.0)[0]
+        f2 = onset.onset(2 * sig, d, self.wm, R, 50.0, 1.5, 0.4, 60.0)[0]
+        self.assertAlmostEqual(f1 / f2, 2.0, places=12)
+
+
 class TestApi(unittest.TestCase):
     """rve.api against the cells it interpolates, its symmetries, and the page's JavaScript engine."""
 
