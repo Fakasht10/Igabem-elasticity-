@@ -49,11 +49,19 @@ from spline_checks import evaluate  # noqa: E402
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 RVE_CELL = os.environ.get("IGABEM_RVE_CELL", os.path.join(ROOT, "build", "rve_cell"))
 BEAD_CELL = os.environ.get("IGABEM_BEAD_CELL", os.path.join(ROOT, "build", "bead_cell"))
-# Bead operator library (bead_cell --cache): files keyed by the bead geometry, Poisson ratio and quadrature (E only
-# scales them), so any material, raster angle, layup or kappa recalls them. Default: the persistent project folder
-# when it exists (survives sessions), else <work>/cache.
-_PROJECT_LIB = "/mnt/project-files/igabem-rve/oplib"
-OPLIB = os.environ.get("IGABEM_OPLIB") or (_PROJECT_LIB if os.path.isdir(os.path.dirname(_PROJECT_LIB)) else None)
+# What is kept between runs is each cell's RESPONSE, not its operator (cell_response): the stiffness C(kappa) / E
+# (and the FFM weld-traction means of the intact cell) at RESPONSE_S, a few KB per cell, keyed by the bead files,
+# nu and quadrature. It serves every E, raster angle, layup and kappa. Default: the persistent project folder when it
+# exists (survives sessions), else <work>/responses. The bead operators (bead_cell --cache, 235 MB per 0/90 bead)
+# are only a local scratch cache for building responses of new geometry.
+_PROJECT_RESP = "/mnt/project-files/igabem-rve/responses"
+RESPONSES = os.environ.get("IGABEM_RESPONSES") or (
+    _PROJECT_RESP if os.path.isdir(os.path.dirname(_PROJECT_RESP)) else None)
+OPLIB = os.environ.get("IGABEM_OPLIB")
+# weld compliance scale s = 1 / kappa (laws at kappa = 1): 0 (perfect bond) and 16 nodes over kappa 0.01 - 1e4. The
+# response is rational in s (A(s) = A0 + s U E^T); AAA through these nodes reproduces the direct solve to ~1e-6.
+RESPONSE_S = (0.0,) + tuple(float(x) for x in np.geomspace(1e-4, 1e2, 16))
+RESPONSE_VERSION = 1
 FRACTIONS = (0.05, 0.15, 0.3, 0.5, 0.7, 0.9)   # debond length / half bond width (compliance runs)
 # D = half bond: the whole ligament. Its mean traction is the net-section stress (an equilibrium check); if the
 # family is the only load path for some macro stress components (CUTS), separating it releases unbounded energy
@@ -293,6 +301,93 @@ def bead_compliance(kind, g, refine, grade, work, tag, E, nu, kappa=None, tracti
     return (S, np.loadtxt(tfile(kappa))) if tractions else S
 
 
+_FITS = {}
+
+
+def _aaa(s_nodes, y):
+    """Rational interpolant in s through the response nodes, entry by entry (scipy AAA); constant entries exact."""
+    from scipy.interpolate import AAA
+    y = np.asarray(y, float)
+    flat = y.reshape(len(s_nodes), -1)
+    scale = max(np.abs(flat).max(), 1e-300)
+    fits = []
+    for c in range(flat.shape[1]):
+        v = flat[:, c]
+        if np.ptp(v) <= 1e-14 * scale:
+            fits.append(float(v[0]))
+        else:
+            fits.append(AAA(np.asarray(s_nodes), v, rtol=1e-13))
+    shape = y.shape[1:]
+    return lambda s: np.array([f if isinstance(f, float) else float(np.real(f(s))) for f in fits]).reshape(shape)
+
+
+def response_eval(resp, field, kappa, values=None):
+    """Response field (or the given node values of one) at weld stiffness kappa (None: perfect bond); the rational
+    fits are memoized per response, field."""
+    s = 0.0 if kappa is None else 1.0 / kappa
+    if s > resp["s"][-1] * (1 + 1e-9):
+        raise ValueError("kappa %g below the response range (%g)" % (kappa, 1 / resp["s"][-1]))
+    key = (resp["key"], field)
+    if key not in _FITS:
+        _FITS[key] = _aaa(resp["s"], resp[field] if values is None else values)
+    return _FITS[key](s)
+
+
+def cell_response(kind, g, refine, grade, work, tag, nu, means=None):
+    """Response of the bead-boundary cell for the geometry g against the weld stiffness, from the response library
+    (built on a miss: one bead_cell run at E = 1 over RESPONSE_S, laws Kn = kappa E / w, Kt from nu as weld_args):
+      C        (nodes, 6, 6) stiffness / E;  porosity, box
+      means    {mkey: {family: [tn, ts, tedge] per node}} FFM weld-traction means per unit macro stress (MPa / MPa:
+               independent of E) when means = (mkey, fn) is given, fn(T, S) -> weld_means(...) dict
+    Responses do not depend on E, raster angle or layup; the bead operators are not kept beyond the local cache."""
+    import hashlib
+    title = "bead cell"   # fixed: the operator cache and the response key hash the whole file
+    patches = _bead_patches(kind, g, refine, grade)
+    if kind == "00":
+        files = [os.path.join(work, tag + ".dat")]
+        cmd = [BEAD_CELL] + files + ["--axes", "x"]
+    else:
+        files = [os.path.join(work, "%s_%s.dat" % (tag, t)) for t in "AB"]
+        same = (g.get("b_lat_b") or g["b_lat"]) == g["b_lat"]
+        cmd = [BEAD_CELL] + files + ["--axes", "x,y"] + (["--copy", "1:0:90"] if same else [])
+    for f, P in zip(files, patches):
+        _write_if_changed(f, P, title)
+    h = hashlib.sha1()
+    for f in files:
+        with open(f, "rb") as fh:
+            h.update(fh.read())
+    h.update(repr((kind, round(nu, 12), 12, cmd[len(files) + 1:], RESPONSE_S, RESPONSE_VERSION)).encode())
+    lib = RESPONSES or os.path.join(work, "responses")
+    os.makedirs(lib, exist_ok=True)
+    path = os.path.join(lib, h.hexdigest() + ".json")
+    resp = None
+    if os.path.exists(path):
+        with open(path) as fh:
+            resp = json.load(fh)
+        if means is None or means[0] in resp.get("means", {}):
+            return dict(resp, key=h.hexdigest())
+    out, tfile = os.path.join(work, tag + "_resp.json"), os.path.join(work, tag + "_resp_t")
+    cmd += ["--E", "1", "--nu", str(nu), "--ng", "12", "--cache", OPLIB or os.path.join(work, "cache"),
+            "--json", out] + weld_args(kind, 1.0, 1.0, nu, g["w"])
+    cmd += ["--scales", ",".join("%.17g" % x for x in RESPONSE_S)] + (["--tractions", tfile] if means else [])
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+    with open(out) as fh:
+        runs = json.load(fh)["runs"]
+    if resp is None:
+        resp = dict(kind=kind, nu=nu, s=list(RESPONSE_S), C=[r["C"] for r in runs], porosity=runs[0]["porosity"],
+                    box=runs[0]["box"], files=[os.path.basename(f) for f in files], means={})
+    if means:
+        mk, fn = means
+        per = [fn(np.loadtxt(tfile + ".%d" % q), np.linalg.inv(np.array(r["C"]))) for q, r in enumerate(runs)]
+        resp["means"][mk] = {fam: [[np.asarray(p[fam][c]).tolist() for p in per] for c in range(3)] for fam in per[0]}
+        for q in range(len(runs)):
+            os.remove(tfile + ".%d" % q)
+    with open(path + ".tmp%d" % os.getpid(), "w") as fh:
+        json.dump(resp, fh)
+    os.replace(path + ".tmp%d" % os.getpid(), path)
+    return dict(resp, key=h.hexdigest())
+
+
 # Weld of each family in the bead cell (src/bead_cell.hpp pairs): normal axis, internal flags allowed.
 WELDS = {"00": {"lat": (1, (0,)), "int": (2, (0,))},
          "090": {"latA": (1, (0,)), "latB": (0, (0,)), "int": (2, (0, 1))}}
@@ -497,9 +592,6 @@ def main(argv=None):
     ap.add_argument("--stress", choices=["points", "weld"], default=None,
                     help="stress part from the interior stress of the intact single-region cell (points, Williams tip "
                          "fit; perfect bond only) or the weld tractions of the intact bead cell (weld; default with --kappa)")
-    ap.add_argument("--batch", nargs="+", default=None, metavar="KAPPA",
-                    help="every kappa of a sweep ('inf': perfect bond): each bead cell is solved once for all of them "
-                         "(one LU + a Woodbury update per kappa) and later runs with another --kappa read the results")
     a = ap.parse_args(argv)
     if a.stress is None:
         a.stress = "weld" if a.kappa is not None else "points"
@@ -507,8 +599,6 @@ def main(argv=None):
         if a.stress == "points":
             raise SystemExit("--kappa: the stress part needs the weld tractions (--stress weld)")
         a.cells = "bead"
-    ktag = _ktag(a.kappa)
-    batch = None if a.batch is None else [None if k == "inf" else float(k) for k in a.batch]
     os.makedirs(a.work, exist_ok=True)
     g = dict(w=a.w, h=a.h, b_int=a.bint, b_lat=a.blat, alpha=a.alpha, wc=a.wc, L=a.h)
     fams = families(a.kind, a.w, a.h, a.bint, a.blat, g["L"])
@@ -539,12 +629,17 @@ def main(argv=None):
         print("tip elements %s mm; Williams exponents lambda I/II/III = %.4f %.4f %.4f (alpha %g deg)" % ({n: round(v, 5) for n, v in h_tip.items()}, *lams, a.alpha))
     S0e = None if a.stress == "weld" else S0
     if a.cells == "bead" and not (a.check_only and a.stress == "points"):
-        S0e, Tw = bead_compliance(a.kind, g, a.refine, ge, a.work, "bead_intact", a.E, a.nu, a.kappa, True, batch)
-        with open(os.path.join(a.work, "bead_intact%s.json" % ktag)) as fh:
-            rb = json.load(fh)
+        Ds_of = lambda F: [fr * F["half"] for fr in a.fractions] + [F["half"]]  # noqa: E731
+        mkey = "fractions=" + ",".join("%g" % fr for fr in a.fractions)
+        r0 = cell_response(a.kind, g, a.refine, ge, a.work, "bead_intact", a.nu,
+                           (mkey, lambda T, S: weld_means(T, S, a.kind, fams, Ds_of)))
+        C0 = a.E * response_eval(r0, "C", a.kappa)
+        S0e = np.linalg.inv(C0)
         if a.stress == "weld":
-            info = dict(box=rb["box"], porosity=rb["porosity"], C=rb["C"])
-            wm = weld_means(Tw, S0e, a.kind, fams, lambda F: [fr * F["half"] for fr in a.fractions] + [F["half"]])
+            info = dict(box=r0["box"], porosity=r0["porosity"], C=C0.tolist())
+            wm = {}
+            for fam, vals in r0["means"][mkey].items():
+                wm[fam] = tuple(response_eval(r0, (mkey, fam, c), a.kappa, vals[c]) for c in range(3))
     elif ge != a.grade and not a.check_only:   # reference compliance on the energy mesh
         dat = os.path.join(a.work, "intact_e.dat")
         build(a.kind, g, a.refine, ge, dat)
@@ -585,12 +680,12 @@ def main(argv=None):
                 # swapped: a latA debond is the latB debond of the same depth turned 90 deg (8e-5 apart when both
                 # are solved), so it costs no cell of its own
                 gB = dict(g, **fams["latB"]["change"](D))
-                SB = bead_compliance(a.kind, gB, a.refine, ge, a.work, "bead_latB_%d" % i, a.E, a.nu, a.kappa,
-                                     batch=batch)
+                SB = np.linalg.inv(a.E * response_eval(cell_response(a.kind, gB, a.refine, ge, a.work,
+                                                                     "bead_latB_%d" % i, a.nu), "C", a.kappa))
                 Si = np.linalg.inv(rotate_z(np.linalg.inv(SB), 90.0))
             elif a.cells == "bead":
-                Si = bead_compliance(a.kind, gi, a.refine, ge, a.work, "bead_%s_%d" % (name, i), a.E, a.nu, a.kappa,
-                                     batch=batch)
+                Si = np.linalg.inv(a.E * response_eval(cell_response(a.kind, gi, a.refine, ge, a.work,
+                                                                     "bead_%s_%d" % (name, i), a.nu), "C", a.kappa))
             else:
                 dat = os.path.join(a.work, "%s_%d.dat" % (name, i))
                 build(a.kind, gi, a.refine, ge, dat)

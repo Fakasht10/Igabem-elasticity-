@@ -10,9 +10,9 @@ Reference lines drawn with the curves: the net-section stress T / lig (the unifo
 where the stress part no longer sees the notch) for the families that alone carry the load.
 
 usage (from python/): python3 -m rve.weld_strength [--work /tmp/rve_wstr] [--out rve/data/results] [--only 00|090]
-  runtime (4 cores, 9 kappas + perfect bond): 4 min 18 s with an empty operator library (13 new 0/90 beads, ~15 s
-  each), 3 min 26 s recalling it (rve.strength.OPLIB, persistent across sessions). Each cell is solved once for all
-  kappas (strength --batch: one LU + a Woodbury update per kappa).
+  runtime (4 cores, 9 kappas + perfect bond): 14 s when the cells are in the response library (rve.strength.RESPONSES,
+  persistent, ~25 KB per cell); 5 min 44 s to build the library from nothing (13 new 0/90 beads + 7 0/0 beads, each
+  solved once over the 17 RESPONSE_S nodes). Any other kappa in 0.01 - 1e4 then costs nothing.
 """
 import argparse
 import json
@@ -36,7 +36,7 @@ def run(kind, kappa, work):
     out = os.path.join(work, "%s_k%s.json" % (kind, "inf" if kappa is None else "%g" % kappa))
     if not os.path.exists(out):
         args = [kind, out, "--T", str(T), "--Gc", str(GC), "--grade", "2", "--stress", "weld",
-                "--work", os.path.join(work, kind), "--batch"] + ["%g" % k for k in KAPPA] + ["inf"]
+                "--work", os.path.join(work, kind)]
         if kappa is not None:
             args += ["--kappa", str(kappa)]
         strength.main(args)
