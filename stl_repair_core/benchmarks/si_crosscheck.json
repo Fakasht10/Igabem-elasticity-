@@ -1,0 +1,407 @@
+{
+ "rows": [
+  {
+   "mesh": "artec_bovine-heart.stl",
+   "ours_proper_faces": 21,
+   "ours_any_si_faces": 21,
+   "pymeshlab_si_faces": 21,
+   "ours_seconds": 1.092,
+   "sutura_exact_faces": 6,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 15
+  },
+  {
+   "mesh": "artec_copper-key.stl",
+   "ours_proper_faces": 3,
+   "ours_any_si_faces": 3,
+   "pymeshlab_si_faces": 3,
+   "ours_seconds": 1.316,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 3
+  },
+  {
+   "mesh": "artec_crocodile-statue.stl",
+   "ours_proper_faces": 387,
+   "ours_any_si_faces": 387,
+   "pymeshlab_si_faces": 387,
+   "ours_seconds": 1.192,
+   "sutura_exact_faces": 201,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 186
+  },
+  {
+   "mesh": "artec_lobster-hd.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 1.257,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "artec_metal-nut.stl",
+   "ours_proper_faces": 505,
+   "ours_any_si_faces": 505,
+   "pymeshlab_si_faces": 505,
+   "ours_seconds": 1.622,
+   "sutura_exact_faces": 303,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 202
+  },
+  {
+   "mesh": "artec_pipe-bend.stl",
+   "ours_proper_faces": 34,
+   "ours_any_si_faces": 34,
+   "pymeshlab_si_faces": 34,
+   "ours_seconds": 1.398,
+   "sutura_exact_faces": 18,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 16
+  },
+  {
+   "mesh": "artec_plastic-bolt.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 1.38,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "artec_spanner.stl",
+   "ours_proper_faces": 8,
+   "ours_any_si_faces": 8,
+   "pymeshlab_si_faces": 8,
+   "ours_seconds": 1.0,
+   "sutura_exact_faces": 4,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 4
+  },
+  {
+   "mesh": "thingi10k_100045.stl",
+   "ours_proper_faces": 33,
+   "ours_any_si_faces": 45,
+   "pymeshlab_si_faces": 33,
+   "ours_seconds": 0.105,
+   "sutura_exact_faces": 33,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_100077.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 0.117,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_100173.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 0.034,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_100281.stl",
+   "ours_proper_faces": 3662,
+   "ours_any_si_faces": 3761,
+   "pymeshlab_si_faces": 3676,
+   "ours_seconds": 12.188,
+   "sutura_exact_faces": 2378,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 1284
+  },
+  {
+   "mesh": "thingi10k_100827.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 34,
+   "pymeshlab_si_faces": 4,
+   "ours_seconds": 0.006,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_1038439.stl",
+   "ours_proper_faces": 397,
+   "ours_any_si_faces": 730,
+   "pymeshlab_si_faces": 409,
+   "ours_seconds": 0.878,
+   "sutura_exact_faces": 383,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 14
+  },
+  {
+   "mesh": "thingi10k_1038441.stl",
+   "ours_proper_faces": 2410,
+   "ours_any_si_faces": 2426,
+   "pymeshlab_si_faces": 2416,
+   "ours_seconds": 2.858,
+   "sutura_exact_faces": 2402,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 8
+  },
+  {
+   "mesh": "thingi10k_1356633.stl",
+   "ours_proper_faces": 4,
+   "ours_any_si_faces": 27,
+   "pymeshlab_si_faces": 3,
+   "ours_seconds": 1.705,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 4
+  },
+  {
+   "mesh": "thingi10k_136634.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 2.223,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_145065.stl",
+   "ours_proper_faces": 213,
+   "ours_any_si_faces": 402,
+   "pymeshlab_si_faces": 223,
+   "ours_seconds": 15.08,
+   "sutura_exact_faces": 103,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 110
+  },
+  {
+   "mesh": "thingi10k_224108.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 0.457,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_228302.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 1.003,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_235725.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 0.234,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_248395.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 1686,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 4.75,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_260537.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 1.06,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_313444.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 1.753,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_331105.stl",
+   "ours_proper_faces": 11,
+   "ours_any_si_faces": 11,
+   "pymeshlab_si_faces": 11,
+   "ours_seconds": 1.295,
+   "sutura_exact_faces": 4,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 7
+  },
+  {
+   "mesh": "thingi10k_39507.stl",
+   "ours_proper_faces": 341,
+   "ours_any_si_faces": 341,
+   "pymeshlab_si_faces": 341,
+   "ours_seconds": 1.312,
+   "sutura_exact_faces": 332,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 9
+  },
+  {
+   "mesh": "thingi10k_40886.stl",
+   "ours_proper_faces": 169,
+   "ours_any_si_faces": 169,
+   "pymeshlab_si_faces": 168,
+   "ours_seconds": 2.007,
+   "sutura_exact_faces": 129,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 40
+  },
+  {
+   "mesh": "thingi10k_42844.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 0.636,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_46012.stl",
+   "ours_proper_faces": 463,
+   "ours_any_si_faces": 465,
+   "pymeshlab_si_faces": 454,
+   "ours_seconds": 4.196,
+   "sutura_exact_faces": 213,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 250
+  },
+  {
+   "mesh": "thingi10k_475828.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 5,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 0.014,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_502009.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 119,
+   "pymeshlab_si_faces": 2,
+   "ours_seconds": 8.514,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_55280.stl",
+   "ours_proper_faces": 40,
+   "ours_any_si_faces": 40,
+   "pymeshlab_si_faces": 40,
+   "ours_seconds": 1.211,
+   "sutura_exact_faces": 21,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 19
+  },
+  {
+   "mesh": "thingi10k_55772.stl",
+   "ours_proper_faces": 48,
+   "ours_any_si_faces": 144,
+   "pymeshlab_si_faces": 74,
+   "ours_seconds": 2.034,
+   "sutura_exact_faces": 6,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 42
+  },
+  {
+   "mesh": "thingi10k_57854.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 0.069,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_59226.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 2.311,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_60916.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 7.219,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_63785.stl",
+   "ours_proper_faces": 135,
+   "ours_any_si_faces": 135,
+   "pymeshlab_si_faces": 135,
+   "ours_seconds": 1.776,
+   "sutura_exact_faces": 81,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 54
+  },
+  {
+   "mesh": "thingi10k_70561.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 0.592,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  },
+  {
+   "mesh": "thingi10k_71691.stl",
+   "ours_proper_faces": 3,
+   "ours_any_si_faces": 3,
+   "pymeshlab_si_faces": 3,
+   "ours_seconds": 0.447,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": false,
+   "sym_diff": 3
+  },
+  {
+   "mesh": "thingi10k_81221.stl",
+   "ours_proper_faces": 0,
+   "ours_any_si_faces": 0,
+   "pymeshlab_si_faces": 0,
+   "ours_seconds": 1.347,
+   "sutura_exact_faces": 0,
+   "sutura_exact_equals_ours_proper": true,
+   "sym_diff": 0
+  }
+ ],
+ "sutura_exact_equal_count": 21,
+ "zero_vs_nonzero_agreement_with_pymeshlab": 38,
+ "n": 40
+}

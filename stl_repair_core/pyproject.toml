@@ -1,0 +1,27 @@
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name = "stl_repair_core"
+version = "0.1.0"
+description = "Conservative STL intake, diagnosis, repair and verification for structural-mechanics preprocessing (extracted from Sutura 0.9.8)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = ["numpy>=1.24", "scipy>=1.10"]
+
+[project.optional-dependencies]
+test = ["pytest>=7", "trimesh>=4", "manifold3d>=3", "pymeshlab>=2023.12", "networkx>=3"]
+
+[project.scripts]
+stl-repair-core = "stl_repair_core.cli:main"
+
+[tool.maturin]
+python-source = "python"
+module-name = "stl_repair_core._native"
+manifest-path = "native/Cargo.toml"
+include = ["LICENSE", "NOTICE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

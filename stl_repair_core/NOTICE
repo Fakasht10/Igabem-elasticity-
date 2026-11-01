@@ -1,0 +1,33 @@
+stl_repair_core
+===============
+
+Required Notice: Copyright Arif Gökdaş (https://github.com/Krateian/Sutura)
+
+This package is a derivative of Sutura 0.9.8
+(https://github.com/Krateian/Sutura, commit 158d9ab688fd43098cdd7fe8ad58f8f0049c34f9).
+It extracts and re-implements only Sutura's conservative STL intake,
+diagnosis, repair, validation and verification functionality.  Sutura v0.2.0
+and later, including 0.9.8, is distributed under the PolyForm Noncommercial
+License 1.0.0; this derivative is therefore distributed under the same license
+(see LICENSE, copied verbatim from the pinned Sutura commit, including the
+licensor's commercial-licensing note).  Use is limited to noncommercial
+purposes as defined in that license unless the licensor grants another license.
+
+Licensing caveat recorded at extraction time: the pinned Sutura source files
+carry per-file "SPDX-License-Identifier: Apache-2.0" headers (Python) and
+"MIT OR Apache-2.0" (the sutura-geom Rust crate, also declared in its
+Cargo.toml and in Sutura's docs/ATTRIBUTION.md).  The repository-level LICENSE
+states PolyForm Noncommercial 1.0.0 for v0.2.0 and later.  This package
+follows the more restrictive repository-level license until the licensor
+clarifies.  Sutura v0.1.0 - v0.1.9 remain Apache-2.0 per the licensor.
+
+Changes relative to the original: see docs/MAPPING.md (file/function map and
+every behavioural difference).  No Sutura GUI, installer, updater, telemetry,
+slicer integration, OBJ/PLY/3MF/STEP processing, Tamponade/Stent, Coaptation,
+Dressing/Splint/Graft, fTetWild or CDT solid rebuilding is included.
+
+Third-party components used at runtime (not vendored): NumPy (BSD-3-Clause),
+SciPy (BSD-3-Clause); in the Rust extension: PyO3 (MIT OR Apache-2.0),
+rust-numpy (BSD-2-Clause), robust (MIT OR Apache-2.0; Shewchuk's public-domain
+predicates), num-bigint / num-rational / num-traits (MIT OR Apache-2.0).
+See docs/LICENSES.md for the full inventory.
