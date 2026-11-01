@@ -200,36 +200,91 @@ def weld_args(kind, kappa, E, nu, w):
     return args + (["--weld-int", "z:" + law] if kind == "090" else [])
 
 
-def bead_compliance(kind, g, refine, grade, work, tag, E, nu, kappa=None, tractions=False):
-    """Compliance of the bead-boundary cell (app/bead_cell: one region per bead, condensed onto the welds, cached)
-    for the geometry g, welds perfect or springs of stiffness kappa (weld_args). 0/90: B is A turned 90 deg (one
-    operator) unless its lateral bond differs (b_lat_b). The condensed bead operators do not depend on the weld law:
-    a kappa sweep reuses them from the cache. tractions: also return the weld tractions (BeadCell::weldTractions)."""
-    from rve.beads import bead_00, bead_090
-    out = os.path.join(work, tag + ".json")
-    cmd = [BEAD_CELL]
-    if kind == "00":
-        f = os.path.join(work, tag + ".dat")
-        write_dat(f, bead_00(g["w"], g["h"], g["b_int"], g["b_lat"], g["alpha"], g["wc"], g["L"], refine, grade), "bead cell")
-        cmd += [f, "--axes", "x"]
+def _write_if_changed(path, P, title):
+    """write_dat, keeping the file (and its mtime) when the content is unchanged: cached results stay valid."""
+    write_dat(path + ".new", P, title)
+    if os.path.exists(path) and open(path + ".new", "rb").read() == open(path, "rb").read():
+        os.remove(path + ".new")
     else:
-        bb = g.get("b_lat_b") or g["b_lat"]
-        mk = lambda bl: bead_090(g["w"], g["h"], g["b_int"], bl, g["alpha"], g["wc"], refine, grade)  # noqa: E731
-        A = mk(g["b_lat"])
-        B = A[1] if bb == g["b_lat"] else mk(bb)[1]
-        fs = [os.path.join(work, "%s_%s.dat" % (tag, t)) for t in "AB"]
-        for f, P in zip(fs, (A[0], B)):
-            write_dat(f, P, "bead cell")  # fixed title: the operator cache hashes the file
-        cmd += fs + ["--axes", "x,y"] + (["--copy", "1:0:90"] if bb == g["b_lat"] else [])
-    cmd += ["--E", str(E), "--nu", str(nu), "--ng", "12", "--cache", os.path.join(work, "cache"), "--json", out]
-    cmd += weld_args(kind, kappa, E, nu, g["w"])
-    tfile = os.path.join(work, tag + "_tractions.txt")
-    if tractions:
-        cmd += ["--tractions", tfile]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
-    with open(out) as fh:
+        os.replace(path + ".new", path)
+
+
+def _ktag(kappa):
+    return "" if kappa is None else "_k%g" % kappa
+
+
+_GEOMETRY = {}
+
+
+def _bead_patches(kind, g, refine, grade):
+    """Bead patches of a cell (memoized: a kappa sweep revisits every cell once per kappa)."""
+    from rve.beads import bead_00, bead_090
+    key = (kind, tuple(sorted(g.items())), refine, grade)
+    if key not in _GEOMETRY:
+        if kind == "00":
+            P = [bead_00(g["w"], g["h"], g["b_int"], g["b_lat"], g["alpha"], g["wc"], g["L"], refine, grade)]
+        else:
+            bb = g.get("b_lat_b") or g["b_lat"]
+            mk = lambda bl: bead_090(g["w"], g["h"], g["b_int"], bl, g["alpha"], g["wc"], refine, grade)  # noqa: E731
+            A = mk(g["b_lat"])
+            P = [A[0], A[1] if bb == g["b_lat"] else mk(bb)[1]]
+        _GEOMETRY[key] = P
+    return _GEOMETRY[key]
+
+
+def bead_compliance(kind, g, refine, grade, work, tag, E, nu, kappa=None, tractions=False, batch=None):
+    """Compliance of the bead-boundary cell (app/bead_cell: one region per bead, condensed onto the welds, cached)
+    for the geometry g, welds perfect (kappa None) or springs of stiffness kappa (weld_args). 0/90: B is A turned
+    90 deg (one operator) unless its lateral bond differs (b_lat_b). tractions: also return the weld tractions
+    (BeadCell::weldTractions).
+
+    batch: every kappa of a sweep (None: perfect bond). The first call solves the cell for all of them in one
+    bead_cell run (--scales: one LU of the perfect-bond system, then a Woodbury update per kappa) and stores each
+    result as <tag>_k<kappa>.json; later calls for the same cell read them."""
+    title = "bead cell"   # fixed: the operator cache hashes the whole file
+    patches = _bead_patches(kind, g, refine, grade)
+    if kind == "00":
+        files = [os.path.join(work, tag + ".dat")]
+        cmd = [BEAD_CELL] + files + ["--axes", "x"]
+    else:
+        files = [os.path.join(work, "%s_%s.dat" % (tag, t)) for t in "AB"]
+        same = (g.get("b_lat_b") or g["b_lat"]) == g["b_lat"]
+        cmd = [BEAD_CELL] + files + ["--axes", "x,y"] + (["--copy", "1:0:90"] if same else [])
+    for f, P in zip(files, patches):
+        _write_if_changed(f, P, title)
+    out = lambda k: os.path.join(work, tag + _ktag(k) + ".json")  # noqa: E731
+    tfile = lambda k: os.path.join(work, tag + _ktag(k) + "_tractions.txt")  # noqa: E731
+
+    def done(k):
+        if not os.path.exists(out(k)) or (tractions and not os.path.exists(tfile(k))):
+            return False
+        t = min(os.path.getmtime(out(k)), os.path.getmtime(tfile(k)) if tractions else np.inf)
+        with open(out(k)) as fh:
+            r = json.load(fh)
+        return all(t > os.path.getmtime(f) for f in files) and r.get("E") == E and r.get("nu") == nu
+
+    if not done(kappa):
+        ks = [k for k in (batch or [kappa]) if not done(k)]
+        if kappa not in ks:
+            ks.append(kappa)
+        springs = any(k is not None for k in ks)
+        cmd += ["--E", str(E), "--nu", str(nu), "--ng", "12", "--cache", os.path.join(work, "cache"),
+                "--json", out(kappa) + ".all"] + (["--tractions", tfile(kappa) + ".all"] if tractions else [])
+        if springs:   # laws at kappa = 1, each kappa a compliance scale 1 / kappa (perfect: 0)
+            cmd += weld_args(kind, 1.0, E, nu, g["w"]) + ["--scales", ",".join("0" if k is None else "%.17g" % (1 / k) for k in ks)]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+        with open(out(kappa) + ".all") as fh:
+            r = json.load(fh)
+        runs = r["runs"] if "runs" in r else [r]
+        for q, (k, rk) in enumerate(zip(ks, runs)):
+            if tractions:
+                os.replace(tfile(kappa) + ".all" + ("." + str(q) if len(ks) > 1 else ""), tfile(k))
+            with open(out(k), "w") as fh:
+                json.dump(dict(rk, kappa=k), fh)
+        os.remove(out(kappa) + ".all")
+    with open(out(kappa)) as fh:
         S = np.linalg.inv(np.array(json.load(fh)["C"]))
-    return (S, np.loadtxt(tfile)) if tractions else S
+    return (S, np.loadtxt(tfile(kappa))) if tractions else S
 
 
 # Weld of each family in the bead cell (src/bead_cell.hpp pairs): normal axis, internal flags allowed.
@@ -436,6 +491,9 @@ def main(argv=None):
     ap.add_argument("--stress", choices=["points", "weld"], default=None,
                     help="stress part from the interior stress of the intact single-region cell (points, Williams tip "
                          "fit; perfect bond only) or the weld tractions of the intact bead cell (weld; default with --kappa)")
+    ap.add_argument("--batch", nargs="+", default=None, metavar="KAPPA",
+                    help="every kappa of a sweep ('inf': perfect bond): each bead cell is solved once for all of them "
+                         "(one LU + a Woodbury update per kappa) and later runs with another --kappa read the results")
     a = ap.parse_args(argv)
     if a.stress is None:
         a.stress = "weld" if a.kappa is not None else "points"
@@ -443,7 +501,8 @@ def main(argv=None):
         if a.stress == "points":
             raise SystemExit("--kappa: the stress part needs the weld tractions (--stress weld)")
         a.cells = "bead"
-    ktag = "" if a.kappa is None else "_k%g" % a.kappa
+    ktag = _ktag(a.kappa)
+    batch = None if a.batch is None else [None if k == "inf" else float(k) for k in a.batch]
     os.makedirs(a.work, exist_ok=True)
     g = dict(w=a.w, h=a.h, b_int=a.bint, b_lat=a.blat, alpha=a.alpha, wc=a.wc, L=a.h)
     fams = families(a.kind, a.w, a.h, a.bint, a.blat, g["L"])
@@ -474,7 +533,7 @@ def main(argv=None):
         print("tip elements %s mm; Williams exponents lambda I/II/III = %.4f %.4f %.4f (alpha %g deg)" % ({n: round(v, 5) for n, v in h_tip.items()}, *lams, a.alpha))
     S0e = None if a.stress == "weld" else S0
     if a.cells == "bead" and not (a.check_only and a.stress == "points"):
-        S0e, Tw = bead_compliance(a.kind, g, a.refine, ge, a.work, "bead_intact" + ktag, a.E, a.nu, a.kappa, True)
+        S0e, Tw = bead_compliance(a.kind, g, a.refine, ge, a.work, "bead_intact", a.E, a.nu, a.kappa, True, batch)
         with open(os.path.join(a.work, "bead_intact%s.json" % ktag)) as fh:
             rb = json.load(fh)
         if a.stress == "weld":
@@ -516,8 +575,8 @@ def main(argv=None):
         for i, D in enumerate(Ds):
             gi = dict(g, **F["change"](D))
             if a.cells == "bead":
-                Si = bead_compliance(a.kind, gi, a.refine, ge, a.work, "bead_%s_%d%s" % (name, i, ktag), a.E, a.nu,
-                                     a.kappa)
+                Si = bead_compliance(a.kind, gi, a.refine, ge, a.work, "bead_%s_%d" % (name, i), a.E, a.nu, a.kappa,
+                                     batch=batch)
             else:
                 dat = os.path.join(a.work, "%s_%d.dat" % (name, i))
                 build(a.kind, gi, a.refine, ge, dat)

@@ -842,6 +842,12 @@ not depend on the weld law, so a kappa sweep is one cold run and then cached sol
   sigma_11 to the A filaments; bulk filament failure is not modelled, so read that branch as "the bond is not the
   weak link". A poorly bonded print is therefore weaker through T, Gc and the bond width, not through its weld
   stiffness; kappa itself is calibrated from one measured E3 (`rve.welds`).
+- A kappa sweep solves every cell once for all kappas: `bead_cell --scales s1,s2,...` scales every weld compliance
+  (A(s) = A0 + s U E^T: one LU of the perfect-bond system, then a Woodbury update of size 3 x weld tractions per
+  scale; identical to separate solves to 1e-13), `strength --batch` drives it. Full 0/0 + 0/90 sweep (9 kappas +
+  perfect bond, 4 cores): 12 min 22 s -> 6 min 48 s cold, 3 min 2 s with cached operators; each further kappa
+  44 s -> 0.6 s. The cold run is now the assembly of the 25 narrowed-bond beads (one new geometry per debond depth).
+  The cache keeps only the rows of the reconstruction map that carry a traction (free-surface rows dropped).
 - `python3 -m rve.strength 090 out.json --kappa 10 --grade 2 [--T ...] [--Gc ...]`; `--stress weld` without
   `--kappa` gives the perfect-bond strength from the weld tractions.
 
