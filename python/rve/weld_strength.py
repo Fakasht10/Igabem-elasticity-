@@ -10,9 +10,9 @@ Reference lines drawn with the curves: the net-section stress T / lig (the unifo
 where the stress part no longer sees the notch) for the families that alone carry the load.
 
 usage (from python/): python3 -m rve.weld_strength [--work /tmp/rve_wstr] [--out rve/data/results] [--only 00|090]
-  runtime (4 cores, 9 kappas + perfect bond): 0/0 ~15 s; 0/90 ~6.5 min cold (25 new bead geometries to assemble, one per
-  debond depth, ~15 s each; 4.4 GB of cache), ~2.7 min with the operators cached. Each cell is solved once for all
-  kappas (strength --batch: one LU + a Woodbury update per kappa, ~0.85 s per extra kappa against 3.7 s alone).
+  runtime (4 cores, 9 kappas + perfect bond): 4 min 18 s with an empty operator library (13 new 0/90 beads, ~15 s
+  each), 3 min 26 s recalling it (rve.strength.OPLIB, persistent across sessions). Each cell is solved once for all
+  kappas (strength --batch: one LU + a Woodbury update per kappa).
 """
 import argparse
 import json

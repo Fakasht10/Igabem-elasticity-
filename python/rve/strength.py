@@ -43,11 +43,17 @@ from numpy.polynomial.legendre import leggauss
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from make_geometries import write_dat  # noqa: E402
 from rve.beads import cell_00, cell_090, tip_marker  # noqa: E402
+from rve.homog import rotate_z  # noqa: E402
 from spline_checks import evaluate  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 RVE_CELL = os.environ.get("IGABEM_RVE_CELL", os.path.join(ROOT, "build", "rve_cell"))
 BEAD_CELL = os.environ.get("IGABEM_BEAD_CELL", os.path.join(ROOT, "build", "bead_cell"))
+# Bead operator library (bead_cell --cache): files keyed by the bead geometry, Poisson ratio and quadrature (E only
+# scales them), so any material, raster angle, layup or kappa recalls them. Default: the persistent project folder
+# when it exists (survives sessions), else <work>/cache.
+_PROJECT_LIB = "/mnt/project-files/igabem-rve/oplib"
+OPLIB = os.environ.get("IGABEM_OPLIB") or (_PROJECT_LIB if os.path.isdir(os.path.dirname(_PROJECT_LIB)) else None)
 FRACTIONS = (0.05, 0.15, 0.3, 0.5, 0.7, 0.9)   # debond length / half bond width (compliance runs)
 # D = half bond: the whole ligament. Its mean traction is the net-section stress (an equilibrium check); if the
 # family is the only load path for some macro stress components (CUTS), separating it releases unbounded energy
@@ -268,7 +274,7 @@ def bead_compliance(kind, g, refine, grade, work, tag, E, nu, kappa=None, tracti
         if kappa not in ks:
             ks.append(kappa)
         springs = any(k is not None for k in ks)
-        cmd += ["--E", str(E), "--nu", str(nu), "--ng", "12", "--cache", os.path.join(work, "cache"),
+        cmd += ["--E", str(E), "--nu", str(nu), "--ng", "12", "--cache", OPLIB or os.path.join(work, "cache"),
                 "--json", out(kappa) + ".all"] + (["--tractions", tfile(kappa) + ".all"] if tractions else [])
         if springs:   # laws at kappa = 1, each kappa a compliance scale 1 / kappa (perfect: 0)
             cmd += weld_args(kind, 1.0, E, nu, g["w"]) + ["--scales", ",".join("0" if k is None else "%.17g" % (1 / k) for k in ks)]
@@ -574,7 +580,15 @@ def main(argv=None):
             fd["A"].append(1.0)
         for i, D in enumerate(Ds):
             gi = dict(g, **F["change"](D))
-            if a.cells == "bead":
+            if a.cells == "bead" and a.kind == "090" and name == "latA":
+                # the 0/90 cell turned 90 deg about z (and shifted a layer) is itself, with the A and B layers
+                # swapped: a latA debond is the latB debond of the same depth turned 90 deg (8e-5 apart when both
+                # are solved), so it costs no cell of its own
+                gB = dict(g, **fams["latB"]["change"](D))
+                SB = bead_compliance(a.kind, gB, a.refine, ge, a.work, "bead_latB_%d" % i, a.E, a.nu, a.kappa,
+                                     batch=batch)
+                Si = np.linalg.inv(rotate_z(np.linalg.inv(SB), 90.0))
+            elif a.cells == "bead":
                 Si = bead_compliance(a.kind, gi, a.refine, ge, a.work, "bead_%s_%d" % (name, i), a.E, a.nu, a.kappa,
                                      batch=batch)
             else:

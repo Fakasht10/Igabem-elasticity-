@@ -285,6 +285,8 @@ class TestBeadCell(unittest.TestCase):
         from make_geometries import write_dat
         g = dict(G, alpha=15.0, wc=math.sqrt(0.5), L=G["h"])
         fams = strength.families("00", G["w"], G["h"], G["b_int"], G["b_lat"], G["h"])
+        lib, strength.OPLIB = strength.OPLIB, None   # keep test operators out of the shared library
+        self.addCleanup(setattr, strength, "OPLIB", lib)
         with tempfile.TemporaryDirectory() as d:
             for kappa in (None, 0.3):
                 S, T = strength.bead_compliance("00", g, 1, 1, d, "k%s" % kappa, 2200.0, 0.35, kappa, True)

@@ -848,6 +848,13 @@ not depend on the weld law, so a kappa sweep is one cold run and then cached sol
   perfect bond, 4 cores): 12 min 22 s -> 6 min 48 s cold, 3 min 2 s with cached operators; each further kappa
   44 s -> 0.6 s. The cold run is now the assembly of the 25 narrowed-bond beads (one new geometry per debond depth).
   The cache keeps only the rows of the reconstruction map that carry a traction (free-surface rows dropped).
+- Only new geometry is built. Bead operators are assembled for mu = 1 (H depends on nu only, G on 1/mu), so one
+  cached bead serves every material of that Poisson ratio, every raster angle and layup (rotations of C) and every
+  kappa; `rve.strength` keeps them in a persistent library (`/mnt/project-files/igabem-rve/oplib`, or
+  `IGABEM_OPLIB`), keyed by the bead file, nu and quadrature. The 0/90 A-layer debond cells are the B-layer cells
+  turned 90 deg (8e-5 apart), so they are not built. Full sweep with an empty library: 4 min 18 s (13 new 0/90
+  beads + 7 new 0/0 beads, 3.2 GB); a new run recalling the library: 3 min 26 s, of which about 2 min is reading
+  the library from project storage.
 - `python3 -m rve.strength 090 out.json --kappa 10 --grade 2 [--T ...] [--Gc ...]`; `--stress weld` without
   `--kappa` gives the perfect-bond strength from the weld tractions.
 

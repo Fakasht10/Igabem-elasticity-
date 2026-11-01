@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
+#include <unistd.h>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -49,8 +50,12 @@ inline std::string operatorKey(const std::string& geometry_file, const std::stri
   return kind + "_" + hex;
 }
 
+// Written to a temporary name and renamed: a reader sharing the cache directory (another process, a shared
+// operator library) never sees a partial file.
 inline void saveMatrices(const std::string& path, const std::vector<const Eigen::MatrixXd*>& M) {
-  std::ofstream f(path, std::ios::binary);
+  const std::string tmp = path + ".tmp" + std::to_string(::getpid());
+  {
+  std::ofstream f(tmp, std::ios::binary);
   const char magic[8] = {'I', 'G', 'B', 'E', 'M', 'O', 'P', '1'};
   f.write(magic, 8);
   const std::int64_t n = std::int64_t(M.size());
@@ -61,6 +66,9 @@ inline void saveMatrices(const std::string& path, const std::vector<const Eigen:
     f.write(reinterpret_cast<const char*>(&c), sizeof c);
     f.write(reinterpret_cast<const char*>(m->data()), std::streamsize(sizeof(double) * r * c));
   }
+  if (!f) { f.close(); std::remove(tmp.c_str()); return; }
+  }
+  std::rename(tmp.c_str(), path.c_str());
 }
 
 // False if the file is missing or malformed.

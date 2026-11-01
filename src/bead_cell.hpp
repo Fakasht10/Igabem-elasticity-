@@ -211,6 +211,11 @@ class BeadCell {
              const std::vector<std::pair<int, Eigen::Matrix3d>>& copies = {}, const std::string& cache_dir = "",
              const std::vector<int>& axes = {}) {
     mat = m;
+    // The operators depend on the material only through nu (H) and 1/mu (G): they are assembled and cached for
+    // mu = 1 (unit_), so one cached bead serves every material of the same Poisson ratio. The solve works with
+    // t' = t / mu and weld compliances mu C, and scales tractions, stresses and energies back by mu.
+    mu_ = m.mu;
+    unit_ = Material{m.lambda / m.mu, 1.0};
     opt = o;
     regions.assign(files.size(), BeadRegion{});
     bool first = true;
@@ -480,10 +485,11 @@ class BeadCell {
         for (int d = 0; d < R.ts.ndof; ++d)
           if (R.ecol_t[d] >= 0) s.t.segment<3>(3 * d) = R.esign_t[d] * x.segment<3>(3 * R.xpos[R.ecol_t[d]]);
         accumulate(R, s, c, int(i), scale);
+        s.t *= mu_;
         res.solutions.push_back(std::move(s));
       }
-      c.sigma = (0.5 / V * (c.sigma + c.sigma.transpose())).eval();
-      c.energy /= V;
+      c.sigma = (mu_ * 0.5 / V * (c.sigma + c.sigma.transpose())).eval();
+      c.energy *= mu_ / V;
       c.eps = Ek;
       Sig.col(k) = toVoigt(c.sigma, false);
       const double w = (c.sigma.array() * c.eps.array()).sum();
@@ -535,6 +541,8 @@ class BeadCell {
 
  private:
   double tol_ = 1e-12;
+  double mu_ = 1.0;   // shear modulus of mat: operators are built for mu = 1 (unit_)
+  Material unit_;
 
   static int tdofs(const BeadRegion& R, int p) {
     return (p + 1 < int(R.ts.offset.size()) ? R.ts.offset[p + 1] : R.ts.ndof) - R.ts.offset[p];
@@ -556,10 +564,10 @@ class BeadCell {
     }
     return false;
   }
-  const Eigen::Matrix3d& compliance(const BeadPair& P) const {
-    static const Eigen::Matrix3d zero = Eigen::Matrix3d::Zero();
-    if (continuation(P)) return zero;
-    return P.internal ? weld_internal[P.axis] : weld_periodic[P.axis];
+  // weld compliance in the unit-mu system (t' = t / mu): mu C
+  Eigen::Matrix3d compliance(const BeadPair& P) const {
+    if (continuation(P)) return Eigen::Matrix3d::Zero();
+    return mu_ * (P.internal ? weld_internal[P.axis] : weld_periodic[P.axis]);
   }
 
   // planar axis of a patch (all control points on x_a = const), -1 if none
@@ -761,11 +769,16 @@ class BeadCell {
           for (int i = 0; i < m; ++i) to[i] += sc.f * from[rows[i]];
         }
     F.setZero(m, 6);
-    for (int g = 0; g < r.mesh.ndof; ++g) {
+    for (int g = 0; g < r.mesh.ndof; ++g) {  // column-wise (H is column-major): F(:, k) -= H(rows, 3g..3g+2) E_k s
       if (r.eshift[g].squaredNorm() == 0) continue;
-      for (int k = 0; k < 6; ++k) {
-        const Vec3 v = voigtUnit(k, true) * r.eshift[g];
-        for (int i = 0; i < m; ++i) F(i, k) -= H.row(rows[i]).segment<3>(3 * g).dot(v);
+      for (int c = 0; c < 3; ++c) {
+        const double* from = H.data() + long(3 * g + c) * H.rows();
+        for (int k = 0; k < 6; ++k) {
+          const double v = (voigtUnit(k, true) * r.eshift[g])(c);
+          if (v == 0.0) continue;
+          double* to = F.data() + long(k) * m;
+          for (int i = 0; i < m; ++i) to[i] -= v * from[rows[i]];
+        }
       }
     }
   }
@@ -782,13 +795,13 @@ class BeadCell {
     std::string path;
     if (!cache_dir.empty()) {
       std::filesystem::create_directories(cache_dir);
-      path = cache_dir + "/" + operatorKey(r.file, "bead_weldc_a" + std::to_string(r.axis), mat, opt, popt) + ".bin";
+      path = cache_dir + "/" + operatorKey(r.file, "bead_weldu_a" + std::to_string(r.axis), unit_, opt, popt) + ".bin";
       r.reduced_from_cache = loadMatrices(path, {&r.K, &r.F, &r.Xk, &r.Xf}) && r.K.rows() == 3 * int(krow.size()) &&
                              r.K.cols() == nk && r.Xk.rows() == 3 * int(r.xsel.size());
       if (r.reduced_from_cache) { r.t_reduce = since(t0); return; }
     }
     OperatorRows A;
-    batchedHG(r.mesh, r.ts, mat, opt, rows, A.H, A.G);
+    batchedHG(r.mesh, r.ts, unit_, opt, rows, A.H, A.G);
     r.t_assemble = since(t0);
     const auto t1 = std::chrono::steady_clock::now();
     Eigen::MatrixXd Ae, Ak, F, Ake, Akk, Fk;
@@ -853,7 +866,8 @@ class BeadCell {
     std::vector<int> plus_kind(R.mesh.patches.size(), -1);  // + side of a pair: index into pairs
     for (size_t k = 0; k < pairs.size(); ++k)
       if (pairs[k].rp == ri) plus_kind[pairs[k].pp] = int(k);
-    for (const Element& e : R.mesh.elements)
+    for (const Element& e : R.mesh.elements) {
+      if (!R.connection[e.patch]) continue;  // free surface: t = 0, adds nothing to the averages or the energy
       for (const Rect& Rc : e.cells)
         for (size_t a = 0; a < g.x.size(); ++a)
           for (size_t b = 0; b < g.x.size(); ++b) {
@@ -864,6 +878,7 @@ class BeadCell {
             c.energy += w * t.dot(u);
             if (plus_kind[e.patch] >= 0) c.energy += scale * w * t.dot(compliance(pairs[plus_kind[e.patch]]) * t);
           }
+    }
   }
 };
 
