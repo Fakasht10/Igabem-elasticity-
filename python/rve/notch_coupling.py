@@ -28,10 +28,10 @@ from rve.coupling import E_PART, NU, ROOT_PT, part, strain  # noqa: E402
 class NotchWindow:
     """Trimmed bead window around the notch root; global = o + window coordinates."""
 
-    def __init__(self, rho, cells=(8, 6), below=1, refine=0, kappa=None, g=notch.CICERO, work="/tmp/rve_notch"):
+    def __init__(self, rho, cells=(8, 6), below=1, refine=0, kappa=None, g=notch.CICERO, work="/tmp/rve_notch", phase=None):
         self.rho, self.g, self.work = rho, g, work
         w, h = g["w"], g["h"]
-        self.info = notch.window(g, rho, cells, below, refine=refine, work=work)
+        self.info = notch.window(g, rho, cells, below, phase=phase, refine=refine, work=work)
         files = list(self.info["canon"])
         self.o = np.asarray(ROOT_PT, float) - np.array([0.0, rho, h / 2])  # notch centre; slab centre at mid-thickness
         # bead modulus: the periodic cell's in-plane E1 equals the part's (coupon) modulus
@@ -76,10 +76,10 @@ class NotchWindow:
         return np.loadtxt(t)
 
 
-def run(rho=1.0, cells=(8, 6), below=1, refine=0, kappa=None, work="/tmp/rve_notch", log=print):
+def run(rho=1.0, cells=(8, 6), below=1, refine=0, kappa=None, work="/tmp/rve_notch", phase=None, log=print):
     t0 = time.time()
     tm = {}
-    win = NotchWindow(rho, cells, below, refine, kappa, work=work)
+    win = NotchWindow(rho, cells, below, refine, kappa, work=work, phase=phase)
     tm["window_setup"] = time.time() - t0
     X = win.x + win.o
     Xt = win.tx + win.o
@@ -103,7 +103,8 @@ def run(rho=1.0, cells=(8, 6), below=1, refine=0, kappa=None, work="/tmp/rve_not
     t1 = time.time()
     T = win.solve(u[..., None], eps[..., None], tj[..., None])
     tm["window_solve"] = time.time() - t1
-    np.save(os.path.join(work, "m3_tractions_rho%g.npy" % rho), T)
+    np.save(os.path.join(work, "m3_tractions_rho%g_r%d_%dx%d.npy" % ((rho, refine) + tuple(cells))), T)
+    res["faces"] = face_averages(T, win)
     # root summary: weld normal tractions and filament-joint axial stress, per N of SENB load
     kind, x, n, t = T[:, 0].astype(int), T[:, 3:6], T[:, 7:10], T[:, 10:13]
     tn = np.einsum("pc,pc->p", t, n)
@@ -118,6 +119,30 @@ def run(rho=1.0, cells=(8, 6), below=1, refine=0, kappa=None, work="/tmp/rve_not
     return res
 
 
+def face_averages(T, win, top=5):
+    """Mesh-robust weld and joint measures (the corner peaks where a weld neck meets the notch face are singular):
+    per weld / joint face (kind, axis, + region, plane), the area-averaged normal traction (net bond stress) and the
+    resultant normal force; the `top` faces of each kind by average, with their distance to the notch."""
+    kind, ax, reg = T[:, 0].astype(int), T[:, 1].astype(int), T[:, 2].astype(int)
+    x, W, n, t = T[:, 3:6], T[:, 6], T[:, 7:10], T[:, 10:13]
+    tn = np.einsum("pc,pc->p", t, n)
+    plane = np.round(x[np.arange(len(x)), ax], 6)
+    keys = np.column_stack([kind, ax, reg, plane])
+    u, inv = np.unique(keys, axis=0, return_inverse=True)
+    inv = inv.ravel()
+    A = np.bincount(inv, W)
+    Fn = np.bincount(inv, W * tn)
+    xc = np.stack([np.bincount(inv, W * x[:, c]) for c in range(3)], 1) / A[:, None]
+    d = win.notch_distance(xc)
+    out = {}
+    for k, name in ((0, "periodic_weld"), (1, "internal_weld"), (2, "filament_joint")):
+        m = np.flatnonzero(u[:, 0] == k)
+        o = m[np.argsort(-Fn[m] / A[m])][:top]
+        out[name] = [dict(axis=int(u[i, 1]), avg_tn=float(Fn[i] / A[i]), area=float(A[i]), force=float(Fn[i]),
+                          centre=xc[i].round(4).tolist(), dist_to_notch=float(d[i])) for i in o]
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rho", type=float, default=1.0)
@@ -127,8 +152,10 @@ def main(argv=None):
     ap.add_argument("--kappa", type=float, default=None)
     ap.add_argument("--work", default="/tmp/rve_notch")
     ap.add_argument("--json", default=None)
+    ap.add_argument("--phase", default=None, help="lattice phase px,py (same for every refinement)")
     a = ap.parse_args(argv)
-    res = run(a.rho, tuple(int(c) for c in a.cells.split(",")), a.below, a.refine, a.kappa, a.work)
+    res = run(a.rho, tuple(int(c) for c in a.cells.split(",")), a.below, a.refine, a.kappa, a.work,
+              None if a.phase is None else tuple(float(p) for p in a.phase.split(",")))
     print(json.dumps(res, indent=1))
     if a.json:
         with open(a.json, "w") as f:
