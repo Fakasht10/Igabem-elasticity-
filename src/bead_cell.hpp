@@ -155,6 +155,9 @@ struct BeadRegion {
   int copy_of = -1;                // >= 0: a rotated copy of that region, which holds the matrices (read turned)
   Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
   int axis = -1;                   // filament axis: its periodic pair is the bead itself (always perfect), not a weld
+  int filament = -1;               // filament axis for the weld laws: an internal pair normal to it between two regions
+                                   // of the same filament (bead pieces of a window) continues the bead, always perfect
+  std::vector<char> driven;        // per patch: 1 if a cut face (on a non-periodic box face, no partner): u given
   double t_assemble = 0.0, t_reduce = 0.0;
   bool reduced_from_cache = false;
 };
@@ -193,6 +196,10 @@ class BeadCell {
   std::array<Eigen::Matrix3d, 3> weld_periodic{Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Zero()};
   std::array<Eigen::Matrix3d, 3> weld_internal{Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Zero()};
 
+  // Periodic box axes. A planar patch on a non-periodic box face without a partner is a driven cut face (BeadWindow:
+  // u prescribed, t unknown); on a periodic face it is free surface.
+  std::array<bool, 3> periodic{true, true, true};
+
   std::vector<WeldCrack> cracks;  // debonds (FFM energy: compliance against debond depth, same condensed operators)
 
   static Eigen::Matrix3d springCompliance(int a, double Kn, double Kt) {
@@ -206,10 +213,11 @@ class BeadCell {
   int ndofTotal() const { int n = 0; for (auto& r : regions) n += r.mesh.ndof; return n; }
 
   // files[i]: region geometry; copies[i] = (j, R): region i is region j rotated by R (and translated), -1: assemble;
-  // axes[i]: region i's filament axis (-1: none, every pair is a weld).
+  // axes[i]: region i's filament axis (-1: none, every pair is a weld); offsets[i]: translation of region i's file
+  // (one file, many placed copies: a bead window).
   void setup(const std::vector<std::string>& files, const Material& m, const SolverOptions& o,
              const std::vector<std::pair<int, Eigen::Matrix3d>>& copies = {}, const std::string& cache_dir = "",
-             const std::vector<int>& axes = {}) {
+             const std::vector<int>& axes = {}, const std::vector<Vec3>& offsets = {}) {
     mat = m;
     // The operators depend on the material only through nu (H) and 1/mu (G): they are assembled and cached for
     // mu = 1 (unit_), so one cached bead serves every material of the same Poisson ratio. The solve works with
@@ -222,7 +230,11 @@ class BeadCell {
     for (size_t i = 0; i < files.size(); ++i) {
       BeadRegion& r = regions[i];
       r.file = files[i];
-      r.mesh.build(loadDat(files[i]), popt);
+      std::vector<Patch> geo = loadDat(files[i]);
+      if (i < offsets.size() && offsets[i].squaredNorm() > 0)
+        for (Patch& P : geo)
+          for (Vec4& w : P.Pw) w.head<3>() += w(3) * offsets[i];
+      r.mesh.build(std::move(geo), popt);
       r.ts.build(r.mesh);
       volume_solid += r.mesh.volume();
       for (const Vec3& P : r.mesh.dof_point) {
@@ -231,7 +243,7 @@ class BeadCell {
         hi = hi.cwiseMax(P);
       }
       if (i < copies.size() && copies[i].first >= 0) { r.copy_of = copies[i].first; r.R = copies[i].second; }
-      if (i < axes.size()) r.axis = axes[i];
+      if (i < axes.size()) r.axis = r.filament = axes[i];
     }
     tol_ = 1e-9 * (hi - lo).maxCoeff();
     findPairs();
@@ -244,6 +256,31 @@ class BeadCell {
       }
       reduce(r, rows, cache_dir);
     }
+  }
+
+  // Full boundary data of region ri from a solution s that holds its kept values (weld dofs, connection
+  // tractions; physical units): the eliminated unknowns (free-surface displacements, cross-sections) follow from
+  // the region's own eliminated rows, re-assembled (one region: ~1 s at grade 0). For interior probes of a few
+  // regions; the condensation cache keeps only the cross-section part (Xk), so the free surface is re-solved here.
+  BoundarySolution recoverFull(int ri, const BoundarySolution& s) {
+    BeadRegion& R = regions[ri];
+    const std::vector<Collocation> rows = structure(ri);
+    Eigen::MatrixXd H, G, Ae, Ak, F;
+    batchedHG(R.mesh, R.ts, unit_, opt, rows, H, G);
+    columns(R, H, G, R.erow, Ae, Ak, F);
+    H.resize(0, 0);
+    G.resize(0, 0);
+    const int nb = int(R.bdof.size());
+    Eigen::VectorXd kv(3 * (nb + R.tcon.size()));
+    for (int j = 0; j < nb; ++j) kv.segment<3>(3 * j) = s.u.segment<3>(3 * R.bdof[j]);
+    for (int j = 0; j < int(R.tcon.size()); ++j) kv.segment<3>(3 * (nb + j)) = s.t.segment<3>(3 * R.tcon[j]) / mu_;
+    const Eigen::VectorXd x = DenseLU(std::move(Ae)).solve(Eigen::MatrixXd(-Ak * kv)).col(0);
+    BoundarySolution f = s;
+    for (int g = 0; g < R.mesh.ndof; ++g)
+      if (R.ecol_u[g] >= 0) f.u.segment<3>(3 * g) = x.segment<3>(3 * R.ecol_u[g]);
+    for (int d = 0; d < R.ts.ndof; ++d)
+      if (R.ecol_t[d] >= 0) f.t.segment<3>(3 * d) = mu_ * R.esign_t[d] * x.segment<3>(3 * R.ecol_t[d]);
+    return f;
   }
 
   RveResult solve() const { return solveScales(std::vector<double>{1.0})[0]; }
@@ -554,7 +591,7 @@ class BeadCell {
     }
   }
 
- private:
+ protected:
   double tol_ = 1e-12;
   double mu_ = 1.0;   // shear modulus of mat: operators are built for mu = 1 (unit_)
   Material unit_;
@@ -564,6 +601,9 @@ class BeadCell {
   }
   bool continuation(const BeadPair& P) const {  // a bead's own cross-section pair (never a weld)
     return !P.internal && P.rm == P.rp && regions[P.rm].axis == P.axis;
+  }
+  bool filamentJoint(const BeadPair& P) const {  // two pieces of one filament (window): perfect, never a weld
+    return P.internal && regions[P.rm].filament == P.axis && regions[P.rp].filament == P.axis;
   }
   bool cracked(const BeadPair& P) const {  // the + patch lies in a debond (fronts are patch edges: beads.py debonds)
     if (continuation(P) || cracks.empty()) return false;
@@ -581,7 +621,7 @@ class BeadCell {
   }
   // weld compliance in the unit-mu system (t' = t / mu): mu C
   Eigen::Matrix3d compliance(const BeadPair& P) const {
-    if (continuation(P)) return Eigen::Matrix3d::Zero();
+    if (continuation(P) || filamentJoint(P)) return Eigen::Matrix3d::Zero();
     return mu_ * (P.internal ? weld_internal[P.axis] : weld_periodic[P.axis]);
   }
 
@@ -633,7 +673,7 @@ class BeadCell {
             if (outward(regions[rj], int(pj))(a) <= 0) continue;
             Vec3 s = Vec3::Zero();
             bool internal = false;
-            if (on_lo && std::abs(cq - hi(a)) < 1e3 * tol_) s = L(a) * Vec3::Unit(a);
+            if (periodic[a] && on_lo && std::abs(cq - hi(a)) < 1e3 * tol_) s = L(a) * Vec3::Unit(a);
             else if (rj != ri && std::abs(cq - c) < 1e3 * tol_) internal = true;
             else continue;
             if (!samePoints(P, Q, s)) continue;
@@ -641,6 +681,18 @@ class BeadCell {
             regions[ri].connection[pi] = regions[rj].connection[pj] = 1;
           }
       }
+    if (std::getenv("IGABEM_DEBUG_PAIRS"))
+      for (const auto& P : pairs)
+        std::fprintf(stderr, "pair %d:%d %d:%d axis %d %s\n", P.rm, P.pm, P.rp, P.pp, P.axis, P.internal ? "internal" : "periodic");
+    for (auto& r : regions) {  // cut faces: unpaired planar patches on a non-periodic box face
+      r.driven.assign(r.mesh.patches.size(), 0);
+      for (size_t pi = 0; pi < r.mesh.patches.size(); ++pi) {
+        double c;
+        const int a = planeAxis(r.mesh.patches[pi], c);
+        if (a < 0 || periodic[a] || r.connection[pi]) continue;
+        if (std::abs(c - lo(a)) < 1e3 * tol_ || std::abs(c - hi(a)) < 1e3 * tol_) r.driven[pi] = r.connection[pi] = 1;
+      }
+    }
   }
 
   // out(:, c0 + j) = s M(rows, cols[j]), threaded over columns (Eigen's indexed view gathers serially: 14 s of the
@@ -687,6 +739,8 @@ class BeadCell {
       if (P.rm == ri) weld[P.pm] = 1;
       if (P.rp == ri) weld[P.pp] = 1;
     }
+    for (int p = 0; p < np; ++p)
+      if (r.driven[p]) weld[p] = 1;  // cut faces: their dofs and tractions are kept like a weld's
     r.bpos.assign(nd, -1);
     r.bdof.clear();
     r.tcon.clear();
@@ -846,7 +900,10 @@ class BeadCell {
     if (S.copy_of >= 0) throw std::runtime_error("BeadCell: copy of a copy");
     if (S.mesh.ndof != T.mesh.ndof || S.ts.ndof != T.ts.ndof || S.bdof != T.bdof || S.tcon != T.tcon ||
         S.ecol_u != T.ecol_u || S.ecol_t != T.ecol_t || S.rowpos != T.rowpos || S.xsel != T.xsel)
-      throw std::runtime_error("BeadCell: copied region does not match its source (patches or connections)");
+      throw std::runtime_error("BeadCell: copied region " + std::to_string(&T - regions.data()) + " (" + T.file + ") does not match its source " + std::to_string(&S - regions.data()) + " (" + S.file + ")" +
+                               " (patches or connections: ndof " + std::to_string(S.mesh.ndof) + "/" + std::to_string(T.mesh.ndof) +
+                               ", kept " + std::to_string(S.bdof.size()) + "/" + std::to_string(T.bdof.size()) + ", tcon " +
+                               std::to_string(S.tcon.size()) + "/" + std::to_string(T.tcon.size()) + ")");
     const Vec3 d = T.mesh.dof_point[0] - T.R * S.mesh.dof_point[0];
     for (int g = 0; g < S.mesh.ndof; ++g)
       if ((T.mesh.dof_point[g] - T.R * S.mesh.dof_point[g] - d).norm() > 1e3 * tol_)

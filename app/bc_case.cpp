@@ -22,6 +22,8 @@
 // From 1,000 points on, interior points go through the treecode (src/treecode.hpp).
 // --serve: after the solve, read commands from stdin ("points <file> <prefix>", "quit"),
 // answering "ready" after each, so later probes reuse the solution without a new LU.
+// "forces <file>" re-solves every case with interior point forces (lines y(3) f(3); the particular Kelvin field
+// is not in the evaluated fields: the caller adds it), reusing the factorization.
 // "displacement <file> <prefix>" writes prefix_<case>.txt: x y z ux uy uz winding (direct
 // evaluation; s = 1 takes the boundary value at the closest surface point).
 // --greville: write the points a support's patches are interpolated at ("x y z" per line) and
@@ -253,6 +255,31 @@ int main(int argc, char** argv) {
     }
     std::fflush(stdout);
   };
+  // Displacement and stress at the points of a file for every case at once (MultiInteriorEvaluator: the kernels
+  // are shared by the cases, e.g. the unit load sets of forcesets): lines x y z ux uy uz sxx syy szz sxy syz szx winding
+  auto fields = [&](const std::string& in_path, const std::string& prefix) {
+    std::vector<Vec3> X;
+    std::vector<char> on;
+    readPoints(in_path, X, on);
+    const auto tp = std::chrono::steady_clock::now();
+    std::vector<const BoundarySolution*> ps;
+    for (const auto& s : sols) ps.push_back(&s);
+    const auto F = MultiInteriorEvaluator(ps, cf.opt).eval(X, on);
+    for (size_t k = 0; k < cases.size(); ++k) {
+      std::ofstream o(prefix + "_" + rep[k].name + ".txt");
+      o.precision(15);
+      o << "# x y z ux uy uz sxx syy szz sxy syz szx winding\n";
+      for (size_t i = 0; i < X.size(); ++i) {
+        const auto& f = F[k][i];
+        const auto& S = f.stress;
+        o << X[i](0) << ' ' << X[i](1) << ' ' << X[i](2) << ' ' << f.u(0) << ' ' << f.u(1) << ' ' << f.u(2) << ' '
+          << S(0, 0) << ' ' << S(1, 1) << ' ' << S(2, 2) << ' ' << S(0, 1) << ' ' << S(1, 2) << ' ' << S(2, 0) << ' '
+          << f.winding << '\n';
+      }
+    }
+    std::printf("# fields at %zu points for %zu cases in %.2f s\n", X.size(), cases.size(),
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - tp).count());
+  };
   if (!pts_arg.empty()) points(pts_arg, pts_out);
   if (serve) {
     // Keep the solution: "points <file> <prefix>" evaluates and answers "ready"; "quit" ends.
@@ -263,6 +290,45 @@ int main(int argc, char** argv) {
       if (cmd == "quit") break;
       if (cmd == "points" && (std::cin >> a >> b)) points(a, b);
       else if (cmd == "displacement" && (std::cin >> a >> b)) displacement(a, b);
+      else if (cmd == "fields" && (std::cin >> a >> b)) fields(a, b);
+      else if (cmd == "forcesets" && (std::cin >> a)) {
+        // one new case per set (the first case plus that set's interior point forces; lines: set y(3) f(3)), solved
+        // together on the same LU; the evaluation commands then answer for case_0 (the first case) and s<k>
+        std::ifstream in(a);
+        std::map<int, std::vector<std::pair<Vec3, Vec3>>> sets;
+        int k;
+        double v[6];
+        while (in >> k >> v[0] >> v[1] >> v[2] >> v[3] >> v[4] >> v[5])
+          sets[k].push_back({Vec3(v[0], v[1], v[2]), Vec3(v[3], v[4], v[5])});
+        static const std::vector<LoadCase> base = cases;
+        std::vector<LoadCase> cs{base[0]};
+        for (auto& [id, pf] : sets) {
+          LoadCase c = base[0];
+          c.name = "s" + std::to_string(id);
+          c.point_forces = pf;
+          cs.push_back(std::move(c));
+        }
+        const auto tf = std::chrono::steady_clock::now();
+        std::vector<CaseReport> r2;
+        sols = model.solutions(cs, &r2);
+        cases = cs;
+        rep = r2;
+        std::printf("# %zu force sets solved in %.2f s\n", sets.size(),
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - tf).count());
+      }
+      else if (cmd == "forces" && (std::cin >> a)) {  // re-solve every case with interior point forces (same LU)
+        std::ifstream in(a);
+        std::vector<std::pair<Vec3, Vec3>> pf;
+        double v[6];
+        while (in >> v[0] >> v[1] >> v[2] >> v[3] >> v[4] >> v[5]) pf.push_back({Vec3(v[0], v[1], v[2]), Vec3(v[3], v[4], v[5])});
+        auto cs = cases;
+        for (auto& c : cs) c.point_forces = pf;
+        const auto tf = std::chrono::steady_clock::now();
+        std::vector<CaseReport> r2;
+        sols = model.solutions(cs, &r2);
+        std::printf("# re-solved with %zu point forces in %.2f s\n", pf.size(),
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - tf).count());
+      }
       else std::printf("# unknown command %s\n", cmd.c_str());
       std::printf("ready\n");
       std::fflush(stdout);

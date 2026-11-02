@@ -228,6 +228,47 @@ class Solve:
         os.unlink(src)
         return out
 
+    def fields_all(self, points, on_surface=None):
+        """{load case: (displacement (n, 3), stress (n, 3, 3), winding (n,))}, every case in one pass (the kernels are
+        shared by the cases: many load sets cost about one)."""
+        P = np.atleast_2d(np.asarray(points, float))
+        on = np.zeros(len(P), bool) if on_surface is None else np.broadcast_to(np.asarray(on_surface, bool), len(P))
+        self.n += 1
+        src = os.path.join(self.dir, f"fpts_{self.n}.txt")
+        np.savetxt(src, np.column_stack([P, on.astype(float)]), fmt="%.17g")
+        prefix = os.path.join(self.dir, f"fout_{self.n}")
+        self.proc.stdin.write(f"fields {src} {prefix}\n")
+        self.proc.stdin.flush()
+        self.last_report = self._until_ready()
+        out = {}
+        for name in self.cases:
+            d = np.loadtxt(f"{prefix}_{name}.txt", ndmin=2)
+            s = np.empty((len(d), 3, 3))
+            s[:, 0, 0], s[:, 1, 1], s[:, 2, 2] = d[:, 6], d[:, 7], d[:, 8]
+            s[:, 0, 1] = s[:, 1, 0] = d[:, 9]
+            s[:, 1, 2] = s[:, 2, 1] = d[:, 10]
+            s[:, 2, 0] = s[:, 0, 2] = d[:, 11]
+            out[name] = (d[:, 3:6], s, d[:, 12])
+            os.unlink(f"{prefix}_{name}.txt")
+        os.unlink(src)
+        return out
+
+    def forces(self, path):
+        """Re-solve every case with the interior point forces of a file (lines y(3) f(3)), on the same LU. The fields
+        evaluated afterwards leave out the particular Kelvin part of the forces (the caller adds it)."""
+        self.proc.stdin.write(f"forces {path}\n")
+        self.proc.stdin.flush()
+        self.last_report = self._until_ready()
+
+    def forcesets(self, path):
+        """One case per set of interior point forces (lines: set y(3) f(3)), each the first case plus that set, solved
+        together on the same LU. Afterwards the cases are the first one and "s<set>" (Kelvin parts left out, as forces)."""
+        self.proc.stdin.write(f"forcesets {path}\n")
+        self.proc.stdin.flush()
+        self.last_report = self._until_ready()
+        ids = sorted({int(ln.split()[0]) for ln in open(path) if ln.strip()})
+        self.cases = self.cases[:1] + ["s%d" % k for k in ids]
+
     def close(self):
         if self.proc.poll() is None:
             self.proc.stdin.write("quit\n")

@@ -122,6 +122,90 @@ class TestLaminate(unittest.TestCase):
         self.assertAlmostEqual(inplane(stack_C(C, [45, -45]))["Gxy"], U, places=6)
 
 
+class TestOnset(unittest.TestCase):
+    """rve.onset on a small 0/90 bead cell (perfect bond, net-section means)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import tempfile
+        from rve import onset, strength
+        cls.lib, strength.RESPONSES = strength.RESPONSES, None
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.g = dict(G, alpha=15.0, wc=math.sqrt(0.5))
+        cls.wm = onset.weld_map("090", cls.g, 0.35, grade=1, work=cls.tmp.name)
+
+    @classmethod
+    def tearDownClass(cls):
+        from rve import strength
+        strength.RESPONSES = cls.lib
+        cls.tmp.cleanup()
+
+    def test_equilibrium_and_symmetry(self):
+        """The interlayer squares alone carry s33: mean traction = cell section / bond area exactly; latA under s22
+        equals latB under s11 (B = A turned 90 deg)."""
+        from rve import onset
+        for f, (got, lig) in onset.lig_check(self.wm, "090", self.g).items():
+            self.assertAlmostEqual(got / lig, 1.0, places=6, msg=f)
+        self.assertAlmostEqual(self.wm["latA"]["N"][1] / self.wm["latB"]["N"][0], 1.0, places=4)
+
+    def test_frame_and_scaling(self):
+        """A stress given in a frame turned with the print gives the same weld tractions; onset scales linearly."""
+        from rve import onset
+        rng = np.random.default_rng(1)
+        A = rng.normal(size=(5, 3, 3))
+        sig = A + np.swapaxes(A, 1, 2)
+        R = onset.cell_frame(30.0)
+        ref = onset.weld_tractions(onset.cell_stress(sig, np.eye(3)), self.wm)
+        rot = onset.weld_tractions(onset.cell_stress(np.einsum("ia,jb,nab->nij", R, R, sig), R), self.wm)
+        for f in ref:
+            for a, b in zip(ref[f], rot[f]):
+                self.assertLess(np.abs(a - b).max(), 1e-12)
+        d = np.linspace(0, 2, 5)
+        f1 = onset.onset(sig, d, self.wm, R, 50.0, 1.5, 0.4, 60.0)[0]
+        f2 = onset.onset(2 * sig, d, self.wm, R, 50.0, 1.5, 0.4, 60.0)[0]
+        self.assertAlmostEqual(f1 / f2, 2.0, places=12)
+
+
+class TestWindow(unittest.TestCase):
+    """app/bead_window on grade-0 pieces: the corrector drive reproduces the periodic cell, GMRES the direct solve."""
+
+    @classmethod
+    def setUpClass(cls):
+        import tempfile
+        from rve import window
+        if not os.path.exists(window.BEAD_WINDOW):
+            raise unittest.SkipTest("bead_window not built")
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.files = window.pieces(window.BASE, 1, 0, cls.tmp.name)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_corrector_drive_is_the_periodic_cell(self):
+        """2 x 2 cells, cut faces driven by E x + chi E: the weld net tractions of a corner cell (both lateral welds
+        inside) = the periodic cell's to the mesh level (2 % at grade 0; 0.3 % at grade 2), with springs too."""
+        from rve import window
+        ks = [None, 10.0]
+        refs = window.cell_tractions(self.files, ks, self.tmp.name)
+        Ts, _ = window.run_window(self.files, (2, 2), ks, "corrector", self.tmp.name)
+        for k, T, Tr in zip(ks, Ts, refs):
+            for f, e in window.error(window.window_means(T, 2, 0, 0), window.cell_means(Tr)).items():
+                self.assertLess(e, 2.5, msg="%s kappa %s" % (f, k))
+
+    def test_gmres_matches_direct(self):
+        """2 x 1 cells, affine drive: GMRES with the cell block preconditioner = UMFPACK."""
+        import subprocess
+        from rve import window
+        out = []
+        for extra in ([], ["--direct"]):
+            t = os.path.join(self.tmp.name, "t%d.txt" % len(out))
+            subprocess.run([window.BEAD_WINDOW] + self.files + ["--cells", "2:1", "--cache", os.path.join(self.tmp.name, "cache"),
+                                                                "--tractions", t] + extra, check=True, stdout=subprocess.DEVNULL)
+            out.append(np.loadtxt(t)[:, 10:])
+        self.assertLess(np.abs(out[0] - out[1]).max() / np.abs(out[1]).max(), 1e-7)
+
+
 class TestApi(unittest.TestCase):
     """rve.api against the cells it interpolates, its symmetries, and the page's JavaScript engine."""
 
