@@ -34,23 +34,30 @@ struct Mesh {
   int ndof = 0;
   double normal_sign = 1.0;  // flips normals if the files are inward oriented
 
-  void build(std::vector<Patch> P, const PartitionOptions& popt, double merge_tol = 1e-9) {
+  // separate (optional, per patch): patches whose control points get dofs of their own, merged with no
+  // other patch (the two coincident faces of a crack, src/crack/crack_mesh.hpp).
+  void build(std::vector<Patch> P, const PartitionOptions& popt, double merge_tol = 1e-9,
+             const std::vector<char>* separate = nullptr) {
     patches = std::move(P);
     // Merge coincident control points into conforming global dofs.
     l2g.assign(patches.size(), {});
     dof_point.clear();
     std::vector<std::pair<int, int>> owner;
+    std::vector<char> dof_sep;
     for (size_t ip = 0; ip < patches.size(); ++ip) {
       const Patch& Pa = patches[ip];
+      const bool sep = separate && (*separate)[ip];
       l2g[ip].resize(Pa.nu * Pa.nv);
       for (int k = 0; k < Pa.nu * Pa.nv; ++k) {
         const Vec3 X = Pa.cp(k);
         int found = -1;
-        for (size_t g = 0; g < dof_point.size(); ++g)
-          if ((dof_point[g] - X).norm() < merge_tol) { found = int(g); break; }
+        if (!sep)
+          for (size_t g = 0; g < dof_point.size(); ++g)
+            if (!dof_sep[g] && (dof_point[g] - X).norm() < merge_tol) { found = int(g); break; }
         if (found < 0) {
           found = int(dof_point.size());
           dof_point.push_back(X);
+          dof_sep.push_back(sep);
           owner.push_back({int(ip), k});
         }
         l2g[ip][k] = found;
