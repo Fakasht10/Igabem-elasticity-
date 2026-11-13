@@ -29,6 +29,7 @@ struct QPoint {
   const int* idx;   // local control point indices within the patch
   const double* R;  // rational basis values
   long id;          // index of a cached point, -1 if evaluated on the fly
+  Vec2 uv = Vec2::Zero();  // parametric coordinates on the element's patch
   Vec3 normal() const { return nJ; }
 };
 
@@ -124,6 +125,7 @@ class ElementIntegrator {
     max_cached_ = 0;
     std::vector<Vec3>().swap(cx_);
     std::vector<Vec3>().swap(cnj_);
+    std::vector<Vec2>().swap(cuv_);
     std::vector<double>().swap(cw_);
     std::vector<long>().swap(roff_);
     std::vector<double>().swap(cr_);
@@ -205,6 +207,7 @@ class ElementIntegrator {
   std::vector<std::vector<int>> eidx_;       // per element: local basis indices (constant)
   std::vector<int> nloc_;
   std::vector<Vec3> cx_, cnj_;
+  std::vector<Vec2> cuv_;
   std::vector<double> cw_;
   std::vector<long> roff_;                   // per point: offset into cr_
   std::vector<double> cr_;
@@ -231,6 +234,7 @@ class ElementIntegrator {
     }
     cx_.resize(npt);
     cnj_.resize(npt);
+    cuv_.resize(npt);
     cw_.resize(npt);
     roff_.resize(npt);
     cr_.resize(rfirst[ne]);
@@ -253,6 +257,7 @@ class ElementIntegrator {
             }
             cx_[id] = E.x;
             cnj_[id] = E.normal();
+            cuv_[id] = Vec2(R.u0 + R.du() * g.x[a], R.v0 + R.dv() * g.x[b]);
             cw_[id] = g.w[a] * g.w[b] * R.du() * R.dv();
             roff_[id] = ro;
             std::copy(E.R, E.R + E.n_loc, cr_.begin() + ro);
@@ -266,7 +271,7 @@ class ElementIntegrator {
   void cachedRule(size_t ie, int m, F& f) const {
     const long p0 = first_[ie][m];
     for (long id = p0; id < p0 + long(m) * m; ++id) {
-      const QPoint q{cx_[id], cnj_[id], nloc_[ie], eidx_[ie].data(), &cr_[roff_[id]], id};
+      const QPoint q{cx_[id], cnj_[id], nloc_[ie], eidx_[ie].data(), &cr_[roff_[id]], id, cuv_[id]};
       f(q, cw_[id]);
     }
   }
@@ -301,7 +306,7 @@ class ElementIntegrator {
   void point(const Element& e, const Vec2& p, double w, F& f) const {
     PatchEval E;
     mesh_.patches[e.patch].evalSpan(e.su, e.sv, p(0), p(1), E);
-    const QPoint q{E.x, E.normal(), E.n_loc, E.idx, E.R, -1};
+    const QPoint q{E.x, E.normal(), E.n_loc, E.idx, E.R, -1, p};
     f(q, w);
   }
 
