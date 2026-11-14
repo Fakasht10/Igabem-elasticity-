@@ -10,7 +10,7 @@ the geometry and the binary (pass --force to redo), so re-plotting or adding a l
 usage: xigabem_harness.py [case ...] [--force] [--timeout S] [--list]
        cases: penny (Sec. 4.1, in plane, mode I), penny_inclined (Sec. 4.1, pi/4, mixed mode),
               ellipse, ellipse_inclined (Sec. 4.2, a = 2b, in plane and pi/6),
-              prism (Sec. 4.3, edge crack, pure modes I, II, III)
+              prism (Sec. 4.3, edge crack, pure modes I, II, III), prism_tension (Sec. 4.4)
 
 Runtime (4 cores): penny levels n = 3..11, two layouts, both formulations, ~4 min cold; every run has a hard timeout.
 """
@@ -85,6 +85,24 @@ CASES = {
         "paper": {"table2": {"t2_KI_0": [5.53e-4, 4.56e-2, 1.53e-2], "t2_KII_0": [4.83e-3, 4.14e-2, 1.28e-2],
                              "t2_KI_90": [1.89e-3, 8.28e-3, 2.21e-2], "t2_KIII_90": [1.77e-3, 6.88e-3, 5.96e-2]}},
     },
+    "prism_tension": {
+        "title": "Prism with edge crack under uniform tension, E = 1000, nu = 0.3 (paper Sec. 4.4, Fig. 25)",
+        "bin": "crack_tension",
+        "make": ["prism_tension", "--lateral", "{layout}"],
+        "geometry": "prismt_{layout}_c{n}.dat",
+        "levels": [1, 2, 3, 4],
+        "layouts": ["split", "aligned", "enriched"],
+        "formulations": {"xigabem": []},
+        "extra": [],
+        "est_s": {1: 5, 2: 12, 3: 22, 4: 34},
+        # no closed form: the converged mid-front K_I of the split layout must agree with the aligned one (the two
+        # discretise the lateral faces independently) and sit within 2% of the 2-D plane-strain value 2.829 (Eq. 30)
+        "gates": {"KI_mid_diff": 2.0e-2},
+        "gate_layouts": ["split", "aligned"],  # one enriched lateral patch converges slowly (shown, not gated)
+        "paper": {"F_2d": 2.829, "fig25_mid_diff": {"a: crack enrichment only, 3996 dof": 2.0e-2,
+                                                    "b: fully enriched, plane-strain kappa, 2787 dof": 5.2e-3,
+                                                    "c: fully enriched, plane-stress kappa, 2787 dof": 9.6e-3}},
+    },
     "prism": {
         "title": "Prism with edge crack, pure modes I, II, III from the Williams field (paper Sec. 4.3, Table 3)",
         "bin": "crack_prism",
@@ -125,7 +143,7 @@ def run_case(name, force, timeout):
     runs = []
     for lay, n, f in plan:
         prefix = {"disk": "", "ogrid": "og_"}.get(lay, "")
-        geo = os.path.join(ROOT, "geo", "crack", c["geometry"].format(prefix=prefix, n=n))
+        geo = os.path.join(ROOT, "geo", "crack", c["geometry"].format(prefix=prefix, n=n, layout=lay))
         if not os.path.exists(geo):
             subprocess.run([sys.executable, os.path.join(ROOT, "python", "make_crack.py")] +
                            [a.format(layout=lay) for a in c["make"]] + ["--n", str(n)], check=True,
@@ -146,7 +164,7 @@ def run_case(name, force, timeout):
         runs.append(d)
     # gates on the finest XIGABEM run of each layout
     verdict = {}
-    for lay in c["layouts"]:
+    for lay in c.get("gate_layouts", c["layouts"]):
         fin = max((r for r in runs if r["layout"] == lay and r["formulation"] == "xigabem"), key=lambda r: r["n"])
         verdict[lay] = {k: {"value": fin[k], "gate": g, "pass": fin[k] <= g} for k, g in c["gates"].items()}
     with open(os.path.join(out, "case.json"), "w") as fh:

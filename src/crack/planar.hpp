@@ -43,6 +43,7 @@ struct PlanarRegion {
     double t0, t1;
     std::vector<double> ts;
     std::vector<Eigen::Vector2d> xy;  // polyline in plane coordinates
+    bool straight = false;            // a segment: crossings in closed form
   };
   std::vector<Edge> edges;
 
@@ -62,6 +63,12 @@ struct PlanarRegion {
       const double t = t0 + (t1 - t0) * i / nseg;
       E.ts.push_back(t);
       E.xy.push_back(planar(E.C(t)));
+    }
+    {
+      const Eigen::Vector2d A = E.xy.front(), B = E.xy.back(), d = B - A;
+      double dev = 0.0;
+      for (const auto& q : E.xy) dev = std::max(dev, std::abs(d(0) * (q - A)(1) - d(1) * (q - A)(0)));
+      E.straight = d.norm() > 0 && dev <= 1e-13 * d.squaredNorm();
     }
     // edges meet at shared end points: snap them to bit-identical coordinates so the half-open crossing rule
     // below counts a ray through a junction exactly once
@@ -84,6 +91,12 @@ struct PlanarRegion {
         // half-open rule (a vertex on the ray counts as the side f >= 0): a ray through a polyline vertex or a
         // junction of two edges is counted once, and a ray touching a corner from outside twice or not at all
         if ((fa >= 0) == (fb >= 0)) continue;
+        if (E.straight) {  // the polyline is the edge: exact intersection with the segment
+          const Eigen::Vector2d c = a + (b - a) * (fa / (fa - fb));
+          const double sc = c.dot(dd);
+          if (sc > 0.0) out.push_back({sc, 0});
+          continue;
+        }
         // bracketed: secant guess, then Newton/bisection on f(t) = d x (C(t) - x)
         double ta = E.ts[i], tb = E.ts[i + 1], f0 = fa, f1 = fb;
         double t = (f1 == f0) ? 0.5 * (ta + tb) : ta + (tb - ta) * f0 / (f0 - f1);

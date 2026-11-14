@@ -1,0 +1,1 @@
+{"geometry": "/home/user/repo/geo/crack/prismt_enriched_c4.dat", "kappa_outer": "strain", "unknowns": 11226, "F_2d": 2.829125, "KI_mid": 2.683326, "KI_mid_diff": 5.153498e-02, "KII_max": 1.978e-10, "KIII_max": 4.209e-11, "residual": 1.132e-12, "t_assemble": 32.319, "t_solve": 11.005}

@@ -174,6 +174,7 @@ struct Front {
   Vec3 m;                          // crack normal (upper face's solid side)
   Vec3 centroid;                   // a point of the crack (orients n)
   double mu = 1, kappa = 1;
+  double kappa_outer = 0;  // Kolosov constant on outer (sign 0) patches; 0: kappa (paper Sec. 4.4 tries plane stress)
   int ncols = 0;
 
   // The 3 nb enrichment vectors at a point y of piece k. sign +1 / -1: a point of the upper / lower crack face
@@ -189,7 +190,7 @@ struct Front {
     Vec3 C, Cu;
     int n, s[16];
     double R[16];
-    if (!ok || u <= pieces[k].u0 || u >= pieces[k].u1) {
+    if (!ok || (pieces.size() > 1 && (u <= pieces[k].u0 || u >= pieces[k].u1))) {
       double best = 1e300;
       for (size_t j = 0; j < pieces.size(); ++j) {
         double dj;
@@ -207,7 +208,7 @@ struct Front {
     const Vec3 tv = nv.cross(m);
     const double th = sign != 0 ? sign * M_PI : std::atan2(d.dot(m), d.dot(nv));
     Vec3 w[3];
-    williams(r, th, mu, kappa, nv, m, tv, w);
+    williams(r, th, mu, sign == 0 && kappa_outer > 0 ? kappa_outer : kappa, nv, m, tv, w);
     int c = 0;
     for (int i = 0; i < n; ++i)
       for (int M = 0; M < 3; ++M) {

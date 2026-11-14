@@ -22,6 +22,8 @@ the number of elements per unit length k.
 usage: make_crack.py penny [--n 3,4,5,6,7] [--incline DEG] [--out geo/crack]
        make_crack.py ellipse [--aspect 0.5] [--n ...] [--incline DEG] [--layout disk|ogrid]   (paper Sec. 4.2)
        make_crack.py prism --n 1,2,3,4
+       make_crack.py prism_tension --n 1,2,3,4 [--lateral enriched|split|aligned]   (paper Sec. 4.4; n refines the
+                     crack faces, h = 0.625 / n; outer faces h = 0.625, lateral faces 0.3125)
 """
 
 import argparse
@@ -215,10 +217,66 @@ def prism(k):
     return outer + plus + minus, meta
 
 
+def _cells(L, h):
+    return max(1, int(round(L / h)))
+
+
+def prism_tension(k, kc=None, kl=None, lateral="enriched"):
+    """Paper Sec. 4.4 (Fig. 23): block x in [0, 5] (crack depth direction), y in [-4.375, 4.375] (load), z in
+    [0, 7.5] (front), edge crack y = 0, 0 <= x <= 2.5 (a / b = 0.5), front x = 2.5. Patch-discontinuous: the cut face
+    x = 0 split at the crack mouth (the paper uses a Heaviside enrichment there instead), the face x = 5 split into
+    the clamped band |y| < 0.4375 and the two free parts, the z faces Williams-enriched with knot lines at x = 2.5 and
+    y = 0. Element size 0.625 / k."""
+    e1, e2, e3 = np.eye(3)
+    h = 0.625 / k
+    hc = 0.625 / (kc or k)  # crack faces
+    hl = 0.625 / (kl or k)  # lateral (enriched) faces
+    W, H, T, a, band = 5.0, 4.375, 7.5, 2.5, 0.4375
+    nx, ny, nz = 2 * _cells(a, h), 2 * _cells(H, h), _cells(T, h)
+    ylo = H - band
+    # lateral faces z = 0, T: one enriched patch each ("enriched", the paper's Fig. 24b), two enriched halves split at
+    # y = 0 ("split"), or four plain patches aligned with the crack and the front ("aligned", Fig. 24a)
+    lat, enr = [], []
+    for z, nrm in ((0.0, -e3), (T, e3)):
+        if lateral == "enriched":
+            enr.append(len(lat))
+            lat.append(rect_patch([0, -H, z], W * e1, 2 * H * e2, 2 * _cells(a, hl), 2 * _cells(H, hl), nrm))
+        elif lateral == "split":
+            for y0 in (0.0, -H):
+                enr.append(len(lat))
+                lat.append(rect_patch([0, y0, z], W * e1, H * e2, 2 * _cells(a, hl), _cells(H, hl), nrm))
+        else:
+            for x0 in (0.0, a):
+                for y0 in (0.0, -H):
+                    lat.append(rect_patch([x0, y0, z], (W - a if x0 else a) * e1, H * e2, _cells(a, hl), _cells(H, hl), nrm))
+    outer = lat + [
+        rect_patch([0, H, 0], W * e1, T * e3, nx, nz, e2),                   # top, sigma0 e2
+        rect_patch([0, -H, 0], W * e1, T * e3, nx, nz, -e2),                 # bottom, -sigma0 e2
+        rect_patch([0, 0, 0], T * e3, H * e2, nz, ny // 2, -e1),             # x = 0, y > 0
+        rect_patch([0, -H, 0], T * e3, H * e2, nz, ny // 2, -e1),            # x = 0, y < 0
+        rect_patch([W, band, 0], T * e3, ylo * e2, nz, _cells(ylo, h), e1),  # x = W, y > band
+        rect_patch([W, -H, 0], T * e3, ylo * e2, nz, _cells(ylo, h), e1),    # x = W, y < -band
+        rect_patch([W, -band, 0], T * e3, 2 * band * e2, nz, 2, e1),         # x = W, clamped band
+    ]
+    plus = [rect_patch([0, 0, 0], T * e3, a * e1, _cells(T, hc), _cells(a, hc), -e2)]
+    minus = [rect_patch([0, 0, 0], T * e3, a * e1, _cells(T, hc), _cells(a, hc), e2)]
+    n0, n1 = len(outer), len(outer) + 1
+    meta = {
+        "kind": "prism_tension", "outer": [0, n0], "plus": [n0, n1], "minus": [n1, n1 + 1], "crown": [n0],
+        "front_edge": "v1", "enriched_outer": [[i, 0] for i in enr], "dirichlet": [len(lat) + 6],
+        "top": len(lat), "bottom": len(lat) + 1, "lateral": lateral,
+        "plane": {"point": [1.25, 0.0, 3.75], "normal": [0.0, 1.0, 0.0], "e1": [1.0, 0.0, 0.0], "e3": [0.0, 0.0, 1.0]},
+        "a": a, "W": W, "T": T, "k": k,
+    }
+    return outer + plus + minus, meta
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("kind", choices=["penny", "ellipse", "prism"])
+    ap.add_argument("kind", choices=["penny", "ellipse", "prism", "prism_tension"])
     ap.add_argument("--aspect", type=float, default=0.5, help="ellipse: b / a")
+    ap.add_argument("--lateral", choices=["enriched", "split", "aligned"], default="split",
+                    help="prism_tension: lateral-face layout")
     ap.add_argument("--n", default="3,4,5,6,7")
     ap.add_argument("--incline", type=float, default=0.0)
     ap.add_argument("--layout", choices=["disk", "ogrid"], default="disk")
@@ -229,6 +287,9 @@ def main(argv=None):
         if a.kind == "prism":
             patches, meta = prism(n)
             name = "prism_k%d" % n
+        elif a.kind == "prism_tension":  # n: crack-face refinement; outer h = 0.625, lateral h = 0.3125
+            patches, meta = prism_tension(1, n, 2, a.lateral)
+            name = "prismt_%s_c%d" % (a.lateral, n)
         else:
             asp = a.aspect if a.kind == "ellipse" else 1.0
             patches, meta = penny(n, incline=a.incline, layout=a.layout, aspect=asp)

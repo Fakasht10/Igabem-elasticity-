@@ -304,6 +304,53 @@ def ellipse(d, out):
     print("\n".join(rows))
 
 
+def prism_tension(d, out):
+    runs = d["runs"]
+    lays = (("split", "#2a78d6", "lateral faces split at the crack, enriched"),
+            ("aligned", "#eb6834", "lateral faces aligned with crack and front"),
+            ("enriched", "#1baf7a", "one enriched patch per lateral face"))
+    F = d["paper"]["F_2d"]
+    fig, ax = plt.subplots(1, 2, figsize=(7.4, 3.0))
+    a = ax[0]
+    for lay, col, lab in lays:
+        rs = sorted((r for r in runs if r["layout"] == lay), key=lambda r: r["n"])
+        r = rs[-1]
+        s = rd(os.path.join(out, r["tag"] + "_sif.csv"))
+        a.plot(s["z"], s["KI"], "-", color=col, label="%s, %d dof" % (lay, r["unknowns"]))
+    a.axhline(F, color="#1a1a19", lw=0.9, ls="--", label="2-D plane strain (Eq. 30)")
+    a.set_xlabel("$z$ along the front")
+    a.set_ylabel(r"$K_I / (\sigma_0 \sqrt{\pi a})$")
+    a.set_ylim(2.0, 3.2)
+    a.set_xticks([0, 1.5, 3, 4.5, 6, 7.5])
+    a.set_title("(a) $K_I$ along the front (cf. paper Fig. 25)", loc="left", fontsize=8.5)
+    a.legend(fontsize=6, loc="lower center")
+    b = ax[1]
+    for lay, col, lab in lays:
+        rs = sorted((r for r in runs if r["layout"] == lay), key=lambda r: r["n"])
+        b.semilogx([r["unknowns"] for r in rs], [r["KI_mid"] for r in rs], "o-", color=col, label=lay)
+    b.axhline(F, color="#1a1a19", lw=0.9, ls="--", label="2-D plane strain")
+    b.set_xlabel("degrees of freedom")
+    b.set_ylabel(r"$K_I / (\sigma_0 \sqrt{\pi a})$ at $z = 3.75$")
+    b.set_title("(b) mid-front $K_I$ under refinement", loc="left", fontsize=8.5)
+    b.legend(fontsize=6)
+    fig.suptitle(r"Prism with edge crack, uniform tension, $a/b = 0.5$, $\nu = 0.3$ (Rocha et al. 2024, Sec. 4.4)",
+                 fontsize=10)
+    fig.tight_layout()
+    for ext in ("png", "pdf"):
+        fig.savefig(os.path.join(out, "prism_tension." + ext))
+    rows = ["| lateral layout | crack refinement | dof | K_I mid / sigma sqrt(pi a) | diff vs 2-D | time [s] |",
+            "|---|---|---|---|---|---|"]
+    for lay, _, _ in lays:
+        for r in sorted((r for r in runs if r["layout"] == lay), key=lambda r: r["n"]):
+            rows.append("| %s | %d | %d | %.4f | %+.2f%% | %.1f |" % (lay, r["n"], r["unknowns"], r["KI_mid"],
+                        100 * (r["KI_mid"] / F - 1), r["t_assemble"] + r["t_solve"]))
+    for k, v in d["paper"]["fig25_mid_diff"].items():
+        rows.append("| paper %s | | | | %.2f%% (sign not stated) | |" % (k, 100 * v))
+    with open(os.path.join(out, "prism_tension_table.md"), "w") as f:
+        f.write("\n".join(rows) + "\n")
+    print("\n".join(rows))
+
+
 if __name__ == "__main__":
     for name in sys.argv[1:] or ["penny"]:
         with open(os.path.join(OUT, name, "case.json")) as f:
