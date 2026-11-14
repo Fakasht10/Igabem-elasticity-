@@ -1,6 +1,6 @@
 // Prism with an edge crack, pure-mode loading (Rocha, Trevelyan & Leonel 2024, Sec. 4.3, Table 3, Fig. 21).
 //
-//   crack_prism geo/crack/prism_k2.dat [--out prefix] [--check-k tol] [--nu NU] [--cond]
+//   crack_prism geo/crack/prism_k2.dat [--out prefix] [--check-k tol] [--nu NU] [--cond] [--factored]
 //
 // [-1, 1]^2 x [0, 2], crack y = 0, -1 <= x <= 0, straight front x = 0 along z (python/make_crack.py prism). The
 // single-term Williams field with K_M = 1 (Eq. 29; plane strain for I and II, antiplane for III) is an exact
@@ -31,10 +31,12 @@ int main(int argc, char** argv) {
   }
   std::string dat = argv[1], out;
   bool cond = false;
+  bool factored = false;  // --factored: factor() + solveFactored(), as crack_serve runs
   int ng = 12, grade = 6;  // 8 Gauss points leave a 1e-4 floor in K (z-face elements next to the front end)
   double shift = 0.1, far_tol = 1e-12, check_k = -1, E = 1.0, nu = 0.0;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--cond")) cond = true;
+    else if (!std::strcmp(argv[i], "--factored")) factored = true;
     else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
     else if (!std::strcmp(argv[i], "--check-k") && i + 1 < argc) check_k = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--nu") && i + 1 < argc) nu = std::atof(argv[++i]);
@@ -114,7 +116,13 @@ int main(int argc, char** argv) {
     });
     disps.push_back([&, Mo](const Vec3& y, int p) { return uExact(Mo, y, p); });
   }
-  const std::vector<Eigen::VectorXd> X = M.solve(loads, cond, disps);
+  std::vector<Eigen::VectorXd> X;
+  if (factored) {  // the crack_serve path: factor once, then right-hand sides alone
+    M.factor(cond);
+    X = M.solveFactored(loads, disps);
+  } else {
+    X = M.solve(loads, cond, disps);
+  }
 
   // SIFs along the front
   FILE* fs = out.empty() ? nullptr : std::fopen((out + "_sif.csv").c_str(), "w");
