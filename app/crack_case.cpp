@@ -1,7 +1,7 @@
 // Penny-shaped crack in a large cube (Rocha, Trevelyan & Leonel 2024, Sec. 4.1): dual IgBEM, with or without the
 // crack-front enrichment (XIGABEM), SIFs straight from the solution vector.
 //
-//   crack_case geo/crack/penny_i0_n5.dat [--plain] [--load far|pressure] [--out prefix] [--cond]
+//   crack_case geo/crack/penny_i0_n5.dat [--plain] [--load far|pressure] [--out prefix] [--cond] [--factored]
 //                                          [--check-k tol]
 //
 // Loads: far   sigma0 = 1 on the top face (outward +e2), bottom face clamped (the paper's set-up; nu = 0 makes the
@@ -32,12 +32,14 @@ int main(int argc, char** argv) {
   }
   std::string dat = argv[1], load = "far", out;
   bool enrich = true, cond = false;
+  bool factored = false;  // --factored: factor() + solveFactored(), as crack_serve runs
   int ng = 8, grade = 6;
   double shift = 0.1, far_tol = 1e-12;
   double check_k = -1, E = 1.0, nu = 0.0;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--plain")) enrich = false;
     else if (!std::strcmp(argv[i], "--cond")) cond = true;
+    else if (!std::strcmp(argv[i], "--factored")) factored = true;
     else if (!std::strcmp(argv[i], "--load") && i + 1 < argc) load = argv[++i];
     else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
     else if (!std::strcmp(argv[i], "--check-k") && i + 1 < argc) check_k = std::atof(argv[++i]);
@@ -84,7 +86,13 @@ int main(int argc, char** argv) {
     const Vec3 s = sig * Vec3::UnitY() * Vec3::UnitY().dot(n);  // traction of the uniaxial far field, sign flipped
     return -s;
   };
-  const std::vector<Eigen::VectorXd> X = M.solve({load == "far" ? far : pres}, cond);
+  std::vector<Eigen::VectorXd> X;
+  if (factored) {  // the crack_serve path: factor once, then right-hand sides alone
+    M.factor(cond);
+    X = M.solveFactored({load == "far" ? far : pres});
+  } else {
+    X = M.solve({load == "far" ? far : pres}, cond);
+  }
   const Eigen::VectorXd& x = X[0];
 
   // SIFs along the front

@@ -87,6 +87,10 @@ class CrackModel {
   std::vector<int> tcol;  // traction-space dof -> scalar column / 3 offset (-1: known traction)
   double t_assemble = 0, t_solve = 0;
   long unknowns = 0;
+  // factored operator (factor / solveFactored)
+  std::vector<int> f_cols, f_fixed;
+  Eigen::MatrixXd f_A, f_Afixed;
+  Eigen::PartialPivLU<Eigen::MatrixXd> f_lu;
 
   void setup(const std::string& dat, const std::string& meta_file, const Material& mt, const CrackOptions& o) {
     mat = mt;
@@ -286,6 +290,80 @@ class CrackModel {
     }
     return out;
   }
+  // Factored path (crack_serve): the operator depends on geometry, nu and the Dirichlet set only, so it is
+  // assembled and LU-factored once; every later load case assembles its right-hand side alone (rhs_only rows) and
+  // costs one back-substitution. Same rows, columns and Dirichlet handling as solve().
+  void factor(bool cond = false) {
+    const auto t0 = std::chrono::steady_clock::now();
+    f_rows = collocationRows();
+    const int nr = 3 * int(f_rows.size()) + (opt.enrich ? nK : 0);
+    Eigen::MatrixXd A = Eigen::MatrixXd::Zero(nr, ncols);
+    ElementIntegrator quad(mesh, opt.quad);
+    const std::vector<TractionFn> none;
+#pragma omp parallel for schedule(dynamic)
+    for (int r = 0; r < int(f_rows.size()); ++r) {
+      Eigen::MatrixXd a = Eigen::MatrixXd::Zero(3, ncols), b(3, 0);
+      if (f_rows[r].kind == Row::Lower) tbieRow(quad, f_rows[r], none, a, b);
+      else dbieRow(quad, f_rows[r], none, a, b);
+      A.middleRows(3 * r, 3) = a;
+    }
+    if (opt.enrich) tyingRows(A, 3 * int(f_rows.size()));
+    std::vector<char> fixed(mesh.ndof, 0);
+    for (int p = 0; p < n_outer; ++p)
+      if (dirichlet[p]) for (int g : mesh.l2g[p]) fixed[g] = 1;
+    f_cols.clear();
+    f_fixed.clear();
+    for (int g = 0; g < mesh.ndof; ++g)
+      for (int c = 0; c < 3; ++c) (fixed[g] ? f_fixed : f_cols).push_back(3 * g + c);
+    for (int c = cK; c < ncols; ++c) f_cols.push_back(c);
+    if (int(f_cols.size()) != nr)
+      throw std::runtime_error("crack system not square: " + std::to_string(nr) + " rows, " +
+                               std::to_string(f_cols.size()) + " unknowns");
+    unknowns = nr;
+    f_A = A(Eigen::placeholders::all, f_cols);
+    f_Afixed = A(Eigen::placeholders::all, f_fixed);
+    t_assemble = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    const auto t1 = std::chrono::steady_clock::now();
+    f_lu.compute(f_A);
+    t_factor = std::chrono::duration<double>(std::chrono::steady_clock::now() - t1).count();
+    if (cond) {
+      Eigen::JacobiSVD<Eigen::MatrixXd> svd(f_A);
+      condition = svd.singularValues()(0) / svd.singularValues().tail(1)(0);
+    }
+    factored = true;
+  }
+
+  std::vector<Eigen::VectorXd> solveFactored(const std::vector<TractionFn>& loads,
+                                             const std::vector<DisplacementFn>& disps = {}) {
+    if (!factored) throw std::runtime_error("solveFactored before factor");
+    const auto t0 = std::chrono::steady_clock::now();
+    const int L = int(loads.size()), nr = int(f_A.rows());
+    Eigen::MatrixXd B = Eigen::MatrixXd::Zero(nr, L);
+    ElementIntegrator quad(mesh, opt.quad);
+#pragma omp parallel for schedule(dynamic)
+    for (int r = 0; r < int(f_rows.size()); ++r) {
+      Eigen::MatrixXd a(3, 0), b = Eigen::MatrixXd::Zero(3, L);
+      if (f_rows[r].kind == Row::Lower) tbieRow(quad, f_rows[r], loads, a, b, true);
+      else dbieRow(quad, f_rows[r], loads, a, b, true);
+      B.middleRows(3 * r, 3) = b;
+    }
+    std::vector<Eigen::VectorXd> g(L, Eigen::VectorXd::Zero(3 * mesh.ndof));
+    if (!disps.empty()) {
+      for (int l = 0; l < L; ++l) g[l] = projectDirichlet(disps[l]);
+      for (int l = 0; l < L; ++l) B.col(l) -= f_Afixed * g[l](f_fixed);
+    }
+    t_rhs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    const Eigen::MatrixXd X = f_lu.solve(B);
+    residual = (f_A * X - B).norm() / std::max(B.norm(), 1e-300);
+    std::vector<Eigen::VectorXd> out(L, Eigen::VectorXd::Zero(ncols));
+    for (int l = 0; l < L; ++l) {
+      out[l].head(3 * mesh.ndof) = g[l];
+      for (size_t j = 0; j < f_cols.size(); ++j) out[l](f_cols[j]) = X(j, l);
+    }
+    return out;
+  }
+  bool factored = false;
+  double t_factor = 0, t_rhs = 0;
   double condition = 0, residual = 0;
 
   // L2 projection of g onto the displacement basis of every Dirichlet patch (dofs of their own required unless g
@@ -345,6 +423,7 @@ class CrackModel {
     PatchEval E;
     std::vector<std::pair<int, double>> basis;  // outer rows: global dof, N_B(x)
   };
+  std::vector<Row> f_rows;  // collocation rows of the factored operator
 
   // Values and parametric derivatives of every scalar column's shape vector at a point.
   struct Shape {
@@ -527,8 +606,9 @@ class CrackModel {
     return front.shapes(piece[p], face[p], q.x, guess(p, q.uv(0)), cols, vals);
   }
 
+  // rhs_only: the load columns b alone (a untouched), for new load cases on a factored operator.
   void dbieRow(const ElementIntegrator& quad, const Row& row, const std::vector<TractionFn>& loads,
-               Eigen::MatrixXd& a, Eigen::MatrixXd& b) const {
+               Eigen::MatrixXd& a, Eigen::MatrixXd& b, bool rhs_only = false) const {
     const Kelvin K(mat);
     const int L = int(loads.size());
     const SourcePoint src{row.patch, row.xi, row.x};
@@ -546,6 +626,10 @@ class CrackModel {
         Eigen::Matrix3d U, T;
         K.eval(q.x - row.x, n, U, T);
         const Eigen::Matrix3d Tw = T * (w * J), Uw = U * (w * J);
+        if (rhs_only) {
+          if (!unknown_t) for (int c = 0; c < L; ++c) b.col(c) += Uw * loads[c](q.x, n, pe);
+          return;
+        }
         for (int l = 0; l < q.n_loc; ++l) a.block<3, 3>(0, 3 * l2g[q.idx[l]]) += q.R[l] * Tw;
         int cols[64];
         Vec3 vals[64];
@@ -559,6 +643,7 @@ class CrackModel {
         }
       });
     }
+    if (rhs_only) return;
     if (row.kind == Row::Outer) {
       if (piece[row.patch] >= 0) {  // enriched outer patch: the whole field at x
         Shape own;
@@ -581,7 +666,7 @@ class CrackModel {
   }
 
   void tbieRow(const ElementIntegrator& quad, const Row& row, const std::vector<TractionFn>& loads,
-               Eigen::MatrixXd& a, Eigen::MatrixXd& b) const {
+               Eigen::MatrixXd& a, Eigen::MatrixXd& b, bool rhs_only = false) const {
     const KelvinTraction K(mat);
     const int L = int(loads.size());
     const SourcePoint src{row.patch, row.xi, row.x};
@@ -605,13 +690,16 @@ class CrackModel {
         Eigen::Matrix3d D, S;
         K.eval(d, N, n, D, S);
         const Eigen::Matrix3d Dw = D * (w * J), Sw = S * (w * J);
-        for (int l = 0; l < q.n_loc; ++l) a.block<3, 3>(0, 3 * l2g[q.idx[l]]) -= q.R[l] * Sw;
-        int cols[64];
-        Vec3 vals[64];
-        const int ne = quadEnrichment(pe, q, cols, vals);
-        for (int i = 0; i < ne; ++i) a.col(cols[i]) -= Sw * vals[i];
+        if (!rhs_only) {
+          for (int l = 0; l < q.n_loc; ++l) a.block<3, 3>(0, 3 * l2g[q.idx[l]]) -= q.R[l] * Sw;
+          int cols[64];
+          Vec3 vals[64];
+          const int ne = quadEnrichment(pe, q, cols, vals);
+          for (int i = 0; i < ne; ++i) a.col(cols[i]) -= Sw * vals[i];
+        }
         if (unknown_t) {
-          for (int l = 0; l < q.n_loc; ++l) a.block<3, 3>(0, tcol[off + q.idx[l]]) += q.R[l] * Dw;
+          if (!rhs_only)
+            for (int l = 0; l < q.n_loc; ++l) a.block<3, 3>(0, tcol[off + q.idx[l]]) += q.R[l] * Dw;
         } else {
           for (int c = 0; c < L; ++c) b.col(c) -= Dw * loads[c](q.x, n, pe);
         }
@@ -640,19 +728,21 @@ class CrackModel {
       for (int k = 0; k < 3; ++k) v += fc.FB[k] * G.col(k);
       return v;
     };
-    // own (lower) side: u_L-
-    Shape own;
-    shapeAt(row.patch, row.xi, row.E, own, true);
-    for (size_t i = 0; i < own.col.size(); ++i) {
-      const Eigen::Matrix3d G = surfaceGradient(mat, tangential(row.E, own.du[i], own.dv[i]), Vec3::Zero(), N);
-      a.col(own.col[i]) += -sigmaTerm(G) + S0[0] * own.val[i] + lin(S1[0], G) + fc.Fa * own.val[i] + fb(G);
-    }
-    // coincident (upper) side: u_L+
-    Shape mir;
-    shapeAt(sb.patch, sb.xi, sb.E, mir, true);
-    for (size_t i = 0; i < mir.col.size(); ++i) {
-      const Eigen::Matrix3d G = surfaceGradient(mat, tangential(sb.E, mir.du[i], mir.dv[i]), Vec3::Zero(), sb.N);
-      a.col(mir.col[i]) += S0[1] * mir.val[i] + lin(S1[1], G) - fc.Fa * mir.val[i] - fb(G);
+    if (!rhs_only) {
+      // own (lower) side: u_L-
+      Shape own;
+      shapeAt(row.patch, row.xi, row.E, own, true);
+      for (size_t i = 0; i < own.col.size(); ++i) {
+        const Eigen::Matrix3d G = surfaceGradient(mat, tangential(row.E, own.du[i], own.dv[i]), Vec3::Zero(), N);
+        a.col(own.col[i]) += -sigmaTerm(G) + S0[0] * own.val[i] + lin(S1[0], G) + fc.Fa * own.val[i] + fb(G);
+      }
+      // coincident (upper) side: u_L+
+      Shape mir;
+      shapeAt(sb.patch, sb.xi, sb.E, mir, true);
+      for (size_t i = 0; i < mir.col.size(); ++i) {
+        const Eigen::Matrix3d G = surfaceGradient(mat, tangential(sb.E, mir.du[i], mir.dv[i]), Vec3::Zero(), sb.N);
+        a.col(mir.col[i]) += S0[1] * mir.val[i] + lin(S1[1], G) - fc.Fa * mir.val[i] - fb(G);
+      }
     }
     // known crack-face tractions enter the linear fields through Hooke's law
     for (int c = 0; c < L; ++c) {

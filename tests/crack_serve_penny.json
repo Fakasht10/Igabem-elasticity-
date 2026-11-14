@@ -1,0 +1,4 @@
+{"id": "ctest", "geometry": "geo/crack/penny_og_i45_n3.dat", "material": {"nu": 0.3},
+ "clamp": [{"normal": [0, -1, 0]}],
+ "loads": [{"name": "far", "tractions": [{"normal": [0, 1, 0], "t": [0, 1, 0]}]}, {"name": "pressure", "crack_pressure": 1.0}],
+ "samples": 4}
