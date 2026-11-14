@@ -53,6 +53,8 @@ target_compile_options(test_crack PRIVATE -O3 -march=native)
 target_compile_definitions(test_crack PRIVATE IGABEM_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME crack_kernels COMMAND test_crack)
 add_test(NAME crack_penny COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/penny_og_i0_n5.dat --check-k 0.01)
+# central-patch corner rows (coincident-point search): cond was 2.3e12 and the LU residual 3e-7 before the fix
+add_test(NAME crack_penny_conditioning COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/penny_i0_n4.dat --check-cond 1e7 --check-k 3e-4)
 add_test(NAME crack_penny_inclined COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/penny_og_i45_n5.dat --check-k 0.01)
 add_test(NAME crack_ellipse COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/ellipse_i0_n5.dat --nu 0.3 --load pressure --check-k 0.02)
 add_test(NAME crack_prism_tension COMMAND crack_tension ${CMAKE_SOURCE_DIR}/geo/crack/prismt_split_c1.dat --check 0.02)

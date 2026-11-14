@@ -2,6 +2,8 @@
 // their App. B partitions, and SBIE collocation points.
 #pragma once
 
+#include <algorithm>
+#include <array>
 #include <Eigen/Dense>
 #include <cmath>
 #include <vector>
@@ -124,30 +126,40 @@ struct Mesh {
     return V * normal_sign;
   }
 
-  // Closest point of an element to x: grid sample, then projected Gauss-Newton.
+  // Closest point of an element to x: 7x7 grid sample, then projected
+  // Gauss-Newton from the best few samples. Several starts matter where the
+  // parametrization is nearly singular (a disk patch corner): Newton started at
+  // the corner stalls there, missing a point a short distance inside.
   Vec2 closestPoint(const Element& e, const Vec3& x, double& dist) const {
     const Patch& Pa = patches[e.patch];
     PatchEval E;
-    Vec2 best;
-    double bd = 1e300;
+    std::array<std::pair<double, Vec2>, 49> grid;
     for (int a = 0; a <= 6; ++a)
       for (int b = 0; b <= 6; ++b) {
-        Vec2 p(e.rect.u0 + e.rect.du() * a / 6.0, e.rect.v0 + e.rect.dv() * b / 6.0);
+        const Vec2 p(e.rect.u0 + e.rect.du() * a / 6.0, e.rect.v0 + e.rect.dv() * b / 6.0);
         Pa.evalSpan(e.su, e.sv, p(0), p(1), E);
-        const double d = (E.x - x).norm();
-        if (d < bd) { bd = d; best = p; }
+        grid[7 * a + b] = {(E.x - x).norm(), p};
       }
-    for (int it = 0; it < 30; ++it) {
-      Pa.evalSpan(e.su, e.sv, best(0), best(1), E);
-      Eigen::Matrix<double, 3, 2> J;
-      J << E.xu, E.xv;
-      const Vec2 step = (J.transpose() * J).ldlt().solve(J.transpose() * (x - E.x));
-      const Vec2 nb = e.rect.clamp(best + step);
-      if ((nb - best).norm() < 1e-15 * (1.0 + e.rect.du())) { best = nb; break; }
-      best = nb;
+    std::partial_sort(grid.begin(), grid.begin() + 4, grid.end(),
+                      [](const auto& l, const auto& r) { return l.first < r.first; });
+    Vec2 best = grid[0].second;
+    dist = 1e300;
+    for (int s = 0; s < 4 && dist > 1e-14 * e.h; ++s) {
+      Vec2 uv = grid[s].second;
+      for (int it = 0; it < 30; ++it) {
+        Pa.evalSpan(e.su, e.sv, uv(0), uv(1), E);
+        Eigen::Matrix<double, 3, 2> J;
+        J << E.xu, E.xv;
+        const Vec2 step = (J.transpose() * J).ldlt().solve(J.transpose() * (x - E.x));
+        const Vec2 nb = e.rect.clamp(uv + step);
+        const bool done = (nb - uv).norm() < 1e-15 * (1.0 + e.rect.du());
+        uv = nb;
+        if (done) break;
+      }
+      Pa.evalSpan(e.su, e.sv, uv(0), uv(1), E);
+      const double d = (E.x - x).norm();
+      if (d < dist) { dist = d; best = uv; }
     }
-    Pa.evalSpan(e.su, e.sv, best(0), best(1), E);
-    dist = (E.x - x).norm();
     return best;
   }
 };
