@@ -235,7 +235,7 @@ def stations(a, b, focus, h0, hmax, ratio=1.5):
     out = [pts[0]]
     for x0, x1 in zip(pts[:-1], pts[1:]):
         m = max(1, math.ceil((x1 - x0) / hmax - 1e-9))
-        out += [x0 + (x1 - x0) * k / m for k in range(1, m + 1)]
+        out += [x0 + (x1 - x0) * k / m for k in range(1, m)] + [x1]  # x1 exactly: x0 + (x1 - x0) can miss it
     # drop slivers left where a graded run meets an end or another run
     keep = [out[0]]
     for x in out[1:]:
@@ -286,6 +286,8 @@ def senb(n, W=10.0, B=4.0, a_W=0.5, S_W=4.0, pad=0.05, overhang=0.5, crown=0.2):
     def cut(st, lo, hi):
         pts = [t for t in st if lo - 1e-12 <= t <= hi + 1e-12]
         return [(t - lo) / (hi - lo) for t in pts]
+    def padded(st, lo, hi):  # pad edges lo, hi joined to the x stations, without slivers next to them
+        return [lo] + [t for t in sorted(set(st)) if lo + 0.3 * h0 < t < hi - 0.3 * h0] + [hi]
     def rect(x0, x1, y0, y1, z, nz):
         sx = sxl if x1 <= 0 else sxr
         return box_patch([x0, y0, z], (x1 - x0) * e1, (y1 - y0) * e2, cut(sx, x0, x1), cut(sy, y0, y1), nz)
@@ -308,10 +310,10 @@ def senb(n, W=10.0, B=4.0, a_W=0.5, S_W=4.0, pad=0.05, overhang=0.5, crown=0.2):
     for lo, hi in zip(bx[:-1], bx[1:]):
         sx = sxl if hi <= 0 else sxr
         grp = "supports" if abs(abs(0.5 * (lo + hi)) - 0.5 * S) < w2 else "bottom"
-        su = cut(sorted(set(sx) | {lo, hi}), lo, hi)
+        su = cut(padded(sx, lo, hi), lo, hi)
         add(box_patch([lo, 0, 0], (hi - lo) * e1, B * e3, su, zf, -e2), grp)
     for lo, hi in ((-L2, -w2), (-w2, w2), (w2, L2)):
-        su = cut(sorted(set(sxl) | set(sxr) | {lo, hi}), lo, hi)
+        su = cut(padded(sxl + sxr, lo, hi), lo, hi)
         add(box_patch([lo, W, 0], (hi - lo) * e1, B * e3, su, zf, e2), "nose" if lo == -w2 else "top")
     for x, nx in ((-L2, -e1), (L2, e1)):
         add(box_patch([x, 0, 0], W * e2, B * e3, cut(stations(0, W, [], hmax, hmax), 0, W), zf, nx), "ends")
