@@ -7,7 +7,10 @@
 // Loads: far   sigma0 = 1 on the top face (outward +e2), bottom face clamped (the paper's set-up; nu = 0 makes the
 //              uncracked field exactly uniaxial);
 //        pressure  p = 1 on both crack faces, bottom clamped, no far load (same K_I by superposition).
-// Reference (Tada; paper Eqs. 25-26), radius R, plane inclined by theta_i about e3, load sigma0 along e2:
+// Ellipse (Sec. 4.2; sidecar a, b): Irwin and Kassir & Sih (paper Eq. 27) at the parametric angle theta_c of the
+// front point (a cos, b sin), Green & Sneddon opening (Eq. 28); use --load pressure when nu != 0 (the clamped cube's
+// uncracked field is uniaxial only for nu = 0).
+// Penny reference (Tada; paper Eqs. 25-26), radius R, plane inclined by theta_i about e3, load sigma0 along e2:
 //   K_I = 2/pi sigma0 cos^2(theta_i) sqrt(pi R), K_II = 4/(pi (2 - nu)) sigma0 sin cos cos(theta_c) sqrt(pi R),
 //   K_III = -4 (1 - nu)/(pi (2 - nu)) sigma0 sin cos sin(theta_c) sqrt(pi R);  opening (8 (1 - nu^2)/(pi E)) sigma_nn
 //   sqrt(R^2 - rho^2) (only the in-plane case is checked here).
@@ -73,7 +76,9 @@ int main(int argc, char** argv) {
     }
   }
   M.setup(dat, meta, mat, o);
+  // semi-axes: a along e1, b along e3 (penny: a = b = R)
   const double R = M.meta["R"].asNumber(), sig = 1.0;
+  const double ax = M.meta.get("a", R), bx = M.meta.get("b", R);
   const double thi = M.meta.get("incline_deg", 0.0) * M_PI / 180.0;
   const int no = M.n_outer;
   TractionFn far = [&](const Vec3&, const Vec3& n, int p) -> Vec3 {
@@ -96,8 +101,27 @@ int main(int argc, char** argv) {
   const Eigen::VectorXd& x = X[0];
 
   // SIFs along the front
-  const double KI0 = 2.0 / M_PI * sig * std::pow(std::cos(thi), 2) * std::sqrt(M_PI * R);
-  const double Ks = sig * std::sin(thi) * std::cos(thi) * std::sqrt(M_PI * R) / (M_PI * (2 - nu));
+  // Irwin (K_I) and Kassir & Sih (K_II, K_III; shear along the a axis), paper Eq. 27, at the parametric angle
+  // theta_c of the front point (a cos, b sin); the penny's closed forms are the a = b limit.
+  const double ba = bx / ax, kq = std::sqrt(std::max(0.0, 1 - ba * ba));
+  const double EK = kq > 0 ? std::comp_ellint_2(kq) : M_PI / 2, KK = kq > 0 ? std::comp_ellint_1(kq) : M_PI / 2;
+  // B(k) / k^2, finite as k -> 0: pi (2 - nu) / 4
+  const double Bk2 = kq > 1e-4 ? ((kq * kq - nu) * EK + nu * ba * ba * KK) / (kq * kq) : M_PI * (2 - nu) / 4;
+  auto fth = [&](double th) { return std::pow(std::pow(std::sin(th), 2) + std::pow(ba * std::cos(th), 2), 0.25); };
+  const double sI = sig * std::pow(std::cos(thi), 2) * std::sqrt(M_PI * bx) / EK;
+  const double sS = sig * std::sin(thi) * std::cos(thi) * std::sqrt(M_PI * bx) / Bk2;
+  auto kExact = [&](double th) {
+    // K_II carries (b/a), not sqrt(b/a): the paper's typesetting of Eq. 27 is ambiguous; on the pi/6 ellipse the
+    // sqrt reading is off by 29% at theta_c = 0 where (b/a) agrees to 3.5e-3 (and both give the penny for a = b)
+    return Vec3(sI * fth(th), sS * ba * std::cos(th) / fth(th),
+                -sS * (1 - nu) * std::sin(th) / fth(th));
+  };
+  double ampII = 0, ampIII = 0;  // amplitudes of K_II, K_III along the front (error scale)
+  for (int i = 0; i <= 720; ++i) {
+    const Vec3 k = kExact(M_PI * i / 360.0);
+    ampII = std::max(ampII, std::abs(k(1)));
+    ampIII = std::max(ampIII, std::abs(k(2)));
+  }
   const Vec3 e1(M.meta["plane"]["e1"][0].asNumber(), M.meta["plane"]["e1"][1].asNumber(), M.meta["plane"]["e1"][2].asNumber());
   const Vec3 e3(M.meta["plane"]["e3"][0].asNumber(), M.meta["plane"]["e3"][1].asNumber(), M.meta["plane"]["e3"][2].asNumber());
   FILE* fs = out.empty() ? nullptr : std::fopen((out + "_sif.csv").c_str(), "w");
@@ -114,9 +138,10 @@ int main(int argc, char** argv) {
         int n, s[16];
         double Rb[16];
         F.eval(u, C, Cu, n, s, Rb);
-        const double thc = std::atan2(C.dot(e3), C.dot(e1));
+        const double thc = std::atan2(C.dot(e3) / bx, C.dot(e1) / ax);
         const Vec3 K = M.front.sif(int(k), u, x);
-        const double kII = 4 * Ks * std::cos(thc), kIII = -4 * (1 - nu) * Ks * std::sin(thc);
+        const Vec3 Kx = kExact(thc);
+        const double KI0 = Kx(0), kII = Kx(1), kIII = Kx(2);
         if (fs) std::fprintf(fs, "%zu,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g\n", k, u, thc, K(0), K(1), K(2), KI0, kII, kIII);
         const double e = std::abs(K(0) - KI0) / KI0;
         errI += e;
@@ -124,19 +149,44 @@ int main(int argc, char** argv) {
         maxI = std::max(maxI, e);
         absII += std::abs(K(1));
         absIII += std::abs(K(2));
-        if (Ks != 0) { errII += std::abs(K(1) - kII) / (4 * Ks); errIII += std::abs(K(2) - kIII) / (4 * (1 - nu) * Ks); }
+        if (ampII > 0) { errII += std::abs(K(1) - kII) / ampII; errIII += std::abs(K(2) - kIII) / ampIII; }
         ++ns;
       }
     }
   if (fs) std::fclose(fs);
+  // the paper's Table 2 points: relative errors of K_I, K_II at theta_c = 0 and K_I, K_III at theta_c = pi/2
+  double t2[4] = {-1, -1, -1, -1};
+  if (enrich) {
+    auto at = [&](double th) {
+      const Vec3 P = ax * std::cos(th) * e1 + bx * std::sin(th) * e3;
+      double best = 1e300;
+      Vec3 K = Vec3::Zero();
+      for (size_t k = 0; k < M.front.pieces.size(); ++k) {
+        const FrontPiece& F = M.front.pieces[k];
+        const double u = F.project(P, 0.5 * (F.u0 + F.u1));
+        Vec3 C, Cu;
+        int n, s[16];
+        double Rb[16];
+        F.eval(u, C, Cu, n, s, Rb);
+        if ((C - P).norm() < best) { best = (C - P).norm(); K = M.front.sif(int(k), u, x); }
+      }
+      return K;
+    };
+    const Vec3 K0 = at(0.0), K9 = at(M_PI / 2), X0 = kExact(0.0), X9 = kExact(M_PI / 2);
+    t2[0] = std::abs(K0(0) / X0(0) - 1);
+    if (X0(1) != 0) t2[1] = std::abs(K0(1) / X0(1) - 1);
+    t2[2] = std::abs(K9(0) / X9(0) - 1);
+    if (X9(2) != 0) t2[3] = std::abs(K9(2) / X9(2) - 1);
+  }
   if (ns) { errI /= ns; sgnI /= ns; absII /= ns; absIII /= ns; errII /= ns; errIII /= ns; }
 
   // crack opening: relative L2 over the upper face (in-plane crack only), and the profile along e1
   double cod_err = -1;
   const Vec3 m = M.m;
   auto codExact = [&](const Vec3& y) {
-    const double rho2 = std::pow(y.dot(e1), 2) + std::pow(y.dot(e3), 2);
-    return Vec3(m * (8 * (1 - nu * nu) / (M_PI * E) * sig * std::pow(std::cos(thi), 2) * std::sqrt(std::max(0.0, R * R - rho2))));
+    // Green & Sneddon (paper Eq. 28): opening 4 (1 - nu^2) sigma b / (E E(k)) sqrt(1 - x^2/a^2 - z^2/b^2)
+    const double q = 1 - std::pow(y.dot(e1) / ax, 2) - std::pow(y.dot(e3) / bx, 2);
+    return Vec3(m * (4 * (1 - nu * nu) * sig * std::pow(std::cos(thi), 2) * bx / (E * EK) * std::sqrt(std::max(0.0, q))));
   };
   auto opening = [&](int p, const Vec2& uv, const Vec3& y) {
     const SurfacePoint sb = M.coincident(p, y);
@@ -165,7 +215,7 @@ int main(int argc, char** argv) {
     FILE* fc = std::fopen((out + "_cod.csv").c_str(), "w");
     std::fprintf(fc, "rho,cod_n,cod_exact\n");
     for (int i = 0; i <= 400; ++i) {
-      const double rho = R * (i == 400 ? 0.99999 : i / 400.0);
+      const double rho = ax * (i == 400 ? 0.99999 : i / 400.0);
       const Vec3 y = rho * e1 + 1e-9 * e3;
       const SurfacePoint sp = locate(M.mesh, y, [&](int p) { return M.face[p] == 1; });
       const Vec3 d = opening(sp.patch, sp.xi, sp.E.x);
@@ -178,9 +228,10 @@ int main(int argc, char** argv) {
                 "{\"geometry\": \"%s\", \"enrich\": %d, \"load\": \"%s\", \"unknowns\": %ld, \"KI_exact\": %.12g, "
                 "\"KI_avg_err\": %.6e, \"KI_signed_err\": %.6e, \"KI_max_err\": %.6e, \"KII_avg_abs\": %.6e, \"KIII_avg_abs\": %.6e, "
                 "\"KII_avg_err\": %.6e, \"KIII_avg_err\": %.6e, \"cod_L2\": %.6e, \"cond\": %.6e, \"residual\": %.3e, "
+                "\"t2_KI_0\": %.6e, \"t2_KII_0\": %.6e, \"t2_KI_90\": %.6e, \"t2_KIII_90\": %.6e, "
                 "\"t_assemble\": %.3f, \"t_solve\": %.3f}",
-                dat.c_str(), int(enrich), load.c_str(), M.unknowns, KI0, errI, sgnI, maxI, absII, absIII, errII, errIII,
-                cod_err, M.condition, M.residual, M.t_assemble, M.t_solve);
+                dat.c_str(), int(enrich), load.c_str(), M.unknowns, sI, errI, sgnI, maxI, absII, absIII, errII, errIII,
+                cod_err, M.condition, M.residual, t2[0], t2[1], t2[2], t2[3], M.t_assemble, M.t_solve);
   std::printf("%s\n", line);
   if (!out.empty()) { std::ofstream(out + "_summary.json") << line << "\n"; }
   if (check_k > 0 && enrich && !(errI <= check_k)) {

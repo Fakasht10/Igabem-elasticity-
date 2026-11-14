@@ -20,6 +20,7 @@ prism (paper Sec. 4.3, Fig. 18): edge crack in [-1, 1]^2 x [0, 2], pure-mode Wil
 the number of elements per unit length k.
 
 usage: make_crack.py penny [--n 3,4,5,6,7] [--incline DEG] [--out geo/crack]
+       make_crack.py ellipse [--aspect 0.5] [--n ...] [--incline DEG] [--layout disk|ogrid]   (paper Sec. 4.2)
        make_crack.py prism --n 1,2,3,4
 """
 
@@ -150,21 +151,23 @@ def penny_face_ogrid(R, ri, e1, e3, outward):
     return out
 
 
-def penny(n, R=1.0, L=200.0, incline=0.0, ri_frac=0.8, layout="disk"):
+def penny(n, R=1.0, L=200.0, incline=0.0, ri_frac=0.8, layout="disk", aspect=1.0):
+    """aspect = b / a < 1: the elliptical crack of Sec. 4.2 (semi-axes a = R along e1, b = aspect R along e3), the
+    affine image of the penny's patches (exact: NURBS are affine invariant), inner ellipse at ri_frac."""
     Rz = _rot_z(incline)
     m = Rz @ np.array([0.0, 1.0, 0.0])
     e1, e3 = Rz @ np.array([1.0, 0.0, 0.0]), np.array([0.0, 0.0, 1.0])
     ri = ri_frac * R
     face = penny_face if layout == "disk" else penny_face_ogrid
-    plus = [_insert(P, n) for P in face(R, ri, e1, e3, -m)]
-    minus = [_insert(P, n) for P in face(R, ri, e1, e3, m)]
+    plus = [_insert(P, n) for P in face(R, ri, e1, aspect * e3, -m)]
+    minus = [_insert(P, n) for P in face(R, ri, e1, aspect * e3, m)]
     outer = cube(L)
     n0, n1 = len(outer), len(outer) + len(plus)
     meta = {
         "kind": "penny", "outer": [0, n0], "plus": [n0, n1], "minus": [n1, n1 + len(minus)],
         "crown": [n0 + k for k in range(1, 5)], "front_edge": "v1",
         "plane": {"point": [0.0, 0.0, 0.0], "normal": m.tolist(), "e1": e1.tolist(), "e3": e3.tolist()},
-        "R": R, "L": L, "incline_deg": incline, "n": n, "layout": layout,
+        "R": R, "a": R, "b": aspect * R, "L": L, "incline_deg": incline, "n": n, "layout": layout,
     }
     return outer + plus + minus, meta
 
@@ -214,7 +217,8 @@ def prism(k):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("kind", choices=["penny", "prism"])
+    ap.add_argument("kind", choices=["penny", "ellipse", "prism"])
+    ap.add_argument("--aspect", type=float, default=0.5, help="ellipse: b / a")
     ap.add_argument("--n", default="3,4,5,6,7")
     ap.add_argument("--incline", type=float, default=0.0)
     ap.add_argument("--layout", choices=["disk", "ogrid"], default="disk")
@@ -226,8 +230,11 @@ def main(argv=None):
             patches, meta = prism(n)
             name = "prism_k%d" % n
         else:
-            patches, meta = penny(n, incline=a.incline, layout=a.layout)
-            name = "penny_%si%g_n%d" % ("" if a.layout == "disk" else "og_", a.incline, n)
+            asp = a.aspect if a.kind == "ellipse" else 1.0
+            patches, meta = penny(n, incline=a.incline, layout=a.layout, aspect=asp)
+            if a.kind == "ellipse":
+                meta["kind"] = "ellipse"
+            name = "%s_%si%g_n%d" % (a.kind, "" if a.layout == "disk" else "og_", a.incline, n)
         path = os.path.join(a.out, name + ".dat")
         mg.write_dat(path, patches, name)
         with open(os.path.join(a.out, name + ".crack.json"), "w") as f:

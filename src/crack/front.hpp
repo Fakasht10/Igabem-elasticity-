@@ -119,20 +119,52 @@ struct FrontPiece {
     }
   }
 
-  // Closest point parameter to y (Newton on g(u) = C'(u).(C(u) - y) from the guess, clamped to the piece).
-  double project(const Vec3& y, double guess) const {
-    double u = std::min(std::max(guess, u0), u1);
+  // Closest point parameter to y: Newton on g(u) = C'(u).(C(u) - y) from the guess, each step kept inside
+  // [lo, hi] (default the piece). ok (optional): converged to a distance minimum (g ~ 0 and g' > 0) inside the range,
+  // or clamped to a range end with g pushing outward.
+  double project(const Vec3& y, double guess, bool* ok = nullptr, double lo = NAN, double hi = NAN) const {
+    if (std::isnan(lo)) { lo = u0; hi = u1; }
+    double u = std::min(std::max(guess, lo), hi);
     int n, s[16];
     double R[16];
     Vec3 C, Cu, Cuu;
-    for (int it = 0; it < 20; ++it) {
+    double g = 0, dg = 1;
+    for (int it = 0; it < 30; ++it) {
       eval(u, C, Cu, n, s, R, &Cuu);
-      const double g = Cu.dot(C - y), dg = Cu.squaredNorm() + Cuu.dot(C - y);
+      g = Cu.dot(C - y);
+      dg = Cu.squaredNorm() + Cuu.dot(C - y);
       double un = u - g / (dg > 0 ? dg : Cu.squaredNorm());
-      un = std::min(std::max(un, u0), u1);
+      un = std::min(std::max(un, lo), hi);
       if (std::abs(un - u) < 1e-15 * (u1 - u0)) { u = un; break; }
       u = un;
     }
+    if (ok) {
+      eval(u, C, Cu, n, s, R, &Cuu);
+      g = Cu.dot(C - y);
+      dg = Cu.squaredNorm() + Cuu.dot(C - y);
+      const double tol = 1e-10 * Cu.norm() * std::max((C - y).norm(), 1e-300);
+      const bool atlo = u <= lo && g >= 0, athi = u >= hi && g <= 0;
+      *ok = (std::abs(g) <= tol && dg > 0) || atlo || athi;
+    }
+    return u;
+  }
+
+  // Global closest point on the piece: the nearest of 16 samples, then Newton inside its neighbourhood.
+  double projectGlobal(const Vec3& y, double* d2 = nullptr) const {
+    const int S = 16;
+    int n, s[16];
+    double R[16];
+    Vec3 C, Cu;
+    double best = 1e300;
+    int ib = 0;
+    for (int i = 0; i <= S; ++i) {
+      eval(u0 + (u1 - u0) * i / S, C, Cu, n, s, R);
+      const double d = (C - y).squaredNorm();
+      if (d < best) { best = d; ib = i; }
+    }
+    const double h = (u1 - u0) / S, ui = u0 + h * ib;
+    const double u = project(y, ui, nullptr, std::max(u0, ui - h), std::min(u1, ui + h));
+    if (d2) { eval(u, C, Cu, n, s, R); *d2 = (C - y).squaredNorm(); }
     return u;
   }
 };
@@ -149,11 +181,23 @@ struct Front {
   // Williams field at theta = atan2((y - C).b, (y - C).n) in (-pi, pi], the cut along the crack. u guess: a
   // parameter on the piece near the projection (the point's own patch parameter on crown patches).
   int shapes(int k, int sign, const Vec3& y, double uguess, int* cols, Vec3* vals) const {
-    const FrontPiece& F = pieces[k];
-    const double u = F.project(y, uguess);
+    // closest point on the whole front: Newton on piece k from the guess; if that does not settle on an interior
+    // minimum (non-circular fronts: the patch's own u can be a poor guess, or the foot lies on another piece), a
+    // sampled global search over every piece
+    bool ok = false;
+    double u = pieces[k].project(y, uguess, &ok);
     Vec3 C, Cu;
     int n, s[16];
     double R[16];
+    if (!ok || u <= pieces[k].u0 || u >= pieces[k].u1) {
+      double best = 1e300;
+      for (size_t j = 0; j < pieces.size(); ++j) {
+        double dj;
+        const double uj = pieces[j].projectGlobal(y, &dj);
+        if (dj < best * (1 - 1e-12)) { best = dj; k = int(j); u = uj; }
+      }
+    }
+    const FrontPiece& F = pieces[k];
     F.eval(u, C, Cu, n, s, R);
     const Vec3 d = y - C;
     const double r = d.norm();

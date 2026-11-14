@@ -9,6 +9,7 @@ the geometry and the binary (pass --force to redo), so re-plotting or adding a l
 
 usage: xigabem_harness.py [case ...] [--force] [--timeout S] [--list]
        cases: penny (Sec. 4.1, in plane, mode I), penny_inclined (Sec. 4.1, pi/4, mixed mode),
+              ellipse, ellipse_inclined (Sec. 4.2, a = 2b, in plane and pi/6),
               prism (Sec. 4.3, edge crack, pure modes I, II, III)
 
 Runtime (4 cores): penny levels n = 3..11, two layouts, both formulations, ~4 min cold; every run has a hard timeout.
@@ -57,6 +58,32 @@ CASES = {
         # relative to their amplitude 4 sin cos sigma sqrt(pi R) / (pi (2 - nu)) (times (1 - nu) for K_III)
         "gates": {"KI_avg_err": 2.0e-3, "KII_avg_err": 2.0e-3, "KIII_avg_err": 2.0e-3},
         "paper": {"max_rel_err_finest": 2.03e-3, "finest_dof": 1626},
+    },
+    "ellipse": {
+        "title": "Elliptical crack a = 2b, nu = 0.3, remote tension via crack-face pressure (paper Sec. 4.2)",
+        "make": ["ellipse", "--layout", "{layout}"],
+        "geometry": "ellipse_{prefix}i0_n{n}.dat",
+        "levels": [3, 4, 5, 6, 7, 9, 11],
+        "layouts": ["disk"],
+        "formulations": {"xigabem": [], "igabem": ["--plain"]},
+        "extra": ["--nu", "0.3", "--load", "pressure"],
+        "est_s": {3: 3, 4: 4, 5: 6, 6: 8, 7: 11, 9: 18, 11: 30},
+        "gates": {"KI_avg_err": 5.0e-3},
+        "paper": {},
+    },
+    "ellipse_inclined": {
+        "title": "Elliptical crack a = 2b inclined by pi/6, nu = 0.3, mixed mode (paper Sec. 4.2, Table 2)",
+        "make": ["ellipse", "--layout", "{layout}", "--incline", "30"],
+        "geometry": "ellipse_{prefix}i30_n{n}.dat",
+        "levels": [3, 4, 5, 6, 7, 9, 11],
+        "layouts": ["disk"],
+        "formulations": {"xigabem": []},
+        "extra": ["--nu", "0.3", "--load", "pressure"],
+        "est_s": {3: 3, 4: 4, 5: 6, 6: 8, 7: 11, 9: 18, 11: 30},
+        "gates": {"t2_KI_0": 1.0e-2, "t2_KII_0": 1.0e-2, "t2_KI_90": 1.0e-2, "t2_KIII_90": 1.0e-2},
+        # Table 2, relative errors (XIGABEM; VCCI and M-integral of Peng et al. for comparison); dof not given
+        "paper": {"table2": {"t2_KI_0": [5.53e-4, 4.56e-2, 1.53e-2], "t2_KII_0": [4.83e-3, 4.14e-2, 1.28e-2],
+                             "t2_KI_90": [1.89e-3, 8.28e-3, 2.21e-2], "t2_KIII_90": [1.77e-3, 6.88e-3, 5.96e-2]}},
     },
     "prism": {
         "title": "Prism with edge crack, pure modes I, II, III from the Williams field (paper Sec. 4.3, Table 3)",
