@@ -16,7 +16,11 @@ patch, its four edges quarter arcs) and four quarter-annulus crown patches 0.8 R
 outer cube is 6 biquadratic single-element patches (flat, the uniform far field is linear, so exact). Level n
 inserts knots so every crack patch has n control points per direction (paper: n = 3..7 for 378..1626 dof).
 
+prism (paper Sec. 4.3, Fig. 18): edge crack in [-1, 1]^2 x [0, 2], pure-mode Williams data on the boundary; --n is
+the number of elements per unit length k.
+
 usage: make_crack.py penny [--n 3,4,5,6,7] [--incline DEG] [--out geo/crack]
+       make_crack.py prism --n 1,2,3,4
 """
 
 import argparse
@@ -165,9 +169,52 @@ def penny(n, R=1.0, L=200.0, incline=0.0, ri_frac=0.8, layout="disk"):
     return outer + plus + minus, meta
 
 
+def rect_patch(o, eu, ev, nu, nv, outward, p=2):
+    """Flat degree-p patch o + s eu + t ev, s, t in [0, 1], nu x nv uniform elements; u reversed if needed so the
+    normal xu x xv points along `outward` (v and its v = 1 edge are kept)."""
+    o, eu, ev = map(np.asarray, (o, eu, ev))
+    def knots(ne):
+        return [0.0] * (p + 1) + [i / ne for i in range(1, ne)] + [1.0] * (p + 1)
+    U, V = knots(nu), knots(nv)
+    gu = [sum(U[i + 1:i + p + 1]) / p for i in range(nu + p)]
+    gv = [sum(V[i + 1:i + p + 1]) / p for i in range(nv + p)]
+    X = np.array([[o + a * eu + b * ev for a in gu] for b in gv])
+    P = mg.Patch(p, p, U, V, np.concatenate([X, np.ones(X.shape[:2] + (1,))], axis=-1))
+    return P if np.dot(np.cross(eu, ev), outward) > 0 else _flip_u(P)
+
+
+def prism(k):
+    """Prism [-1, 1] x [-1, 1] x [0, 2] with the edge crack y = 0, -1 <= x <= 0 (paper Sec. 4.3, Fig. 18), front
+    x = 0 along z. 7 outer patches (the x = -1 face split at the crack mouth), one patch per crack face; element size
+    1/k. The z faces carry the front-end enrichment and have knot lines at x = 0 and y = 0."""
+    e1, e2, e3 = np.eye(3)
+    n2 = 2 * k
+    outer = [
+        rect_patch([-1, -1, 0], 2 * e1, 2 * e2, n2, n2, -e3),   # 0 z = 0
+        rect_patch([-1, -1, 2], 2 * e1, 2 * e2, n2, n2, e3),    # 1 z = 2
+        rect_patch([-1, 1, 0], 2 * e1, 2 * e3, n2, n2, e2),     # 2 y = 1
+        rect_patch([-1, -1, 0], 2 * e1, 2 * e3, n2, n2, -e2),   # 3 y = -1
+        rect_patch([1, -1, 0], 2 * e2, 2 * e3, n2, n2, e1),     # 4 x = 1
+        rect_patch([-1, 0, 0], 2 * e3, e2, n2, k, -e1),         # 5 x = -1, y > 0
+        rect_patch([-1, -1, 0], 2 * e3, e2, n2, k, -e1),        # 6 x = -1, y < 0
+    ]
+    # crack faces: u along z, v from the mouth (x = -1) to the front (x = 0)
+    plus = [rect_patch([-1, 0, 0], 2 * e3, e1, n2, k, -e2)]
+    minus = [rect_patch([-1, 0, 0], 2 * e3, e1, n2, k, e2)]
+    n0, n1 = len(outer), len(outer) + 1
+    meta = {
+        "kind": "prism", "outer": [0, n0], "plus": [n0, n1], "minus": [n1, n1 + 1], "crown": [n0],
+        "front_edge": "v1", "enriched_outer": [[0, 0], [1, 0]], "dirichlet": [2, 3, 4, 5, 6],
+        "plane": {"point": [-0.5, 0.0, 1.0], "normal": [0.0, 1.0, 0.0], "e1": [1.0, 0.0, 0.0], "e3": [0.0, 0.0, 1.0]},
+        "front": {"point": [0.0, 0.0, 0.0], "n": [1.0, 0.0, 0.0], "b": [0.0, 1.0, 0.0], "t": [0.0, 0.0, 1.0]},
+        "k": k,
+    }
+    return outer + plus + minus, meta
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("kind", choices=["penny"])
+    ap.add_argument("kind", choices=["penny", "prism"])
     ap.add_argument("--n", default="3,4,5,6,7")
     ap.add_argument("--incline", type=float, default=0.0)
     ap.add_argument("--layout", choices=["disk", "ogrid"], default="disk")
@@ -175,8 +222,12 @@ def main(argv=None):
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
     for n in map(int, a.n.split(",")):
-        patches, meta = penny(n, incline=a.incline, layout=a.layout)
-        name = "penny_%si%g_n%d" % ("" if a.layout == "disk" else "og_", a.incline, n)
+        if a.kind == "prism":
+            patches, meta = prism(n)
+            name = "prism_k%d" % n
+        else:
+            patches, meta = penny(n, incline=a.incline, layout=a.layout)
+            name = "penny_%si%g_n%d" % ("" if a.layout == "disk" else "og_", a.incline, n)
         path = os.path.join(a.out, name + ".dat")
         mg.write_dat(path, patches, name)
         with open(os.path.join(a.out, name + ".crack.json"), "w") as f:

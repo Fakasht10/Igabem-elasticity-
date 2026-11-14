@@ -52,12 +52,17 @@ namespace crack {
 
 // Traction data t(y, n, patch) of one load case: on Neumann outer patches and on both crack faces.
 using TractionFn = std::function<Vec3(const Vec3& y, const Vec3& n, int patch)>;
+// Prescribed displacement g(y, patch) of one load case on the Dirichlet outer patches (patch-discontinuous dofs;
+// L2-projected onto each patch's basis). None: zero.
+using DisplacementFn = std::function<Vec3(const Vec3& y, int patch)>;
 
 struct CrackOptions {
   bool enrich = true;
   int grade = 6;                        // geometric cells toward the front in front elements (sqrt(r) integrands)
   double end_shift = 0.1;               // crack collocation: end Greville points moved in by this much of a span
-  std::vector<int> dirichlet;           // outer patches with prescribed displacement (zero)
+  std::vector<int> dirichlet;           // outer patches with prescribed displacement
+  bool discontinuous = false;           // every patch with dofs of its own, outer collocation like the crack's
+                                        // (paper Sec. 4.3: no continuity between patches)
   SolverOptions quad;
   PartitionOptions part;
 };
@@ -96,7 +101,7 @@ class CrackModel {
     face.assign(np, 0);
     mirror.assign(np, -1);
     piece.assign(np, -1);
-    std::vector<char> sep(np, 0);
+    std::vector<char> sep(np, opt.discontinuous ? 1 : 0);
     for (int k = 0; k < p1 - p0; ++k) {
       face[p0 + k] = 1;
       face[q0 + k] = -1;
@@ -135,6 +140,10 @@ class CrackModel {
     front.centroid = pt;
     front.mu = mat.mu;
     front.kappa = 3.0 - 4.0 * mat.nu();
+    // outer patches the front ends on: full Williams field (sidecar "enriched_outer": [[patch, piece], ...])
+    if (meta.has("enriched_outer"))
+      for (size_t i = 0; i < meta["enriched_outer"].size(); ++i)
+        piece[meta["enriched_outer"][i][0].asInt()] = meta["enriched_outer"][i][1].asInt();
 
     // regions: boundary = edges of upper patches shared with no other upper patch
     upper_region.setPlane(pt, m);
@@ -144,7 +153,7 @@ class CrackModel {
     // geometric cells toward the front (sqrt r enrichment)
     if (opt.enrich && opt.grade > 0)
       for (Element& e : mesh.elements) {
-        if (piece[e.patch] < 0) continue;
+        if (piece[e.patch] < 0 || face[e.patch] == 0) continue;
         const Patch& Pa = mesh.patches[e.patch];
         if (e.rect.v1 < Pa.V.back() - 1e-14) continue;
         std::vector<Rect> cells;
@@ -160,6 +169,49 @@ class CrackModel {
         }
         e.cells = cells;
       }
+
+    // enriched outer elements with a front end point at a corner: geometric squares toward it
+    if (opt.enrich && opt.grade > 0) {
+      std::vector<Vec3> ends;
+      for (const FrontPiece& F : front.pieces)
+        for (double u : {F.u0, F.u1}) {
+          Vec3 C, Cu;
+          int n, s[16];
+          double R[16];
+          F.eval(u, C, Cu, n, s, R);
+          ends.push_back(C);
+        }
+      for (Element& e : mesh.elements) {
+        if (piece[e.patch] < 0 || face[e.patch] != 0) continue;
+        const Rect& Q = e.rect;
+        for (int c = 0; c < 4; ++c) {
+          const double cu = (c & 1) ? Q.u1 : Q.u0, cv = (c & 2) ? Q.v1 : Q.v0;
+          PatchEval E;
+          mesh.patches[e.patch].eval(cu, cv, E);
+          bool hit = false;
+          for (const Vec3& X : ends) hit = hit || (E.x - X).norm() < 1e-9;
+          if (!hit) continue;
+          // nested squares s_g = 2^-g of the element toward (cu, cv): three rects per ring
+          std::vector<Rect> cells;
+          const double du = (cu == Q.u0 ? 1 : -1) * (Q.u1 - Q.u0), dv = (cv == Q.v0 ? 1 : -1) * (Q.v1 - Q.v0);
+          auto rect = [&](double a0, double a1, double b0, double b1) {
+            const double x0 = cu + a0 * du, x1 = cu + a1 * du, y0 = cv + b0 * dv, y1 = cv + b1 * dv;
+            cells.push_back({std::min(x0, x1), std::max(x0, x1), std::min(y0, y1), std::max(y0, y1)});
+          };
+          double so = 1.0;
+          for (int g = 1; g <= opt.grade; ++g) {
+            const double si = 0.5 * so;
+            rect(si, so, 0, si);
+            rect(si, so, si, so);
+            rect(0, si, si, so);
+            so = si;
+          }
+          rect(0, so, 0, so);
+          e.cells = cells;
+          break;
+        }
+      }
+    }
 
     // columns
     cK = 3 * mesh.ndof;
@@ -178,7 +230,8 @@ class CrackModel {
   }
 
   // Assemble all rows for the given load cases and solve. Returns the full scalar vector per case.
-  std::vector<Eigen::VectorXd> solve(const std::vector<TractionFn>& loads, bool cond = false) {
+  std::vector<Eigen::VectorXd> solve(const std::vector<TractionFn>& loads, bool cond = false,
+                                     const std::vector<DisplacementFn>& disps = {}) {
     const auto t0 = std::chrono::steady_clock::now();
     std::vector<Row> rows = collocationRows();
     const int nr = 3 * int(rows.size()) + (opt.enrich ? nK : 0);
@@ -202,6 +255,15 @@ class CrackModel {
     for (int g = 0; g < mesh.ndof; ++g)
       if (!fixed[g]) for (int c = 0; c < 3; ++c) cols.push_back(3 * g + c);
     for (int c = cK; c < ncols; ++c) cols.push_back(c);
+    // known Dirichlet displacement coefficients: to the right-hand side
+    std::vector<Eigen::VectorXd> g(L, Eigen::VectorXd::Zero(3 * mesh.ndof));
+    if (!disps.empty()) {
+      for (int l = 0; l < L; ++l) g[l] = projectDirichlet(disps[l]);
+      std::vector<int> fc;
+      for (int d = 0; d < mesh.ndof; ++d)
+        if (fixed[d]) for (int c = 0; c < 3; ++c) fc.push_back(3 * d + c);
+      for (int l = 0; l < L; ++l) B.col(l) -= A(Eigen::placeholders::all, fc) * g[l](fc);
+    }
     if (int(cols.size()) != nr)
       throw std::runtime_error("crack system not square: " + std::to_string(nr) + " rows, " +
                                std::to_string(cols.size()) + " unknowns");
@@ -218,11 +280,44 @@ class CrackModel {
     }
     residual = (As * X - B).norm() / std::max(B.norm(), 1e-300);
     std::vector<Eigen::VectorXd> out(L, Eigen::VectorXd::Zero(ncols));
-    for (int l = 0; l < L; ++l)
+    for (int l = 0; l < L; ++l) {
+      out[l].head(3 * mesh.ndof) = g[l];
       for (size_t j = 0; j < cols.size(); ++j) out[l](cols[j]) = X(j, l);
+    }
     return out;
   }
   double condition = 0, residual = 0;
+
+  // L2 projection of g onto the displacement basis of every Dirichlet patch (dofs of their own required unless g
+  // vanishes on the shared ones).
+  Eigen::VectorXd projectDirichlet(const DisplacementFn& gfn) const {
+    Eigen::VectorXd out = Eigen::VectorXd::Zero(3 * mesh.ndof);
+    const GaussRule gr = gaussLegendre(6);
+    for (int p = 0; p < n_outer; ++p) {
+      if (!dirichlet[p]) continue;
+      const auto& l2g = mesh.l2g[p];
+      const int nb = int(l2g.size());
+      Eigen::MatrixXd M = Eigen::MatrixXd::Zero(nb, nb), F = Eigen::MatrixXd::Zero(nb, 3);
+      for (const Element& e : mesh.elements) {
+        if (e.patch != p) continue;
+        for (size_t i = 0; i < gr.x.size(); ++i)
+          for (size_t j = 0; j < gr.x.size(); ++j) {
+            const double u = e.rect.u0 + (e.rect.u1 - e.rect.u0) * gr.x[i], v = e.rect.v0 + (e.rect.v1 - e.rect.v0) * gr.x[j];
+            PatchEval E;
+            mesh.patches[p].evalSpan(e.su, e.sv, u, v, E);
+            const double w = gr.w[i] * gr.w[j] * (e.rect.u1 - e.rect.u0) * (e.rect.v1 - e.rect.v0) * E.normal().norm();
+            const Vec3 gv = gfn(E.x, p);
+            for (int a = 0; a < E.n_loc; ++a) {
+              F.row(E.idx[a]) += w * E.R[a] * gv.transpose();
+              for (int b = 0; b < E.n_loc; ++b) M(E.idx[a], E.idx[b]) += w * E.R[a] * E.R[b];
+            }
+          }
+      }
+      const Eigen::MatrixXd C = M.ldlt().solve(F);
+      for (int a = 0; a < nb; ++a) out.segment<3>(3 * l2g[a]) = C.row(a).transpose();
+    }
+    return out;
+  }
 
   // Displacement on face point (patch p, parameter uv) from a solution, enrichment included.
   Vec3 displacement(int p, const Vec2& uv, const Eigen::VectorXd& x) const {
@@ -273,7 +368,7 @@ class CrackModel {
     int cols[64];
     Vec3 v0[64], vp[64], vm[64];
     const int k = piece[p], sg = face[p];
-    const int n = front.shapes(k, sg, E.x, uv(0), cols, v0);
+    const int n = front.shapes(k, sg, E.x, guess(p, uv(0)), cols, v0);
     if (!derivs) {
       for (int i = 0; i < n; ++i) s.add(cols[i], v0[i], Vec3::Zero(), Vec3::Zero());
       return;
@@ -345,17 +440,44 @@ class CrackModel {
     }
   }
 
+  // Projection guess on the front piece: the crown patch's own u, the piece's middle on outer patches.
+  double guess(int p, double u) const {
+    if (face[p] != 0) return u;
+    const FrontPiece& F = front.pieces[piece[p]];
+    return 0.5 * (F.u0 + F.u1);
+  }
+
+  void Pa_eval(Row& r) const {
+    mesh.patches[r.patch].eval(r.xi(0), r.xi(1), r.E);
+    r.x = r.E.x;
+  }
+
   std::vector<Row> collocationRows() const {
     std::vector<Row> rows;
     std::vector<char> fixed(mesh.ndof, 0);
     for (int p = 0; p < n_outer; ++p)
       if (dirichlet[p]) for (int g : mesh.l2g[p]) fixed[g] = 1;
-    for (int g = 0; g < mesh.ndof; ++g) {
-      const Collocation& c = mesh.colloc[g];
-      if (c.patch >= n_outer || fixed[g]) continue;
-      Row r{Row::Outer, c.patch, c.xi, c.x, Vec3::Zero(), {}, c.basis};
-      rows.push_back(r);
-    }
+    if (!opt.discontinuous)
+      for (int g = 0; g < mesh.ndof; ++g) {
+        const Collocation& c = mesh.colloc[g];
+        if (c.patch >= n_outer || fixed[g]) continue;
+        Row r{Row::Outer, c.patch, c.xi, c.x, Vec3::Zero(), {}, c.basis};
+        Pa_eval(r);
+        rows.push_back(r);
+      }
+    else
+      for (int p = 0; p < n_outer; ++p) {
+        if (dirichlet[p]) continue;
+        const Patch& Pa = mesh.patches[p];
+        for (int k = 0; k < Pa.nu * Pa.nv; ++k) {
+          Row r{Row::Outer, p, Vec2(crackPoint(Pa, k % Pa.nu, true), crackPoint(Pa, k / Pa.nu, false)), Vec3::Zero(),
+                Vec3::Zero(), PatchEval{}, {}};
+          Pa_eval(r);
+          for (int l = 0; l < r.E.n_loc; ++l)
+            if (std::abs(r.E.R[l]) > 1e-15) r.basis.push_back({mesh.l2g[p][r.E.idx[l]], r.E.R[l]});
+          rows.push_back(r);
+        }
+      }
     for (int p = 0; p < n_outer; ++p) {
       if (!dirichlet[p]) continue;
       const int n1 = p + 1 < int(ts.offset.size()) ? ts.offset[p + 1] : ts.ndof;
@@ -402,7 +524,7 @@ class CrackModel {
   // Integrand-side shape of a quadrature point: standard basis (3 x 3 blocks) and enrichment vectors.
   int quadEnrichment(int p, const QPoint& q, int* cols, Vec3* vals) const {
     if (!opt.enrich || piece[p] < 0) return 0;
-    return front.shapes(piece[p], face[p], q.x, q.uv(0), cols, vals);
+    return front.shapes(piece[p], face[p], q.x, guess(p, q.uv(0)), cols, vals);
   }
 
   void dbieRow(const ElementIntegrator& quad, const Row& row, const std::vector<TractionFn>& loads,
@@ -438,7 +560,13 @@ class CrackModel {
       });
     }
     if (row.kind == Row::Outer) {
-      for (const auto& [g, NB] : row.basis) a.block<3, 3>(0, 3 * g) -= NB * T0[0];
+      if (piece[row.patch] >= 0) {  // enriched outer patch: the whole field at x
+        Shape own;
+        shapeAt(row.patch, row.xi, row.E, own, false);
+        for (size_t i = 0; i < own.col.size(); ++i) a.col(own.col[i]) -= T0[0] * own.val[i];
+      } else {
+        for (const auto& [g, NB] : row.basis) a.block<3, 3>(0, 3 * g) -= NB * T0[0];
+      }
       return;
     }
     // upper-face DBIE: own face, coincident lower point, opening coefficient

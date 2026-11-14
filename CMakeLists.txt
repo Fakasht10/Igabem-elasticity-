@@ -13,7 +13,7 @@ find_package(OpenMP)
 find_library(UMFPACK_LIB umfpack REQUIRED)
 find_path(UMFPACK_INC umfpack.h PATH_SUFFIXES suitesparse REQUIRED)
 
-foreach(app patch_test dirichlet_test interp_error cavity_test plate_test cad_test bc_case bc_validate region_validate rve_cell bead_cell crack_case)
+foreach(app patch_test dirichlet_test interp_error cavity_test plate_test cad_test bc_case bc_validate region_validate rve_cell bead_cell crack_case crack_prism)
   add_executable(${app} app/${app}.cpp)
   target_include_directories(${app} PRIVATE src)
   target_link_libraries(${app} PRIVATE Eigen3::Eigen)
@@ -48,6 +48,7 @@ target_compile_definitions(test_crack PRIVATE IGABEM_SOURCE_DIR="${CMAKE_SOURCE_
 add_test(NAME crack_kernels COMMAND test_crack)
 add_test(NAME crack_penny COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/penny_og_i0_n5.dat --check-k 0.01)
 add_test(NAME crack_penny_inclined COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/penny_og_i45_n5.dat --check-k 0.01)
+add_test(NAME crack_prism COMMAND crack_prism ${CMAKE_SOURCE_DIR}/geo/crack/prism_k3.dat --check-k 1e-4)
 # local supports and loads (BcModel): exact bar fields, half-space disk load, cantilever
 add_test(NAME bc_bar COMMAND bc_validate bar ${CMAKE_SOURCE_DIR}/geo/bar_L4_p3_n8.dat --check)
 add_test(NAME bc_halfspace COMMAND bc_validate halfspace ${CMAKE_SOURCE_DIR}/geo/box_hs_q_p3_r0.dat --cache none --check)
