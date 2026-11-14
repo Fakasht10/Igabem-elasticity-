@@ -1,0 +1,1 @@
+{"geometry": "/home/user/repo/geo/crack/prismt_aligned_c3.dat", "kappa_outer": "strain", "unknowns": 9582, "F_2d": 2.829125, "KI_mid": 2.877265, "KI_mid_diff": 1.701576e-02, "KII_max": 2.347e-10, "KIII_max": 3.366e-10, "residual": 3.967e-12, "t_assemble": 16.442, "t_solve": 5.789}

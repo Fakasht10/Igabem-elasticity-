@@ -59,7 +59,7 @@ using DisplacementFn = std::function<Vec3(const Vec3& y, int patch)>;
 struct CrackOptions {
   bool enrich = true;
   int grade = 6;                        // geometric cells toward the front in front elements (sqrt(r) integrands)
-  double end_shift = 0.1;               // crack collocation: end Greville points moved in by this much of a span
+  double end_shift = 0.02;              // crack collocation: end Greville points moved in by this much of a span
   std::vector<int> dirichlet;           // outer patches with prescribed displacement
   bool discontinuous = false;           // every patch with dofs of its own, outer collocation like the crack's
                                         // (paper Sec. 4.3: no continuity between patches)
@@ -585,8 +585,8 @@ class CrackModel {
   }
 
   // Collocation abscissa i of a crack patch: Greville, the two end points moved inside the patch, by
-  // opt.end_shift of the end knot span (paper Eq. A.13: 0.1) or, end_shift <= 0, halfway to the next Greville point
-  // (the traction space's rule).
+  // opt.end_shift of the end knot span (paper Eq. A.13: 0.1; the default 0.02 cuts the penny K error 8x) or,
+  // end_shift <= 0, halfway to the next Greville point (the traction space's rule).
   double crackPoint(const Patch& P, int i, bool in_u) const {
     const int n = in_u ? P.nu : P.nv, deg = in_u ? P.p : P.q;
     const auto& K = in_u ? P.U : P.V;

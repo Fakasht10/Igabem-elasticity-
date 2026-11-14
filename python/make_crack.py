@@ -22,6 +22,8 @@ the number of elements per unit length k.
 usage: make_crack.py penny [--n 3,4,5,6,7] [--incline DEG] [--out geo/crack]
        make_crack.py ellipse [--aspect 0.5] [--n ...] [--incline DEG] [--layout disk|ogrid]   (paper Sec. 4.2)
        make_crack.py prism --n 1,2,3,4
+       make_crack.py prism_tension --n 1,2,3,4 [--lateral enriched|split|aligned]   (paper Sec. 4.4; n refines the
+                     crack faces, h = 0.625 / n; outer faces h = 0.625, lateral faces 0.3125)
        make_crack.py senb [--a-w 0.5] [--width 10] [--thickness 4] --n 1,2,3,4   (3-point bend coupon, S = 4W)
 """
 
@@ -86,6 +88,43 @@ def _insert(P, n):
                 cols = [mg.insert_knot_curve(deg, K, P.Pw[:, i], u) for i in range(P.Pw.shape[1])]
                 P.V = cols[0][0]
                 P.Pw = np.stack([c[1] for c in cols], axis=1)
+    return P
+
+
+# Fixed-zone front grading (convergence review, option B): the K unknown absorbs whatever the NURBS cannot
+# represent next to the front (the r^3/2 Williams term) at O(h); graded knots within a zone of FIXED physical size
+# around the front cut that 10-20x. GRADE = (zone d, ratio q, layers L) puts knot lines at distances d q^j,
+# j < L, from the front; a graded line is dropped where an existing knot lies within half its distance.
+GRADE = None
+
+
+def _merge(knots, f, sign, scale):
+    """Interior breakpoints `knots` plus graded lines on the side `sign` (+1: increasing parameter) of a front at
+    parameter f; `scale` is the physical length per unit parameter. Returns the sorted interior breakpoints."""
+    out = sorted(float(k) for k in knots)
+    if not GRADE:
+        return out
+    d, q, L = GRADE
+    for j in range(int(L)):
+        delta = d * q ** j / scale
+        g = f + sign * delta
+        if not 0.0 < g < 1.0:
+            continue
+        if any(abs(g - k) < 0.5 * delta for k in out + [0.0, 1.0] if abs(k - f) > 1e-12):
+            continue
+        out.append(g)
+    return sorted(out)
+
+
+def _grade_v(P, f, sign, scale):
+    """Fixed-zone grading of a NURBS patch in v (exact knot insertion, geometry unchanged)."""
+    V = np.unique(P.V)[1:-1].tolist()
+    for g in _merge(V, f, sign, scale):
+        if any(abs(g - k) < 1e-14 for k in V):
+            continue
+        cols = [mg.insert_knot_curve(P.q, P.V, P.Pw[:, i], g) for i in range(P.Pw.shape[1])]
+        P.V = cols[0][0]
+        P.Pw = np.stack([c[1] for c in cols], axis=1)
     return P
 
 
@@ -160,8 +199,13 @@ def penny(n, R=1.0, L=200.0, incline=0.0, ri_frac=0.8, layout="disk", aspect=1.0
     e1, e3 = Rz @ np.array([1.0, 0.0, 0.0]), np.array([0.0, 0.0, 1.0])
     ri = ri_frac * R
     face = penny_face if layout == "disk" else penny_face_ogrid
-    plus = [_insert(P, n) for P in face(R, ri, e1, aspect * e3, -m)]
-    minus = [_insert(P, n) for P in face(R, ri, e1, aspect * e3, m)]
+    # crown patches (1..4): v radial and linear across the crown width R - ri, the front at v = 1 (the disk layout;
+    # the O-grid crown is wider at its corners, so its grading scale is the mid-side width)
+    w = R - ri if layout == "disk" else R - ri * S2
+    def faces(n_out):
+        ps = [_insert(P, n) for P in face(R, ri, e1, aspect * e3, n_out)]
+        return [ps[0]] + [_grade_v(P, 1.0, -1, w) for P in ps[1:]]
+    plus, minus = faces(-m), faces(m)
     outer = cube(L)
     n0, n1 = len(outer), len(outer) + len(plus)
     meta = {
@@ -174,44 +218,125 @@ def penny(n, R=1.0, L=200.0, incline=0.0, ri_frac=0.8, layout="disk", aspect=1.0
 
 
 def rect_patch(o, eu, ev, nu, nv, outward, p=2):
-    """Flat degree-p patch o + s eu + t ev, s, t in [0, 1], nu x nv uniform elements; u reversed if needed so the
-    normal xu x xv points along `outward` (v and its v = 1 edge are kept)."""
+    """Flat degree-p patch o + s eu + t ev, s, t in [0, 1]; nu (nv) is an element count (uniform) or a list of
+    interior breakpoints; u reversed if needed so the normal xu x xv points along `outward` (v and its v = 1 edge
+    are kept). Greville control points keep the parametrisation linear for any knot vector."""
     o, eu, ev = map(np.asarray, (o, eu, ev))
     def knots(ne):
-        return [0.0] * (p + 1) + [i / ne for i in range(1, ne)] + [1.0] * (p + 1)
+        bp = [i / ne for i in range(1, ne)] if isinstance(ne, int) else list(ne)
+        return [0.0] * (p + 1) + bp + [1.0] * (p + 1)
     U, V = knots(nu), knots(nv)
-    gu = [sum(U[i + 1:i + p + 1]) / p for i in range(nu + p)]
-    gv = [sum(V[i + 1:i + p + 1]) / p for i in range(nv + p)]
+    gu = [sum(U[i + 1:i + p + 1]) / p for i in range(len(U) - p - 1)]
+    gv = [sum(V[i + 1:i + p + 1]) / p for i in range(len(V) - p - 1)]
     X = np.array([[o + a * eu + b * ev for a in gu] for b in gv])
     P = mg.Patch(p, p, U, V, np.concatenate([X, np.ones(X.shape[:2] + (1,))], axis=-1))
     return P if np.dot(np.cross(eu, ev), outward) > 0 else _flip_u(P)
 
 
-def prism(k):
+def _bp(ne):
+    return [i / ne for i in range(1, ne)]
+
+
+def _bp_front(ne, f, scale):
+    """Uniform breakpoints of ne elements plus fixed-zone grading on both sides of a front at parameter f."""
+    return _merge(_merge(_bp(ne), f, -1, scale), f, +1, scale)
+
+
+def prism(k, lateral="enriched"):
     """Prism [-1, 1] x [-1, 1] x [0, 2] with the edge crack y = 0, -1 <= x <= 0 (paper Sec. 4.3, Fig. 18), front
     x = 0 along z. 7 outer patches (the x = -1 face split at the crack mouth), one patch per crack face; element size
-    1/k. The z faces carry the front-end enrichment and have knot lines at x = 0 and y = 0."""
+    1/k. The z faces carry the front-end enrichment and have knot lines at x = 0 and y = 0; lateral = "split" cuts
+    each of them at y = 0 into two enriched halves, so the displacement may jump across the crack beyond the
+    Williams term (needed once the data carry the r^3/2 term, --a3 in crack_prism)."""
     e1, e2, e3 = np.eye(3)
     n2 = 2 * k
-    outer = [
-        rect_patch([-1, -1, 0], 2 * e1, 2 * e2, n2, n2, -e3),   # 0 z = 0
-        rect_patch([-1, -1, 2], 2 * e1, 2 * e2, n2, n2, e3),    # 1 z = 2
-        rect_patch([-1, 1, 0], 2 * e1, 2 * e3, n2, n2, e2),     # 2 y = 1
-        rect_patch([-1, -1, 0], 2 * e1, 2 * e3, n2, n2, -e2),   # 3 y = -1
-        rect_patch([1, -1, 0], 2 * e2, 2 * e3, n2, n2, e1),     # 4 x = 1
-        rect_patch([-1, 0, 0], 2 * e3, e2, n2, k, -e1),         # 5 x = -1, y > 0
-        rect_patch([-1, -1, 0], 2 * e3, e2, n2, k, -e1),        # 6 x = -1, y < 0
+    zx = _bp_front(n2, 0.5, 2.0)  # z faces: the front end at x = 0, y = 0 (s = t = 1/2)
+    if lateral == "split":
+        zf = [rect_patch([-1, y0, z], 2 * e1, e2, zx, _merge(_bp(k), 0.0 if y0 == 0 else 1.0, 1 if y0 == 0 else -1,
+                                                                1.0), nrm)
+              for z, nrm in ((0, -e3), (2, e3)) for y0 in (0, -1)]
+    else:
+        zf = [rect_patch([-1, -1, 0], 2 * e1, 2 * e2, zx, zx, -e3),  # z = 0
+              rect_patch([-1, -1, 2], 2 * e1, 2 * e2, zx, zx, e3)]   # z = 2
+    nz = len(zf)
+    outer = zf + [
+        rect_patch([-1, 1, 0], 2 * e1, 2 * e3, n2, n2, e2),     # y = 1
+        rect_patch([-1, -1, 0], 2 * e1, 2 * e3, n2, n2, -e2),   # y = -1
+        rect_patch([1, -1, 0], 2 * e2, 2 * e3, n2, n2, e1),     # x = 1
+        rect_patch([-1, 0, 0], 2 * e3, e2, n2, k, -e1),         # x = -1, y > 0
+        rect_patch([-1, -1, 0], 2 * e3, e2, n2, k, -e1),        # x = -1, y < 0
     ]
     # crack faces: u along z, v from the mouth (x = -1) to the front (x = 0)
-    plus = [rect_patch([-1, 0, 0], 2 * e3, e1, n2, k, -e2)]
-    minus = [rect_patch([-1, 0, 0], 2 * e3, e1, n2, k, e2)]
+    cv = _merge(_bp(k), 1.0, -1, 1.0)
+    plus = [rect_patch([-1, 0, 0], 2 * e3, e1, n2, cv, -e2)]
+    minus = [rect_patch([-1, 0, 0], 2 * e3, e1, n2, cv, e2)]
     n0, n1 = len(outer), len(outer) + 1
     meta = {
         "kind": "prism", "outer": [0, n0], "plus": [n0, n1], "minus": [n1, n1 + 1], "crown": [n0],
-        "front_edge": "v1", "enriched_outer": [[0, 0], [1, 0]], "dirichlet": [2, 3, 4, 5, 6],
+        "front_edge": "v1", "enriched_outer": [[i, 0] for i in range(nz)],
+        "dirichlet": list(range(nz, nz + 5)), "lateral": lateral,
         "plane": {"point": [-0.5, 0.0, 1.0], "normal": [0.0, 1.0, 0.0], "e1": [1.0, 0.0, 0.0], "e3": [0.0, 0.0, 1.0]},
         "front": {"point": [0.0, 0.0, 0.0], "n": [1.0, 0.0, 0.0], "b": [0.0, 1.0, 0.0], "t": [0.0, 0.0, 1.0]},
         "k": k,
+    }
+    return outer + plus + minus, meta
+
+
+def _cells(L, h):
+    return max(1, int(round(L / h)))
+
+
+def prism_tension(k, kc=None, kl=None, lateral="enriched"):
+    """Paper Sec. 4.4 (Fig. 23): block x in [0, 5] (crack depth direction), y in [-4.375, 4.375] (load), z in
+    [0, 7.5] (front), edge crack y = 0, 0 <= x <= 2.5 (a / b = 0.5), front x = 2.5. Patch-discontinuous: the cut face
+    x = 0 split at the crack mouth (the paper uses a Heaviside enrichment there instead), the face x = 5 split into
+    the clamped band |y| < 0.4375 and the two free parts, the z faces Williams-enriched with knot lines at x = 2.5 and
+    y = 0. Element size 0.625 / k."""
+    e1, e2, e3 = np.eye(3)
+    h = 0.625 / k
+    hc = 0.625 / (kc or k)  # crack faces
+    hl = 0.625 / (kl or k)  # lateral (enriched) faces
+    W, H, T, a, band = 5.0, 4.375, 7.5, 2.5, 0.4375
+    nx, ny, nz = 2 * _cells(a, h), 2 * _cells(H, h), _cells(T, h)
+    ylo = H - band
+    # lateral faces z = 0, T: one enriched patch each ("enriched", the paper's Fig. 24b), two enriched halves split at
+    # y = 0 ("split"), or four plain patches aligned with the crack and the front ("aligned", Fig. 24a)
+    lat, enr = [], []
+    for z, nrm in ((0.0, -e3), (T, e3)):
+        if lateral == "enriched":
+            enr.append(len(lat))
+            lat.append(rect_patch([0, -H, z], W * e1, 2 * H * e2, _bp_front(2 * _cells(a, hl), 0.5, W),
+                                  _bp_front(2 * _cells(H, hl), 0.5, 2 * H), nrm))
+        elif lateral == "split":
+            for y0 in (0.0, -H):
+                enr.append(len(lat))
+                ty = _merge(_bp(_cells(H, hl)), 0.0 if y0 == 0 else 1.0, 1 if y0 == 0 else -1, H)
+                lat.append(rect_patch([0, y0, z], W * e1, H * e2, _bp_front(2 * _cells(a, hl), 0.5, W), ty, nrm))
+        else:
+            for x0 in (0.0, a):
+                for y0 in (0.0, -H):
+                    sx = _merge(_bp(_cells(a, hl)), 0.0 if x0 else 1.0, 1 if x0 else -1, W - a if x0 else a)
+                    ty = _merge(_bp(_cells(H, hl)), 0.0 if y0 == 0 else 1.0, 1 if y0 == 0 else -1, H)
+                    lat.append(rect_patch([x0, y0, z], (W - a if x0 else a) * e1, H * e2, sx, ty, nrm))
+    outer = lat + [
+        rect_patch([0, H, 0], W * e1, T * e3, nx, nz, e2),                   # top, sigma0 e2
+        rect_patch([0, -H, 0], W * e1, T * e3, nx, nz, -e2),                 # bottom, -sigma0 e2
+        rect_patch([0, 0, 0], T * e3, H * e2, nz, ny // 2, -e1),             # x = 0, y > 0
+        rect_patch([0, -H, 0], T * e3, H * e2, nz, ny // 2, -e1),            # x = 0, y < 0
+        rect_patch([W, band, 0], T * e3, ylo * e2, nz, _cells(ylo, h), e1),  # x = W, y > band
+        rect_patch([W, -H, 0], T * e3, ylo * e2, nz, _cells(ylo, h), e1),    # x = W, y < -band
+        rect_patch([W, -band, 0], T * e3, 2 * band * e2, nz, 2, e1),         # x = W, clamped band
+    ]
+    cv = _merge(_bp(_cells(a, hc)), 1.0, -1, a)
+    plus = [rect_patch([0, 0, 0], T * e3, a * e1, _cells(T, hc), cv, -e2)]
+    minus = [rect_patch([0, 0, 0], T * e3, a * e1, _cells(T, hc), cv, e2)]
+    n0, n1 = len(outer), len(outer) + 1
+    meta = {
+        "kind": "prism_tension", "outer": [0, n0], "plus": [n0, n1], "minus": [n1, n1 + 1], "crown": [n0],
+        "front_edge": "v1", "enriched_outer": [[i, 0] for i in enr], "dirichlet": [len(lat) + 6],
+        "top": len(lat), "bottom": len(lat) + 1, "lateral": lateral,
+        "plane": {"point": [1.25, 0.0, 3.75], "normal": [0.0, 1.0, 0.0], "e1": [1.0, 0.0, 0.0], "e3": [0.0, 0.0, 1.0]},
+        "a": a, "W": W, "T": T, "k": k,
     }
     return outer + plus + minus, meta
 
@@ -334,30 +459,45 @@ def senb(n, W=10.0, B=4.0, a_W=0.5, S_W=4.0, pad=0.05, overhang=0.5, crown=0.2):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("kind", choices=["penny", "ellipse", "prism", "senb"])
+    ap.add_argument("kind", choices=["penny", "ellipse", "prism", "prism_tension", "senb"])
     ap.add_argument("--aspect", type=float, default=0.5, help="ellipse: b / a")
     ap.add_argument("--a-w", type=float, default=0.5, help="senb: crack depth / width")
     ap.add_argument("--width", type=float, default=10.0, help="senb: W")
     ap.add_argument("--thickness", type=float, default=4.0, help="senb: B")
+    ap.add_argument("--lateral", choices=["enriched", "split", "aligned"], default=None,
+                    help="prism_tension: lateral-face layout (default split); prism: split cuts the z faces at y = 0")
     ap.add_argument("--n", default="3,4,5,6,7")
     ap.add_argument("--incline", type=float, default=0.0)
     ap.add_argument("--layout", choices=["disk", "ogrid"], default="disk")
+    ap.add_argument("--grade", default="",
+                    help="fixed-zone front grading 'd,q,L' (zone d in length units, ratio q, L layers); '' = none")
+    ap.add_argument("--suffix", default="", help="appended to the geometry name")
     ap.add_argument("--out", default=ROOT)
     a = ap.parse_args(argv)
+    a.lateral_set = a.lateral is not None
+    a.lateral = a.lateral or "split"
+    global GRADE
+    GRADE = tuple(float(x) for x in a.grade.split(",")) if a.grade else None
     os.makedirs(a.out, exist_ok=True)
     for n in map(int, a.n.split(",")):
-        if a.kind == "prism":
-            patches, meta = prism(n)
-            name = "prism_k%d" % n
+        if a.kind == "prism":  # --lateral split cuts the z faces at the crack plane
+            patches, meta = prism(n, "split" if a.lateral == "split" and a.lateral_set else "enriched")
+            name = "prism_%sk%d" % ("split_" if meta["lateral"] == "split" else "", n)
         elif a.kind == "senb":
             patches, meta = senb(n, W=a.width, B=a.thickness, a_W=a.a_w)
             name = "senb_aw%g_n%d" % (a.a_w, n)
+        elif a.kind == "prism_tension":  # n: crack-face refinement; outer h = 0.625, lateral h = 0.3125
+            patches, meta = prism_tension(1, n, 2, a.lateral)
+            name = "prismt_%s_c%d" % (a.lateral, n)
         else:
             asp = a.aspect if a.kind == "ellipse" else 1.0
             patches, meta = penny(n, incline=a.incline, layout=a.layout, aspect=asp)
             if a.kind == "ellipse":
                 meta["kind"] = "ellipse"
             name = "%s_%si%g_n%d" % (a.kind, "" if a.layout == "disk" else "og_", a.incline, n)
+        name += a.suffix
+        if GRADE:
+            meta["grade"] = list(GRADE)
         path = os.path.join(a.out, name + ".dat")
         mg.write_dat(path, patches, name)
         with open(os.path.join(a.out, name + ".crack.json"), "w") as f:

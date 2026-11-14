@@ -1,0 +1,1 @@
+{"geometry": "/home/user/repo/geo/crack/prismt_split_c2.dat", "kappa_outer": "strain", "unknowns": 7530, "F_2d": 2.829125, "KI_mid": 2.877263, "KI_mid_diff": 1.701516e-02, "KII_max": 1.912e-10, "KIII_max": 1.109e-10, "residual": 2.298e-12, "t_assemble": 14.291, "t_solve": 3.807}

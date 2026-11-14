@@ -1,6 +1,6 @@
 // Prism with an edge crack, pure-mode loading (Rocha, Trevelyan & Leonel 2024, Sec. 4.3, Table 3, Fig. 21).
 //
-//   crack_prism geo/crack/prism_k2.dat [--out prefix] [--check-k tol] [--nu NU] [--cond] [--factored]
+//   crack_prism geo/crack/prism_k2.dat [--out prefix] [--check-k tol] [--nu NU] [--cond] [--factored] [--a3 A]
 //
 // [-1, 1]^2 x [0, 2], crack y = 0, -1 <= x <= 0, straight front x = 0 along z (python/make_crack.py prism). The
 // single-term Williams field with K_M = 1 (Eq. 29; plane strain for I and II, antiplane for III) is an exact
@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
   bool cond = false;
   bool factored = false;  // --factored: factor() + solveFactored(), as crack_serve runs
   int ng = 12, grade = 6;  // 8 Gauss points leave a 1e-4 floor in K (z-face elements next to the front end)
-  double shift = 0.1, far_tol = 1e-12, check_k = -1, E = 1.0, nu = 0.0;
+  double shift = 0.02, far_tol = 1e-12, check_k = -1, E = 1.0, nu = 0.0, a3 = 0.0;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--cond")) cond = true;
     else if (!std::strcmp(argv[i], "--factored")) factored = true;
@@ -42,6 +42,8 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--nu") && i + 1 < argc) nu = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--ng") && i + 1 < argc) ng = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--grade") && i + 1 < argc) grade = std::atoi(argv[++i]);
+    else if (!std::strcmp(argv[i], "--shift") && i + 1 < argc) shift = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--a3") && i + 1 < argc) a3 = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--far-tol") && i + 1 < argc) far_tol = std::atof(argv[++i]);
     else { std::fprintf(stderr, "unknown argument %s\n", argv[i]); return 2; }
   }
@@ -80,6 +82,11 @@ int main(int argc, char** argv) {
     if (M.face[p] != 0) th = M.face[p] * M_PI;
     Vec3 w[3];
     Front::williams(r, th, mat.mu, kappa, fn, fb, ft, w);
+    if (Mo == 0 && a3 != 0.0) {  // Williams n = 3: u = a3 r^h / (2 mu) [(k + h - 1) cos(h th) - h cos((h - 2) th), ...]
+      const double h = 1.5, c = a3 * std::pow(r, h) / (2 * mat.mu);
+      w[0] += c * ((kappa + h - 1) * std::cos(h * th) - h * std::cos((h - 2) * th)) * fn +
+              c * ((kappa - h + 1) * std::sin(h * th) + h * std::sin((h - 2) * th)) * fb;
+    }
     return w[Mo];
   };
   // exact stress of mode M in the (n, b, t) frame, plane strain sigma_tt = nu (sigma_nn + sigma_bb)
@@ -100,6 +107,14 @@ int main(int argc, char** argv) {
     } else {
       S(0, 2) = S(2, 0) = -s2;
       S(1, 2) = S(2, 1) = c2;
+    }
+    if (Mo == 0 && a3 != 0.0) {  // Williams n = 3 (h = 3/2), stresses a3 h r^(h-1) [...], in units of f
+      const double h = 1.5, g = a3 * h * std::sqrt(r) / f;
+      S(0, 0) += g * ((2 + h - 1) * std::cos((h - 1) * th) - (h - 1) * std::cos((h - 3) * th));
+      S(1, 1) += g * ((2 - h + 1) * std::cos((h - 1) * th) + (h - 1) * std::cos((h - 3) * th));
+      const double sxy = g * (-(h - 1) * std::sin((h - 1) * th) + (h - 1) * std::sin((h - 3) * th));
+      S(0, 1) += sxy;
+      S(1, 0) += sxy;
     }
     S(2, 2) += nu * (S(0, 0) + S(1, 1));
     Eigen::Matrix3d Q;

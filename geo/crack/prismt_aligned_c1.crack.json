@@ -1,0 +1,52 @@
+{
+ "kind": "prism_tension",
+ "outer": [
+  0,
+  15
+ ],
+ "plus": [
+  15,
+  16
+ ],
+ "minus": [
+  16,
+  17
+ ],
+ "crown": [
+  15
+ ],
+ "front_edge": "v1",
+ "enriched_outer": [],
+ "dirichlet": [
+  14
+ ],
+ "top": 8,
+ "bottom": 9,
+ "lateral": "aligned",
+ "plane": {
+  "point": [
+   1.25,
+   0.0,
+   3.75
+  ],
+  "normal": [
+   0.0,
+   1.0,
+   0.0
+  ],
+  "e1": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "e3": [
+   0.0,
+   0.0,
+   1.0
+  ]
+ },
+ "a": 2.5,
+ "W": 5.0,
+ "T": 7.5,
+ "k": 1
+}
