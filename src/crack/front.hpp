@@ -144,8 +144,10 @@ struct Front {
   double mu = 1, kappa = 1;
   int ncols = 0;
 
-  // The 3 nb enrichment vectors at a point y of crown piece k on face sign (+1 upper, -1 lower), u guess from the
-  // point's own patch parameter. cols[i], vals[i]: scalar column and its 3-vector.
+  // The 3 nb enrichment vectors at a point y of piece k. sign +1 / -1: a point of the upper / lower crack face
+  // (theta = +-pi, the face values above); sign 0: a point of an outer patch the front ends on, with the full
+  // Williams field at theta = atan2((y - C).b, (y - C).n) in (-pi, pi], the cut along the crack. u guess: a
+  // parameter on the piece near the projection (the point's own patch parameter on crown patches).
   int shapes(int k, int sign, const Vec3& y, double uguess, int* cols, Vec3* vals) const {
     const FrontPiece& F = pieces[k];
     const double u = F.project(y, uguess);
@@ -153,13 +155,15 @@ struct Front {
     int n, s[16];
     double R[16];
     F.eval(u, C, Cu, n, s, R);
-    const double r = (y - C).norm();
+    const Vec3 d = y - C;
+    const double r = d.norm();
     const Vec3 t0 = Cu.normalized();
     Vec3 nv = m.cross(t0);
     if (nv.dot(C - centroid) < 0) nv = -nv;
     const Vec3 tv = nv.cross(m);
-    const double a = sign * std::sqrt(r / (2 * M_PI)) / (2 * mu);
-    const Vec3 w[3] = {(kappa + 1) * a * m, (kappa + 1) * a * nv, 4.0 * a * tv};
+    const double th = sign != 0 ? sign * M_PI : std::atan2(d.dot(m), d.dot(nv));
+    Vec3 w[3];
+    williams(r, th, mu, kappa, nv, m, tv, w);
     int c = 0;
     for (int i = 0; i < n; ++i)
       for (int M = 0; M < 3; ++M) {
@@ -168,6 +172,19 @@ struct Front {
         ++c;
       }
     return c;
+  }
+
+  // Williams displacement per unit K_I, K_II, K_III at polar (r, theta) about the front, frame (n, b, t):
+  //   u = sqrt(r / 2 pi) / (2 mu) { K_I  [cos(th/2)(kappa - cos th) n + sin(th/2)(kappa - cos th) b]
+  //                               + K_II [sin(th/2)(kappa + 2 + cos th) n - cos(th/2)(kappa - 2 + cos th) b]
+  //                               + K_III 4 sin(th/2) t }                         (paper Eq. 29, plane strain kappa)
+  static void williams(double r, double th, double mu, double kappa, const Vec3& n, const Vec3& b, const Vec3& t,
+                       Vec3* w) {
+    const double a = std::sqrt(r / (2 * M_PI)) / (2 * mu), c2 = std::cos(0.5 * th), s2 = std::sin(0.5 * th),
+                 c = std::cos(th);
+    w[0] = a * ((c2 * (kappa - c)) * n + (s2 * (kappa - c)) * b);
+    w[1] = a * ((s2 * (kappa + 2 + c)) * n - (c2 * (kappa - 2 + c)) * b);
+    w[2] = a * (4 * s2) * t;
   }
 
   // K_M(u) on piece k from the solution's K columns (offset into x).

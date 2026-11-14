@@ -164,6 +164,68 @@ def penny_inclined(d, out):
     print("\n".join(rows))
 
 
+def prism(d, out):
+    runs = sorted(d["runs"], key=lambda r: r["n"])
+    modes = ("I", "II", "III")
+    col = {"I": "#2a78d6", "II": "#eb6834", "III": "#1baf7a"}
+    fig, ax = plt.subplots(1, 3, figsize=(7.4, 2.7))
+    a = ax[0]
+    for r, ls in ((runs[1], ":"), (runs[-1], "-")):
+        s = rd(os.path.join(out, r["tag"] + "_sif.csv"))
+        for i, m in enumerate(modes):
+            sel = s["mode"] == i + 1
+            k = s[["KI", "KII", "KIII"][i]][sel]
+            a.plot(s["z"][sel], (k - 1.0) * 1e4, ls, color=col[m], label=r"$K_{%s}$" % m if r is runs[-1] else None)
+    a.plot([], [], ":", color="#8a8a85", label="%d dof" % runs[1]["unknowns"])
+    a.plot([], [], "-", color="#8a8a85", label="%d dof" % runs[-1]["unknowns"])
+    a.set_xlabel("$z$ along the front")
+    a.set_ylabel(r"$(K_M - 1) \times 10^4$")
+    a.set_title("(a) pure-mode SIF along the front", loc="left", fontsize=8.5)
+    a.legend(fontsize=6, ncol=2, loc="lower center")
+    b = ax[1]
+    dof = [r["unknowns"] for r in runs]
+    for i, m in enumerate(modes):
+        b.loglog(dof, [r["K%s_err" % m] for r in runs], "o-", color=col[m], label=r"$K_{%s}$" % m)
+        pt = d["paper"]["table3"][m]
+        b.loglog([int(k) for k in pt], [abs(v[i] - 1.0) for v in pt.values()], "s--", color=col[m], mfc="white",
+                 lw=1.0, label=None)
+    b.plot([], [], "s--", color="#1a1a19", mfc="white", lw=1.0, label="paper, Table 3")
+    b.loglog(dof, [r["cross_max"] for r in runs], "^:", color="#8a8a85", label="largest spurious $K$")
+    dofaxis(b)
+    b.set_xlim(330, 5000)
+    b.set_xlabel("degrees of freedom")
+    b.set_ylabel(r"mean $|K_M - 1|$")
+    b.set_title("(b) SIF error", loc="left", fontsize=8.5)
+    b.legend(fontsize=5.5, loc="lower left")
+    c = ax[2]
+    for m in modes:
+        c.loglog(dof, [r["mode" + m]["u_L2"] for r in runs], "o-", color=col[m], label="mode " + m)
+    dofaxis(c)
+    c.set_xlim(330, 5000)
+    c.set_xlabel("degrees of freedom")
+    c.set_ylabel("relative $L_2$ error of $u$")
+    c.set_title("(c) displacement error", loc="left", fontsize=8.5)
+    c.legend(fontsize=6)
+    fig.suptitle("Prism with edge crack, pure modes (Rocha et al. 2024, Sec. 4.3), $\\nu = 0$", fontsize=10)
+    fig.tight_layout()
+    for ext in ("png", "pdf"):
+        fig.savefig(os.path.join(out, "prism." + ext))
+    rows = ["| k | dof | mean abs(K_I - 1), mode I | abs(K_II - 1), mode II | abs(K_III - 1), mode III | largest spurious K | u L2 (I / II / III) | time [s] |",
+            "|---|---|---|---|---|---|---|---|"]
+    for r in runs:
+        rows.append("| %d | %d | %.2e | %.2e | %.2e | %.2e | %.1e / %.1e / %.1e | %.1f |" % (
+            r["n"], r["unknowns"], r["KI_err"], r["KII_err"], r["KIII_err"], r["cross_max"], r["modeI"]["u_L2"],
+            r["modeII"]["u_L2"], r["modeIII"]["u_L2"], r["t_assemble"] + r["t_solve"]))
+    for dofp in (639, 1275, 2175):
+        t = d["paper"]["table3"]
+        e = [abs(t[m][str(dofp)][i] - 1.0) for i, m in enumerate(modes)]
+        cr = max(t[m][str(dofp)][j] for i, m in enumerate(modes) for j in range(3) if j != i)
+        rows.append("| paper | %d | %.2e | %.2e | %.2e | %.2e | | |" % (dofp, e[0], e[1], e[2], cr))
+    with open(os.path.join(out, "prism_table.md"), "w") as f:
+        f.write("\n".join(rows) + "\n")
+    print("\n".join(rows))
+
+
 if __name__ == "__main__":
     for name in sys.argv[1:] or ["penny"]:
         with open(os.path.join(OUT, name, "case.json")) as f:

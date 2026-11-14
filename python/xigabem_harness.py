@@ -8,7 +8,8 @@ python/plot_xigabem.py draws the figures from there. Runs are skipped when their
 the geometry and the binary (pass --force to redo), so re-plotting or adding a level never re-solves the rest.
 
 usage: xigabem_harness.py [case ...] [--force] [--timeout S] [--list]
-       cases: penny (Sec. 4.1, in-plane, mode I) -- more follow as the milestones land
+       cases: penny (Sec. 4.1, in plane, mode I), penny_inclined (Sec. 4.1, pi/4, mixed mode),
+              prism (Sec. 4.3, edge crack, pure modes I, II, III)
 
 Runtime (4 cores): penny levels n = 3..11, two layouts, both formulations, ~4 min cold; every run has a hard timeout.
 """
@@ -22,6 +23,7 @@ import time
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 BIN = os.path.join(ROOT, "build", "crack_case")
+BUILD = os.path.join(ROOT, "build")
 OUT = os.path.join(ROOT, "results", "xigabem")
 
 # Paper, Table 1 (in-plane penny, nu = 0): dof -> signed average relative error of K_I.
@@ -56,6 +58,25 @@ CASES = {
         "gates": {"KI_avg_err": 2.0e-3, "KII_avg_err": 2.0e-3, "KIII_avg_err": 2.0e-3},
         "paper": {"max_rel_err_finest": 2.03e-3, "finest_dof": 1626},
     },
+    "prism": {
+        "title": "Prism with edge crack, pure modes I, II, III from the Williams field (paper Sec. 4.3, Table 3)",
+        "bin": "crack_prism",
+        "make": ["prism"],
+        "geometry": "prism_k{n}.dat",
+        "levels": [1, 2, 3, 4, 5, 6],
+        "layouts": ["discontinuous"],
+        "formulations": {"xigabem": []},
+        "extra": [],
+        "est_s": {1: 1, 2: 2, 3: 2, 4: 3, 5: 5, 6: 8},
+        # mean |K_M - 1| of each pure mode on the finest level (paper: below 4e-4 at 2175 dof), and the largest
+        # spurious SIF (mean |K_N|, N != M)
+        "gates": {"KI_err": 1.0e-4, "KII_err": 1.0e-4, "KIII_err": 1.0e-4, "cross_max": 1.0e-4},
+        "paper": {"table3": {
+            "I": {639: [1.00057, 5.84e-07, 2.66e-06], 1275: [0.99979, 9.66e-06, 2.95e-05], 2175: [0.99991, 9.17e-06, 1.96e-05]},
+            "II": {639: [7.06e-07, 1.00125, 1.70e-02], 1275: [7.55e-05, 1.00050, 2.21e-03], 2175: [8.36e-07, 1.00032, 1.39e-04]},
+            "III": {639: [7.19e-07, 7.06e-04, 0.99579], 1275: [1.51e-03, 7.92e-04, 1.00228], 2175: [6.81e-06, 2.74e-04, 0.99991]},
+        }},
+    },
 }
 
 
@@ -70,12 +91,13 @@ def run_case(name, force, timeout):
     c = CASES[name]
     out = os.path.join(OUT, name)
     os.makedirs(out, exist_ok=True)
+    binary = os.path.join(BUILD, c.get("bin", "crack_case"))
     plan = [(lay, n, f) for lay in c["layouts"] for n in c["levels"] for f in c["formulations"]]
     est = sum(c["est_s"][n] * (0.25 if f == "igabem" else 1.0) for lay, n, f in plan)
     print("%s: %d runs, estimated %.0f s cold (hard timeout %d s per run)" % (name, len(plan), est, timeout))
     runs = []
     for lay, n, f in plan:
-        prefix = "" if lay == "disk" else "og_"
+        prefix = {"disk": "", "ogrid": "og_"}.get(lay, "")
         geo = os.path.join(ROOT, "geo", "crack", c["geometry"].format(prefix=prefix, n=n))
         if not os.path.exists(geo):
             subprocess.run([sys.executable, os.path.join(ROOT, "python", "make_crack.py")] +
@@ -83,9 +105,9 @@ def run_case(name, force, timeout):
                            stdout=subprocess.DEVNULL)
         tag = "%s_%s_n%d" % (f, lay, n)
         summ = os.path.join(out, tag + "_summary.json")
-        if force or stale(summ, [geo, BIN]):
+        if force or stale(summ, [geo, binary]):
             t0 = time.time()
-            cmd = [BIN, geo, "--out", os.path.join(out, tag)] + c["formulations"][f] + c["extra"]
+            cmd = [binary, geo, "--out", os.path.join(out, tag)] + c["formulations"][f] + c["extra"]
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
                                env=dict(os.environ, OMP_NUM_THREADS=os.environ.get("OMP_NUM_THREADS", "4")))
             if r.returncode != 0:
@@ -120,9 +142,11 @@ def main(argv=None):
         for k, c in CASES.items():
             print("%-8s %s" % (k, c["title"]))
         return 0
-    if not os.path.exists(BIN):
-        print("build crack_case first: cmake --build build --target crack_case", file=sys.stderr)
-        return 2
+    for n in a.cases:
+        b = CASES[n].get("bin", "crack_case")
+        if not os.path.exists(os.path.join(BUILD, b)):
+            print("build %s first: cmake --build build --target %s" % (b, b), file=sys.stderr)
+            return 2
     ok = all([run_case(n, a.force, a.timeout) for n in a.cases])
     return 0 if ok else 1
 
