@@ -42,6 +42,20 @@ CASES = {
         "gates": {"KI_avg_err": 2.0e-3, "KII_avg_abs": 1.0e-5, "KIII_avg_abs": 1.0e-5},
         "paper": {"table1_KI_signed_avg_err": PAPER_PENNY_TABLE1},
     },
+    "penny_inclined": {
+        "title": "Penny-shaped crack inclined by pi/4, remote tension: mixed mode I/II/III (paper Sec. 4.1, Fig. 12)",
+        "make": ["penny", "--layout", "{layout}", "--incline", "45"],
+        "geometry": "penny_{prefix}i45_n{n}.dat",
+        "levels": [3, 4, 5, 6, 7, 9, 11],
+        "layouts": ["ogrid"],
+        "formulations": {"xigabem": []},
+        "extra": [],
+        "est_s": {3: 2, 4: 4, 5: 5, 6: 6, 7: 8, 9: 15, 11: 25},
+        # paper: all SIFs within 2.03e-3 of the reference on its finest mesh (1626 dof); K_II, K_III errors are
+        # relative to their amplitude 4 sin cos sigma sqrt(pi R) / (pi (2 - nu)) (times (1 - nu) for K_III)
+        "gates": {"KI_avg_err": 2.0e-3, "KII_avg_err": 2.0e-3, "KIII_avg_err": 2.0e-3},
+        "paper": {"max_rel_err_finest": 2.03e-3, "finest_dof": 1626},
+    },
 }
 
 

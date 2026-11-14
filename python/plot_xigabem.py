@@ -117,6 +117,53 @@ def penny(d, out):
     print("\n".join(rows))
 
 
+def penny_inclined(d, out):
+    runs = sorted((r for r in d["runs"] if r["formulation"] == "xigabem"), key=lambda r: r["n"])
+    fig, ax = plt.subplots(1, 2, figsize=(7.2, 2.9))
+    a = ax[0]
+    fin = runs[-1]
+    s = rd(os.path.join(out, fin["tag"] + "_sif.csv"))
+    th = np.degrees(np.mod(s["theta_c"], 2 * np.pi))
+    o = np.argsort(th)
+    norm = s["KI_exact"].max()
+    for k, col in (("KI", "#2a78d6"), ("KII", "#eb6834"), ("KIII", "#1baf7a")):
+        a.plot(th[o], s[k + "_exact"][o] / norm, "-", color=col, lw=1.0, alpha=0.6)
+        a.plot(th[o][::4], s[k][o][::4] / norm, "o", color=col, ms=3.5, mfc="white",
+               label=r"$K_{%s}$" % k[1:])
+    a.plot([], [], "-", color="#8a8a85", lw=1.0, label="exact")
+    a.set_xticks([0, 90, 180, 270, 360])
+    a.set_xlabel(r"front angle $\theta$ [deg]")
+    a.set_ylabel(r"$K / K_I^{exact}$")
+    a.set_ylim(-1.5, 1.15)
+    a.set_title("(a) SIFs along the front, n = %d (%d dof)" % (fin["n"], fin["unknowns"]), loc="left")
+    a.legend(fontsize=7, ncol=4, loc="lower center")
+    b = ax[1]
+    dof = [r["unknowns"] for r in runs]
+    for k, col, lab in (("KI_avg_err", "#2a78d6", r"$K_I$"), ("KII_avg_err", "#eb6834", r"$K_{II}$"),
+                        ("KIII_avg_err", "#1baf7a", r"$K_{III}$")):
+        b.loglog(dof, [r[k] for r in runs], "o-" if k != "KIII_avg_err" else "^:", color=col, label=lab + " mean")
+    b.loglog(dof, [r["KI_max_err"] for r in runs], "--", color="#8a8a85", lw=1.0, label=r"$K_I$ max")
+    b.loglog([d["paper"]["finest_dof"]], [d["paper"]["max_rel_err_finest"]], "s", color="#1a1a19", mfc="white",
+             label="paper, max (finest)")
+    dofaxis(b)
+    b.set_xlabel("degrees of freedom")
+    b.set_ylabel("relative error")
+    b.set_title("(b) SIF error vs dof", loc="left")
+    b.legend(fontsize=7)
+    fig.suptitle(r"Penny crack inclined by $\pi/4$ (Rocha et al. 2024, Fig. 12), $\nu = 0$", fontsize=10)
+    fig.tight_layout()
+    for ext in ("png", "pdf"):
+        fig.savefig(os.path.join(out, "penny_inclined." + ext))
+    rows = ["| n | dof | K_I mean | K_II mean | K_III mean | K_I max | time [s] |", "|---|---|---|---|---|---|---|"]
+    for r in runs:
+        rows.append("| %d | %d | %.2e | %.2e | %.2e | %.2e | %.1f |" % (r["n"], r["unknowns"], r["KI_avg_err"],
+                    r["KII_avg_err"], r["KIII_avg_err"], r["KI_max_err"], r["t_assemble"] + r["t_solve"]))
+    rows.append("| paper | 1626 | | | | 2.03e-03 (all SIFs) | |")
+    with open(os.path.join(out, "penny_inclined_table.md"), "w") as f:
+        f.write("\n".join(rows) + "\n")
+    print("\n".join(rows))
+
+
 if __name__ == "__main__":
     for name in sys.argv[1:] or ["penny"]:
         with open(os.path.join(OUT, name, "case.json")) as f:
