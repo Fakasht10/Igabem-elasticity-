@@ -226,6 +226,84 @@ def prism(d, out):
     print("\n".join(rows))
 
 
+def ellipse(d, out):
+    """Both ellipse cases on one figure (reads ellipse_inclined/case.json too)."""
+    with open(os.path.join(OUT, "ellipse_inclined", "case.json")) as f:
+        di = json.load(f)
+    oi = os.path.join(OUT, "ellipse_inclined")
+    xs = sorted((r for r in d["runs"] if r["formulation"] == "xigabem"), key=lambda r: r["n"])
+    ps = sorted((r for r in d["runs"] if r["formulation"] == "igabem"), key=lambda r: r["n"])
+    ri = sorted(di["runs"], key=lambda r: r["n"])
+    fig, ax = plt.subplots(2, 2, figsize=(7.2, 5.6))
+    def front(path):
+        s = rd(path)
+        th = np.degrees(np.mod(s["theta_c"], 2 * np.pi))
+        o = np.argsort(th)
+        return th[o], {k: s[k][o] for k in s}
+    a = ax[0, 0]
+    for r, c in ((xs[0], "#86b6ef"), (xs[-1], "#1c5cab")):
+        th, s = front(os.path.join(out, r["tag"] + "_sif.csv"))
+        a.plot(th[::3], s["KI"][::3], "o", ms=3, mfc="white", color=c, label="n = %d (%d dof)" % (r["n"], r["unknowns"]))
+    a.plot(th, s["KI_exact"], "-", color="#1a1a19", lw=0.9, label="Irwin")
+    a.set_xticks([0, 90, 180, 270, 360])
+    a.set_xlabel(r"parametric angle $\theta_c$ [deg]")
+    a.set_ylabel(r"$K_I / (\sigma\sqrt{a})$")
+    a.set_title("(a) in plane: $K_I$ along the front", loc="left")
+    a.legend(fontsize=7)
+    b = ax[0, 1]
+    th, s = front(os.path.join(oi, ri[-1]["tag"] + "_sif.csv"))
+    for k, c in (("KI", "#2a78d6"), ("KII", "#eb6834"), ("KIII", "#1baf7a")):
+        b.plot(th, s[k + "_exact"], "-", color=c, lw=0.9, alpha=0.7)
+        b.plot(th[::3], s[k][::3], "o", ms=3, mfc="white", color=c, label=r"$K_{%s}$" % k[1:])
+    b.plot([], [], "-", color="#8a8a85", lw=0.9, label="Kassir & Sih")
+    b.set_xticks([0, 90, 180, 270, 360])
+    b.set_xlabel(r"parametric angle $\theta_c$ [deg]")
+    b.set_title(r"(b) inclined $\pi/6$, n = %d (%d dof)" % (ri[-1]["n"], ri[-1]["unknowns"]), loc="left")
+    b.set_ylim(-0.5, 1.15)
+    b.legend(fontsize=6.5, ncol=4, loc="upper center")
+    c = ax[1, 0]
+    dof = [r["unknowns"] for r in xs]
+    c.loglog(dof, [r["KI_avg_err"] for r in xs], "o-", color="#2a78d6", label=r"in plane, mean $K_I$")
+    lab = {"t2_KI_0": (r"$K_I$, $\theta_c = 0$", "#2a78d6"), "t2_KII_0": (r"$K_{II}$, $\theta_c = 0$", "#eb6834"),
+           "t2_KI_90": (r"$K_I$, $\theta_c = \pi/2$", "#6f47d6"), "t2_KIII_90": (r"$K_{III}$, $\theta_c = \pi/2$", "#1baf7a")}
+    for k, (l, col) in lab.items():
+        c.loglog([r["unknowns"] for r in ri], [r[k] for r in ri], "^:", color=col, label="inclined, " + l)
+        c.axhline(di["paper"]["table2"][k][0], color=col, lw=0.8, ls="--")
+    c.plot([], [], "--", color="#8a8a85", lw=0.8, label="paper Table 2 (dof not given)")
+    dofaxis(c)
+    c.set_xlabel("degrees of freedom")
+    c.set_ylabel("relative SIF error")
+    c.set_title("(c) SIF error", loc="left")
+    c.set_ylim(3e-4, 3.0)
+    c.legend(fontsize=5.5, loc="upper right", ncol=2)
+    e = ax[1, 1]
+    e.loglog(dof, [r["cod_L2"] for r in xs], "o-", color="#2a78d6", label="XIGABEM")
+    e.loglog([r["unknowns"] for r in ps], [r["cod_L2"] for r in ps], "^:", color="#8a8a85", label="IgBEM")
+    dofaxis(e)
+    e.set_xlabel("degrees of freedom")
+    e.set_ylabel("relative $L_2$ error of the opening")
+    e.set_title("(d) in plane: crack opening", loc="left")
+    e.legend(fontsize=7)
+    fig.suptitle(r"Elliptical crack $a = 2b$, $\nu = 0.3$ (Rocha et al. 2024, Sec. 4.2)", fontsize=10)
+    fig.tight_layout()
+    for ext in ("png", "pdf"):
+        fig.savefig(os.path.join(out, "ellipse." + ext))
+    rows = ["| n | dof | in plane: mean K_I err | opening L2 XIG / IgBEM | inclined: K_I(0) | K_II(0) | K_I(pi/2) | K_III(pi/2) |",
+            "|---|---|---|---|---|---|---|---|"]
+    pl = {r["n"]: r for r in ps}
+    ii = {r["n"]: r for r in ri}
+    for r in xs:
+        q = ii.get(r["n"])
+        rows.append("| %d | %d | %.2e | %.2e / %.2e | %s |" % (r["n"], r["unknowns"], r["KI_avg_err"], r["cod_L2"],
+                    pl[r["n"]]["cod_L2"], " | ".join("%.2e" % q[k] for k in lab) if q else "| | |"))
+    t = di["paper"]["table2"]
+    for i, name in enumerate(["paper XIGABEM", "paper VCCI [72]", "paper M-integral [72]"]):
+        rows.append("| %s | | | | %s |" % (name, " | ".join("%.2e" % t[k][i] for k in lab)))
+    with open(os.path.join(out, "ellipse_table.md"), "w") as f:
+        f.write("\n".join(rows) + "\n")
+    print("\n".join(rows))
+
+
 if __name__ == "__main__":
     for name in sys.argv[1:] or ["penny"]:
         with open(os.path.join(OUT, name, "case.json")) as f:

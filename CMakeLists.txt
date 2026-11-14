@@ -48,6 +48,7 @@ target_compile_definitions(test_crack PRIVATE IGABEM_SOURCE_DIR="${CMAKE_SOURCE_
 add_test(NAME crack_kernels COMMAND test_crack)
 add_test(NAME crack_penny COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/penny_og_i0_n5.dat --check-k 0.01)
 add_test(NAME crack_penny_inclined COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/penny_og_i45_n5.dat --check-k 0.01)
+add_test(NAME crack_ellipse COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/ellipse_i0_n5.dat --nu 0.3 --load pressure --check-k 0.02)
 add_test(NAME crack_prism COMMAND crack_prism ${CMAKE_SOURCE_DIR}/geo/crack/prism_k3.dat --check-k 1e-4)
 # local supports and loads (BcModel): exact bar fields, half-space disk load, cantilever
 add_test(NAME bc_bar COMMAND bc_validate bar ${CMAKE_SOURCE_DIR}/geo/bar_L4_p3_n8.dat --check)
