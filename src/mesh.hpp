@@ -173,6 +173,10 @@ struct SolverOptions {
   // singularity, the source point) is below far_tol, capped at n_gauss.
   // 0 keeps n_gauss everywhere (the paper's fixed-order rule).
   double far_tol = 0.0;
+  // Adaptive mode: the near-field quadtree splits a cell until n_gauss points meet near_tol (0: far_tol). Crack
+  // collocation 0.02 of a span from a patch edge drives the quadtree deep; near_tol 1e-8 halves the assembly
+  // with K unchanged to 2e-7 (penny) and 1e-9 (prism), while far_tol sets the prism's 1e-5 floor.
+  double near_tol = 0.0;
 };
 
 }  // namespace igabem

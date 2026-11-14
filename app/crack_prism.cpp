@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
   bool cond = false;
   bool factored = false;  // --factored: factor() + solveFactored(), as crack_serve runs
   int ng = 12, grade = 6;  // 8 Gauss points leave a 1e-4 floor in K (z-face elements next to the front end)
-  double shift = 0.02, far_tol = 1e-12, check_k = -1, E = 1.0, nu = 0.0, a3 = 0.0;
+  double near_tol = 1e-8, shift = 0.02, far_tol = 1e-12, check_k = -1, E = 1.0, nu = 0.0, a3 = 0.0;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--cond")) cond = true;
     else if (!std::strcmp(argv[i], "--factored")) factored = true;
@@ -45,6 +45,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--shift") && i + 1 < argc) shift = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--a3") && i + 1 < argc) a3 = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--far-tol") && i + 1 < argc) far_tol = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--near-tol") && i + 1 < argc) near_tol = std::atof(argv[++i]);
     else { std::fprintf(stderr, "unknown argument %s\n", argv[i]); return 2; }
   }
   const std::string meta = dat.substr(0, dat.size() - 4) + ".crack.json";
@@ -58,6 +59,7 @@ int main(int argc, char** argv) {
   o.discontinuous = true;
   o.quad.n_gauss = ng;
   o.quad.far_tol = far_tol;
+  o.quad.near_tol = near_tol;
   o.grade = grade;
   o.end_shift = shift;
   {

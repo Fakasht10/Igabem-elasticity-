@@ -396,7 +396,7 @@ class ElementIntegrator {
     const double q = (x - b.first).norm() / b.second;
     if (q <= 1.5) return true;
     const double rho = q + std::sqrt(q * q - 1.0);
-    return std::pow(rho, -2.0 * opt_.n_gauss) > opt_.far_tol;
+    return std::pow(rho, -2.0 * opt_.n_gauss) > (opt_.near_tol > 0.0 ? opt_.near_tol : opt_.far_tol);
   }
 
   template <class F>
