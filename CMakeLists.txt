@@ -105,6 +105,10 @@ if(Python3_FOUND)
   add_test(NAME rve_unit COMMAND ${Python3_EXECUTABLE} -m unittest rve.test_rve
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
   set_tests_properties(rve_unit PROPERTIES ENVIRONMENT "IGABEM_RVE_CELL=$<TARGET_FILE:rve_cell>;IGABEM_BEAD_CELL=$<TARGET_FILE:bead_cell>")
+  # SENB 3-point bend K_I (senb_k.py): two-mesh extrapolated K vs ASTM D5045 within 2 %, nu 0, ~10 s
+  add_test(NAME crack_senb_d5045 COMMAND ${Python3_EXECUTABLE} senb_k.py --check
+           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
+  set_tests_properties(crack_senb_d5045 PROPERTIES ENVIRONMENT IGABEM_CRACK_SERVE=$<TARGET_FILE:crack_serve>)
 endif()
 
 # Hierarchical compression (src/fast): Htool (third_party/htool, MIT, header-only) + BLAS/LAPACK.
