@@ -37,7 +37,7 @@ int main(int argc, char** argv) {
   bool enrich = true, cond = false;
   bool factored = false;  // --factored: factor() + solveFactored(), as crack_serve runs
   int ng = 8, grade = 6;
-  double shift = 0.1, far_tol = 1e-12;
+  double shift = 0.02, far_tol = 1e-12;
   double check_k = -1, E = 1.0, nu = 0.0;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--plain")) enrich = false;

@@ -57,6 +57,8 @@ add_test(NAME crack_penny_inclined COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/cr
 add_test(NAME crack_ellipse COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/ellipse_i0_n5.dat --nu 0.3 --load pressure --check-k 0.02)
 add_test(NAME crack_prism_tension COMMAND crack_tension ${CMAKE_SOURCE_DIR}/geo/crack/prismt_split_c1.dat --check 0.02)
 add_test(NAME crack_prism COMMAND crack_prism ${CMAKE_SOURCE_DIR}/geo/crack/prism_k3.dat --check-k 1e-4)
+# r^3/2 remainder + fixed-zone front grading (convergence review): 9.4% at shift 0.1 ungraded, 3.4e-3 here
+add_test(NAME crack_prism_a3_graded COMMAND crack_prism ${CMAKE_SOURCE_DIR}/geo/crack/prism_split_k3_g.dat --a3 1 --check-k 5e-3)
 # the factored path crack_serve uses (factor once, right-hand sides alone), and the server's JSON round trip
 add_test(NAME crack_penny_inclined_factored COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/penny_og_i45_n5.dat --check-k 0.01 --factored)
 add_test(NAME crack_prism_factored COMMAND crack_prism ${CMAKE_SOURCE_DIR}/geo/crack/prism_k3.dat --check-k 1e-4 --factored)

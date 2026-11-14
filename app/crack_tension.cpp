@@ -28,12 +28,13 @@ int main(int argc, char** argv) {
   }
   std::string dat = argv[1], out, kout = "strain";
   int ng = 12, grade = 6;
-  double E = 1000.0, nu = 0.3, sig = 1.0, check = -1;
+  double E = 1000.0, nu = 0.3, sig = 1.0, check = -1, shift = 0.02;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
     else if (!std::strcmp(argv[i], "--kappa-outer") && i + 1 < argc) kout = argv[++i];
     else if (!std::strcmp(argv[i], "--ng") && i + 1 < argc) ng = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--check") && i + 1 < argc) check = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--shift") && i + 1 < argc) shift = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--grade") && i + 1 < argc) grade = std::atoi(argv[++i]);
     else { std::fprintf(stderr, "unknown argument %s\n", argv[i]); return 2; }
   }
@@ -48,6 +49,7 @@ int main(int argc, char** argv) {
   o.quad.n_gauss = ng;
   o.quad.far_tol = 1e-12;
   o.grade = grade;
+  o.end_shift = shift;
   {
     const Json J = Json::load(meta);
     for (size_t i = 0; i < J["dirichlet"].size(); ++i) o.dirichlet.push_back(J["dirichlet"][i].asInt());

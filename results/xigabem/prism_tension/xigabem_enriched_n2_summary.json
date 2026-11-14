@@ -1,1 +1,1 @@
-{"geometry": "/home/user/repo/geo/crack/prismt_enriched_c2.dat", "kappa_outer": "strain", "unknowns": 7314, "F_2d": 2.829125, "KI_mid": 2.749114, "KI_mid_diff": 2.828120e-02, "KII_max": 3.824e-11, "KIII_max": 4.031e-11, "residual": 6.163e-13, "t_assemble": 11.738, "t_solve": 3.224}
+{"geometry": "/home/user/repo/geo/crack/prismt_enriched_c2.dat", "kappa_outer": "strain", "unknowns": 7314, "F_2d": 2.829125, "KI_mid": 2.591753, "KI_mid_diff": 8.390299e-02, "KII_max": 2.504e-10, "KIII_max": 6.808e-10, "residual": 1.830e-12, "t_assemble": 13.642, "t_solve": 3.210}
