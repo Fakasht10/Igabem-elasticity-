@@ -8,6 +8,7 @@ STL/3MF files, repaired to closed outward surfaces, written back to STL/3MF with
 
     m2, info = cad_to_mesh2("geo/step/occt_screw.step", volume=True)   # tri6 + TET10, mid-nodes on the CAD
     python3 -m geomio in.step|in.stl|in.3mf out.stl|out.3mf [--h H] [--curvature N] [--ascii] [--segment DEG]
+    python3 -m geomio in.stl out.stl --gate --max-hole 0.5    # stl_repair_core check + conservative repair
     python3 -m geomio in.step out.vtu|out.msh --order 2 [--volume]
 
 The STL/3MF handling borrows from materializr (github.com/materializr-cad/materializr, GPLv3, src/io/StlIO.cpp,
@@ -15,6 +16,7 @@ StlExport.cpp, ThreeMfExport.cpp, commit c5f9aa5); the second-order meshing from
 bemkit/mesh.py, MIT, commit 553dd2a); see the module headers for what was taken and what changed."""
 from .mesh import TriMesh, edge_report, is_watertight, orient, repair, segment_faces, weld, winding_number  # noqa
 from .stl import StlError, read_stl, write_stl  # noqa: F401
+from .stlgate import StlGateError, read_stl_gated  # noqa: F401  (needs the optional stl_repair_core package)
 from .threemf import read_3mf, write_3mf  # noqa: F401
 
 
@@ -29,13 +31,13 @@ def cad_to_mesh2(*a, **k):
     return f(*a, **k)
 
 
-def load(path, **k):
-    """any supported file -> (TriMesh, info)."""
+def load(path, gate=None, **k):
+    """any supported file -> (TriMesh, info).  gate: dict of stl_repair_core thresholds -> gated STL intake."""
     ext = path.lower().rsplit(".", 1)[-1]
     if ext in ("step", "stp", "iges", "igs", "brep"):
         return cad_to_mesh(path, **k)
     if ext == "stl":
-        return read_stl(path, **k)
+        return read_stl_gated(path, **gate, **k) if gate is not None else read_stl(path, **k)
     if ext == "3mf":
         m, info = repair(read_3mf(path))
         return m, info

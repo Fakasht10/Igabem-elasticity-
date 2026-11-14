@@ -53,6 +53,14 @@ stl-repair-core repair input.stl -o repaired.stl --json report.json \
 The exit code is 0 for PASS and 1 for FAIL. `--protect-tags` protects every non-zero binary
 attribute word (geomio writes CAD face ids there) and every named ASCII `solid` block.
 
+## geomio
+
+`python/geomio/stlgate.py` uses this package as an optional gate in front of geomio's STL reader. It keeps CAD face ids, and patch faces take the id of the best-aligned tagged neighbour:
+
+```python
+m, info = geomio.read_stl_gated("part.stl", max_hole_diameter=0.5, report="r.json")   # raises StlGateError on FAIL
+```
+
 ## Report (JSON)
 
 `status`, `problems`, `before`/`after` diagnosis, `adopted_operations` and
