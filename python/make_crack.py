@@ -22,6 +22,7 @@ the number of elements per unit length k.
 usage: make_crack.py penny [--n 3,4,5,6,7] [--incline DEG] [--out geo/crack]
        make_crack.py ellipse [--aspect 0.5] [--n ...] [--incline DEG] [--layout disk|ogrid]   (paper Sec. 4.2)
        make_crack.py prism --n 1,2,3,4
+       make_crack.py senb [--a-w 0.5] [--width 10] [--thickness 4] --n 1,2,3,4   (3-point bend coupon, S = 4W)
 """
 
 import argparse
@@ -215,10 +216,127 @@ def prism(k):
     return outer + plus + minus, meta
 
 
+def stations(a, b, focus, h0, hmax, ratio=1.5):
+    """Breakpoints of [a, b]: element size h0 at each focus point (a breakpoint itself), growing by `ratio` per
+    element away from it up to hmax, then uniform elements of at most hmax."""
+    pts = {a, b}
+    fs = sorted(f for f in focus if a - 1e-12 <= f <= b + 1e-12)
+    for k, f in enumerate(fs):
+        pts.add(f)
+        lo = 0.5 * (fs[k - 1] + f) if k else a          # each run stays in its own half-way cell
+        hi = 0.5 * (f + fs[k + 1]) if k + 1 < len(fs) else b
+        for sgn, end in ((-1, lo), (1, hi)):
+            x, h = f, h0
+            while h < hmax and (x + sgn * h - end) * sgn < -0.3 * h0:
+                x += sgn * h
+                pts.add(x)
+                h *= ratio
+    pts = sorted(pts)
+    out = [pts[0]]
+    for x0, x1 in zip(pts[:-1], pts[1:]):
+        m = max(1, math.ceil((x1 - x0) / hmax - 1e-9))
+        out += [x0 + (x1 - x0) * k / m for k in range(1, m + 1)]
+    # drop slivers left where a graded run meets an end or another run
+    keep = [out[0]]
+    for x in out[1:]:
+        if x - keep[-1] < 0.3 * h0 and x != b:
+            continue
+        keep.append(x)
+    if keep[-1] - keep[-2] < 0.3 * h0 and len(keep) > 2 and keep[-2] not in focus:
+        del keep[-2]
+    return keep
+
+
+def box_patch(o, eu, ev, su, sv, outward, p=2):
+    """Flat degree-p patch over o + s eu + t ev with element breakpoints su, sv (fractions in [0, 1], ends
+    included); u reversed if needed so the normal points along `outward`."""
+    o, eu, ev = map(np.asarray, (o, eu, ev))
+    U = [0.0] * p + list(su) + [1.0] * p
+    V = [0.0] * p + list(sv) + [1.0] * p
+    gu = [sum(U[i + 1:i + p + 1]) / p for i in range(len(U) - p - 1)]
+    gv = [sum(V[i + 1:i + p + 1]) / p for i in range(len(V) - p - 1)]
+    X = np.array([[o + a * eu + b * ev for a in gu] for b in gv])
+    P = mg.Patch(p, p, U, V, np.concatenate([X, np.ones(X.shape[:2] + (1,))], axis=-1))
+    return P if np.dot(np.cross(eu, ev), outward) > 0 else _flip_u(P)
+
+
+def senb(n, W=10.0, B=4.0, a_W=0.5, S_W=4.0, pad=0.05, overhang=0.5, crown=0.2):
+    """Single-edge-notched bend bar with a straight through crack (ASTM D5045 / E399 SENB).
+
+    x along the span (-L/2..L/2, L = S + 2 overhang W), y up (0..W, crack mouth on y = 0), z through the
+    thickness (0..B). Crack plane x = 0 (m = e1), crack 0 <= y <= a, front y = a along z. Support pads of width
+    pad W on y = 0 at x = -+S/2 (patch group "supports"), load-nose pad on y = W at x = 0 ("nose"), end faces
+    ("ends"). Every patch has dofs of its own (patch-discontinuous, as the prism).
+
+    The front enrichment lives in a fixed window, as the penny's crown ring: the crack face nearest the front
+    (a - c .. a, c ~ crown a) and on each z face the square |x| <= c, |y - a| <= c, split at x = 0 (the front
+    ends on them). Enriching whole faces instead lets K absorb the field's higher-order terms (measured: K_I
+    erratic within 5-10 % under refinement). Level n: element size a/(4n) at the front, at most W/(2n) away
+    from it, growth 1.5."""
+    e1, e2, e3 = np.eye(3)
+    a, S = a_W * W, S_W * W
+    L2, w2 = 0.5 * S + overhang * W, 0.5 * pad * W
+    h0, hmax = a / (4.0 * n), W / (2.0 * n)
+    sy = stations(0.0, W, [a], h0, hmax)                                     # y on z faces and crack faces
+    sxl, sxr = stations(-L2, 0.0, [0.0], h0, hmax), stations(0.0, L2, [0.0], h0, hmax)
+    near = lambda st, v: min(st, key=lambda t: abs(t - v))
+    ylo, yhi = near(sy[:-1], a - crown * a), near(sy[1:], a + crown * a)
+    xlo, xhi = near(sxl[:-1], -crown * a), near(sxr[1:], crown * a)
+    zs = stations(0.0, B, [0.0, B], 2 * h0, hmax)                           # through the thickness
+    def cut(st, lo, hi):
+        pts = [t for t in st if lo - 1e-12 <= t <= hi + 1e-12]
+        return [(t - lo) / (hi - lo) for t in pts]
+    def rect(x0, x1, y0, y1, z, nz):
+        sx = sxl if x1 <= 0 else sxr
+        return box_patch([x0, y0, z], (x1 - x0) * e1, (y1 - y0) * e2, cut(sx, x0, x1), cut(sy, y0, y1), nz)
+    outer, names = [], {"supports": [], "nose": [], "bottom": [], "top": [], "ends": [], "z_window": [], "z_far": []}
+    def add(P, group):
+        names[group].append(len(outer))
+        outer.append(P)
+    for z, nz in ((0.0, -e3), (B, e3)):
+        add(rect(xlo, 0.0, ylo, yhi, z, nz), "z_window")
+        add(rect(0.0, xhi, ylo, yhi, z, nz), "z_window")
+        for x0, x1, xc in ((-L2, xlo, None), (xhi, L2, None), (xlo, 0.0, 1), (0.0, xhi, 1)):
+            if xc is None:
+                add(rect(x0, x1, 0.0, W, z, nz), "z_far")
+            else:
+                add(rect(x0, x1, 0.0, ylo, z, nz), "z_far")
+                add(rect(x0, x1, yhi, W, z, nz), "z_far")
+    # bottom y = 0 (split at the mouth and the support pads), top y = W (split at the nose), ends
+    bx = [-L2, -0.5 * S - w2, -0.5 * S + w2, 0.0, 0.5 * S - w2, 0.5 * S + w2, L2]
+    zf = [t / B for t in zs]
+    for lo, hi in zip(bx[:-1], bx[1:]):
+        sx = sxl if hi <= 0 else sxr
+        grp = "supports" if abs(abs(0.5 * (lo + hi)) - 0.5 * S) < w2 else "bottom"
+        su = cut(sorted(set(sx) | {lo, hi}), lo, hi)
+        add(box_patch([lo, 0, 0], (hi - lo) * e1, B * e3, su, zf, -e2), grp)
+    for lo, hi in ((-L2, -w2), (-w2, w2), (w2, L2)):
+        su = cut(sorted(set(sxl) | set(sxr) | {lo, hi}), lo, hi)
+        add(box_patch([lo, W, 0], (hi - lo) * e1, B * e3, su, zf, e2), "nose" if lo == -w2 else "top")
+    for x, nx in ((-L2, -e1), (L2, e1)):
+        add(box_patch([x, 0, 0], W * e2, B * e3, cut(stations(0, W, [], hmax, hmax), 0, W), zf, nx), "ends")
+    # crack faces (u along z, v toward the front): mouth part 0..a-c, crown a-c..a
+    plus = [box_patch([0, 0, 0], B * e3, ylo * e2, zf, cut(sy, 0.0, ylo), -e1),
+            box_patch([0, ylo, 0], B * e3, (a - ylo) * e2, zf, cut(sy, ylo, a), -e1)]
+    minus = [box_patch([0, 0, 0], B * e3, ylo * e2, zf, cut(sy, 0.0, ylo), e1),
+             box_patch([0, ylo, 0], B * e3, (a - ylo) * e2, zf, cut(sy, ylo, a), e1)]
+    n0 = len(outer)
+    meta = {
+        "kind": "senb", "outer": [0, n0], "plus": [n0, n0 + 2], "minus": [n0 + 2, n0 + 4], "crown": [n0 + 1],
+        "front_edge": "v1", "enriched_outer": [[p, 0] for p in names["z_window"]], "patches": names,
+        "plane": {"point": [0.0, 0.5 * a, 0.5 * B], "normal": [1.0, 0.0, 0.0], "e1": [0.0, 1.0, 0.0], "e3": [0.0, 0.0, 1.0]},
+        "W": W, "B": B, "a": a, "S": S, "L": 2 * L2, "pad": pad * W, "crown_c": a - ylo, "n": n,
+    }
+    return outer + plus + minus, meta
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("kind", choices=["penny", "ellipse", "prism"])
+    ap.add_argument("kind", choices=["penny", "ellipse", "prism", "senb"])
     ap.add_argument("--aspect", type=float, default=0.5, help="ellipse: b / a")
+    ap.add_argument("--a-w", type=float, default=0.5, help="senb: crack depth / width")
+    ap.add_argument("--width", type=float, default=10.0, help="senb: W")
+    ap.add_argument("--thickness", type=float, default=4.0, help="senb: B")
     ap.add_argument("--n", default="3,4,5,6,7")
     ap.add_argument("--incline", type=float, default=0.0)
     ap.add_argument("--layout", choices=["disk", "ogrid"], default="disk")
@@ -229,6 +347,9 @@ def main(argv=None):
         if a.kind == "prism":
             patches, meta = prism(n)
             name = "prism_k%d" % n
+        elif a.kind == "senb":
+            patches, meta = senb(n, W=a.width, B=a.thickness, a_W=a.a_w)
+            name = "senb_aw%g_n%d" % (a.a_w, n)
         else:
             asp = a.aspect if a.kind == "ellipse" else 1.0
             patches, meta = penny(n, incline=a.incline, layout=a.layout, aspect=asp)
