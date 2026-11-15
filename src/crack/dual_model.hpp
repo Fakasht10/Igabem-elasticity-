@@ -434,6 +434,24 @@ class CrackModel {
     }
   }
 
+  // Residual of the crack-face boundary equation at a face point (patch p, parameter xi) for the solutions X of the
+  // loads: the DBIE on the upper face, the TBIE (traction equation) on the lower face; a X - b with the operator
+  // row assembled exactly as a collocation row there. Zero at collocation points (square systems).
+  std::vector<Vec3> faceResidual(const ElementIntegrator& quad, int p, const Vec2& xi, const std::vector<TractionFn>& loads,
+                             const std::vector<Eigen::VectorXd>& X) const {
+    if (face[p] == 0) throw std::runtime_error("faceResidual(): crack-face patches only");
+    Row r{face[p] > 0 ? Row::Upper : Row::Lower, p, xi, Vec3::Zero(), Vec3::Zero(), PatchEval{}, {}};
+    mesh.patches[p].eval(xi(0), xi(1), r.E);
+    r.x = r.E.x;
+    r.N = (r.E.normal() * mesh.normal_sign).normalized();
+    Eigen::MatrixXd a = Eigen::MatrixXd::Zero(3, ncols), b = Eigen::MatrixXd::Zero(3, int(loads.size()));
+    if (r.kind == Row::Lower) tbieRow(quad, r, loads, a, b);
+    else dbieRow(quad, r, loads, a, b);
+    std::vector<Vec3> out;
+    for (size_t l = 0; l < loads.size(); ++l) out.push_back(a * X[l] - b.col(l));
+    return out;
+  }
+
   // The lower-face point coincident with x on the mirror patch.
   SurfacePoint coincident(int p, const Vec3& x) const {
     const int q = mirror[p];

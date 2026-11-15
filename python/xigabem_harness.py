@@ -43,11 +43,12 @@ CASES = {
         "grade": "0.05,0.3,2",
         "formulations": {"xigabem": [], "igabem": ["--plain"]},
         # independent K: interaction integral on front slices, annulus 0.1 R (crack/interaction.hpp)
-        "extra": ["--mint", "0.1"],
+        "extra": ["--mint", "0.1", "--indicator"],
         "est_s": {3: 4, 4: 6, 5: 8, 6: 10, 7: 14, 9: 25, 11: 55},
         # gates on the finest XIGABEM level (n = 11): mean |K_I error| (paper reaches 1.4e-3 at n = 7), |K_II|, |K_III|
         # (exactly zero by symmetry; 1e-5 of K_I = 1.13 is quadrature-level asymmetry), and the M-integral K_I
-        "gates": {"KI_avg_err": 2.0e-3, "KII_avg_abs": 1.0e-5, "KIII_avg_abs": 1.0e-5, "KM_I_avg_err": 1.0e-3},
+        "gates": {"KI_avg_err": 2.0e-3, "KII_avg_abs": 1.0e-5, "KIII_avg_abs": 1.0e-5, "KM_I_avg_err": 1.0e-3,
+                  "effectivity": [0.3, 3.0]},
         "paper": {"table1_KI_signed_avg_err": PAPER_PENNY_TABLE1},
     },
     "penny_inclined": {
@@ -119,12 +120,15 @@ CASES = {
         "layouts": ["split", "split_graded"],
         "grade": "0.1,0.3,2",
         "formulations": {"xigabem": []},
-        # --mint: interaction-integral K at 5 stations, annulus 0.2 (0.4 of the crack depth)
-        "extra": ["--a3", "1", "--mint", "0.2"],
+        # --mint: interaction-integral K at 5 stations, annulus 0.2 (0.4 of the crack depth); --indicator: the TBIE
+        # residual estimate eta against the crack energy error (effectivity)
+        "extra": ["--a3", "1", "--mint", "0.2", "--indicator"],
+        # residual-driven front grading from k = 2 (python/adapt_front.py), shown against the hand grading
+        "post": ["adapt_front.py"],
         "est_s": {1: 10, 2: 15, 3: 25, 4: 35, 5: 45},
         # the K unknown absorbs the r^3/2 remainder at O(h) (review: 9.4% at shift 0.1, k = 3); grading cuts it ~10x.
         # KM_track_I: the gap |K_dof - K_M| over the true K_dof error (or its inverse), at most 3
-        "gates": {"KI_err": 5.0e-3, "KM_track_I": 3.0},
+        "gates": {"KI_err": 5.0e-3, "KM_track_I": 3.0, "effectivity": [0.3, 3.0]},
         "gate_layouts": ["split_graded"],
         "paper": {},
     },
@@ -197,13 +201,23 @@ def run_case(name, force, timeout):
     verdict = {}
     for lay in c.get("gate_layouts", c["layouts"]):
         fin = max((r for r in runs if r["layout"] == lay and r["formulation"] == "xigabem"), key=lambda r: r["n"])
-        verdict[lay] = {k: {"value": fin[k], "gate": g, "pass": fin[k] <= g} for k, g in c["gates"].items()}
+        # a gate is an upper bound, or a [lo, hi] range
+        verdict[lay] = {k: {"value": fin[k], "gate": g,
+                            "pass": (g[0] <= fin[k] <= g[1]) if isinstance(g, list) else fin[k] <= g}
+                        for k, g in c["gates"].items()}
     with open(os.path.join(out, "case.json"), "w") as fh:
         json.dump({"case": name, "title": c["title"], "runs": runs, "gates": verdict, "paper": c["paper"]}, fh, indent=1)
+    for script in c.get("post", []):
+        t0 = time.time()
+        r = subprocess.run([sys.executable, os.path.join(ROOT, "python", script)], capture_output=True, text=True,
+                           timeout=timeout)
+        print("  %-22s %6.1f s%s" % (script, time.time() - t0, "" if r.returncode == 0 else "  (target not met)"))
+        print("".join("    " + l + "\n" for l in r.stdout.splitlines()), end="")
     ok = all(v["pass"] for g in verdict.values() for v in g.values())
     for lay, g in verdict.items():
         for k, v in g.items():
-            print("  gate %-6s %-13s %.3e <= %.1e  %s" % (lay, k, v["value"], v["gate"], "ok" if v["pass"] else "FAIL"))
+            gs = ("in [%.1g, %.1g]" % tuple(v["gate"])) if isinstance(v["gate"], list) else "<= %.1e" % v["gate"]
+            print("  gate %-6s %-13s %.3e %s  %s" % (lay, k, v["value"], gs, "ok" if v["pass"] else "FAIL"))
     return ok
 
 

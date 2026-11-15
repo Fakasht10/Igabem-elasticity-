@@ -96,12 +96,20 @@ def _insert(P, n):
 # around the front cut that 10-20x. GRADE = (zone d, ratio q, layers L) puts knot lines at distances d q^j,
 # j < L, from the front; a graded line is dropped where an existing knot lies within half its distance.
 GRADE = None
+# Explicit knot lines at these distances from the front (python/adapt_front.py), kept unless they coincide with a
+# knot already there.
+FRONT_LINES = []
 
 
 def _merge(knots, f, sign, scale):
     """Interior breakpoints `knots` plus graded lines on the side `sign` (+1: increasing parameter) of a front at
     parameter f; `scale` is the physical length per unit parameter. Returns the sorted interior breakpoints."""
     out = sorted(float(k) for k in knots)
+    for dl in FRONT_LINES:
+        g = f + sign * dl / scale
+        if 0.0 < g < 1.0 and all(abs(g - k) > 1e-12 for k in out):
+            out.append(g)
+    out.sort()
     if not GRADE:
         return out
     d, q, L = GRADE
@@ -471,13 +479,15 @@ def main(argv=None):
     ap.add_argument("--layout", choices=["disk", "ogrid"], default="disk")
     ap.add_argument("--grade", default="",
                     help="fixed-zone front grading 'd,q,L' (zone d in length units, ratio q, L layers); '' = none")
+    ap.add_argument("--front-lines", default="", help="extra knot lines at these distances from the front 'd1,d2,..'")
     ap.add_argument("--suffix", default="", help="appended to the geometry name")
     ap.add_argument("--out", default=ROOT)
     a = ap.parse_args(argv)
     a.lateral_set = a.lateral is not None
     a.lateral = a.lateral or "split"
-    global GRADE
+    global GRADE, FRONT_LINES
     GRADE = tuple(float(x) for x in a.grade.split(",")) if a.grade else None
+    FRONT_LINES = [float(x) for x in a.front_lines.split(",")] if a.front_lines else []
     os.makedirs(a.out, exist_ok=True)
     for n in map(int, a.n.split(",")):
         if a.kind == "prism":  # --lateral split cuts the z faces at the crack plane
@@ -498,6 +508,8 @@ def main(argv=None):
         name += a.suffix
         if GRADE:
             meta["grade"] = list(GRADE)
+        if FRONT_LINES:
+            meta["front_lines"] = FRONT_LINES
         path = os.path.join(a.out, name + ".dat")
         mg.write_dat(path, patches, name)
         with open(os.path.join(a.out, name + ".crack.json"), "w") as f:

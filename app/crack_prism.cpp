@@ -1,6 +1,6 @@
 // Prism with an edge crack, pure-mode loading (Rocha, Trevelyan & Leonel 2024, Sec. 4.3, Table 3, Fig. 21).
 //
-//   crack_prism geo/crack/prism_k2.dat [--out prefix] [--check-k tol] [--nu NU] [--cond] [--factored] [--a3 A] [--mint rho]
+//   crack_prism geo/crack/prism_k2.dat [--out prefix] [--check-k tol] [--nu NU] [--cond] [--factored] [--a3 A] [--mint rho] [--indicator]
 //
 // [-1, 1]^2 x [0, 2], crack y = 0, -1 <= x <= 0, straight front x = 0 along z (python/make_crack.py prism). The
 // single-term Williams field with K_M = 1 (Eq. 29; plane strain for I and II, antiplane for III) is an exact
@@ -35,6 +35,7 @@ int main(int argc, char** argv) {
   bool factored = false;  // --factored: factor() + solveFactored(), as crack_serve runs
   int ng = 12, grade = 6;  // 8 Gauss points leave a 1e-4 floor in K (z-face elements next to the front end)
   double near_tol = 1e-8, shift = 0.02, far_tol = 1e-12, check_k = -1, E = 1.0, nu = 0.0, a3 = 0.0, mint = -1;
+  bool indicator = false;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--cond")) cond = true;
     else if (!std::strcmp(argv[i], "--factored")) factored = true;
@@ -46,6 +47,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--shift") && i + 1 < argc) shift = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--a3") && i + 1 < argc) a3 = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--mint") && i + 1 < argc) mint = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--indicator")) indicator = true;
     else if (!std::strcmp(argv[i], "--far-tol") && i + 1 < argc) far_tol = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--near-tol") && i + 1 < argc) near_tol = std::atof(argv[++i]);
     else { std::fprintf(stderr, "unknown argument %s\n", argv[i]); return 2; }
@@ -199,6 +201,67 @@ int main(int argc, char** argv) {
     t_mint = std::chrono::duration<double>(std::chrono::steady_clock::now() - tm0).count();
   }
 
+  // Residual indicator (mode I): the TBIE residual r at 2 x 2 Gauss points of every lower-face element,
+  // eta_e^2 = h_e int_e |r|^2 (h_e = sqrt(area)), and the crack energy error int_e de . r with de the exact error of
+  // the opening (r is W applied to the error where only the faces err, so sum de . r estimates |||e|||^2).
+  double eta = -1, energy = -1, t_ind = 0;
+  if (indicator) {
+    const auto ti0 = std::chrono::steady_clock::now();
+    std::vector<const Element*> els;
+    for (const Element& e : M.mesh.elements) if (M.face[e.patch] == -1) els.push_back(&e);
+    std::vector<double> e2(els.size()), en(els.size()), d0(els.size()), d1(els.size());
+    const ElementIntegrator quad(M.mesh, o.quad);
+    const GaussRule g = gaussLegendre(2);
+    const std::vector<TractionFn> l0 = {loads[0]};
+    const std::vector<Eigen::VectorXd> x0 = {X[0]};
+#pragma omp parallel for schedule(dynamic)
+    for (long i = 0; i < long(els.size()); ++i) {
+      const Element& e = *els[i];
+      double area = 0, s2 = 0, se = 0, rmin = 1e300, rmax = 0;
+      for (int a = 0; a < 2; ++a)
+        for (int b = 0; b < 2; ++b) {
+          const Vec2 uv(e.rect.u0 + e.rect.du() * g.x[a], e.rect.v0 + e.rect.dv() * g.x[b]);
+          PatchEval Ev;
+          M.mesh.patches[e.patch].eval(uv(0), uv(1), Ev);
+          const double w = g.w[a] * g.w[b] * e.rect.du() * e.rect.dv() * Ev.normal().norm();
+          const Vec3 r = M.faceResidual(quad, e.patch, uv, l0, x0)[0];
+          const SurfacePoint sb = M.coincident(e.patch, Ev.x);
+          const Vec3 de = (M.displacement(sb.patch, sb.xi, X[0]) - uExact(0, Ev.x, sb.patch)) -
+                          (M.displacement(e.patch, uv, X[0]) - uExact(0, Ev.x, e.patch));
+          area += w;
+          s2 += w * r.squaredNorm();
+          se += w * de.dot(r);
+        }
+      for (double cu : {e.rect.u0, e.rect.u1})
+        for (double cv : {e.rect.v0, e.rect.v1}) {
+          PatchEval Ev;
+          M.mesh.patches[e.patch].eval(cu, cv, Ev);
+          double rr, th;
+          polar(Ev.x, rr, th);
+          rmin = std::min(rmin, rr);
+          rmax = std::max(rmax, rr);
+        }
+      e2[i] = std::sqrt(area) * s2;
+      en[i] = se;
+      d0[i] = rmin;
+      d1[i] = rmax;
+    }
+    eta = 0;
+    energy = 0;
+    for (size_t i = 0; i < els.size(); ++i) { eta += e2[i]; energy += en[i]; }
+    eta = std::sqrt(eta);
+    energy = std::sqrt(std::abs(energy));
+    if (!out.empty()) {
+      FILE* fi = std::fopen((out + "_indicator.csv").c_str(), "w");
+      std::fprintf(fi, "patch,u0,u1,v0,v1,r0,r1,eta2,energy\n");
+      for (size_t i = 0; i < els.size(); ++i)
+        std::fprintf(fi, "%d,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.6e,%.6e\n", els[i]->patch, els[i]->rect.u0,
+                     els[i]->rect.u1, els[i]->rect.v0, els[i]->rect.v1, d0[i], d1[i], e2[i], en[i]);
+      std::fclose(fi);
+    }
+    t_ind = std::chrono::duration<double>(std::chrono::steady_clock::now() - ti0).count();
+  }
+
   // relative L2 error of the displacement on the z faces and the crack faces, per mode
   double l2[3];
   {
@@ -237,9 +300,11 @@ int main(int argc, char** argv) {
   c += std::snprintf(line + c, sizeof line - c, ", \"KI_err\": %.6e, \"KII_err\": %.6e, \"KIII_err\": %.6e, "
                      "\"cross_max\": %.6e", err[0][0], err[1][1], err[2][2], cross);
   c += std::snprintf(line + c, sizeof line - c, ", \"KM_err\": [%.6e, %.6e, %.6e], \"KM_gap\": [%.6e, %.6e, %.6e], "
-                     "\"Kdof_err_at_stations\": [%.6e, %.6e, %.6e], \"KM_track_I\": %.4f, \"t_mint\": %.3f", kmErr[0],
+                     "\"Kdof_err_at_stations\": [%.6e, %.6e, %.6e], \"KM_track_I\": %.4f, \"t_mint\": %.3f, "
+                     "\"eta\": %.6e, \"energy_err\": %.6e, \"effectivity\": %.4f, \"t_indicator\": %.3f", kmErr[0],
                      kmErr[1], kmErr[2], kmGap[0], kmGap[1], kmGap[2], kdErr[0], kdErr[1], kdErr[2],
-                     mint > 0 ? std::max(kmGap[0] / kdErr[0], kdErr[0] / kmGap[0]) : -1.0, t_mint);
+                     mint > 0 ? std::max(kmGap[0] / kdErr[0], kdErr[0] / kmGap[0]) : -1.0, t_mint, eta, energy,
+                     indicator && energy > 0 ? eta / energy : -1.0, t_ind);
   std::snprintf(line + c, sizeof line - c, ", \"K_max_err\": %.6e, \"cond\": %.6e, \"residual\": %.3e, "
                 "\"t_assemble\": %.3f, \"t_solve\": %.3f}", emax, M.condition, M.residual, M.t_assemble, M.t_solve);
   std::printf("%s\n", line);
