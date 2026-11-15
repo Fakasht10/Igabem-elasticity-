@@ -30,14 +30,14 @@ using namespace igabem::crack;
 
 int main(int argc, char** argv) {
   if (argc < 2) {
-    std::fprintf(stderr, "usage: crack_case geometry.dat [--plain] [--load far|pressure] [--out prefix] [--cond] [--check-k tol] [--check-cond C] [--discontinuous]\n");
+    std::fprintf(stderr, "usage: crack_case geometry.dat [--plain] [--load far|pressure] [--out prefix] [--cond] [--check-k tol] [--check-cond C] [--discontinuous] [--near-tol T]\n");
     return 2;
   }
   std::string dat = argv[1], load = "far", out;
   bool enrich = true, cond = false, disc = false;
   bool factored = false;  // --factored: factor() + solveFactored(), as crack_serve runs
   int ng = 8, grade = 6;
-  double shift = 0.02, far_tol = 1e-12;
+  double near_tol = 1e-8, shift = 0.02, far_tol = 1e-12;
   double check_k = -1, check_cond = -1, E = 1.0, nu = 0.0;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--plain")) enrich = false;
@@ -53,6 +53,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--grade") && i + 1 < argc) grade = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--shift") && i + 1 < argc) shift = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--far-tol") && i + 1 < argc) far_tol = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--near-tol") && i + 1 < argc) near_tol = std::atof(argv[++i]);
     else { std::fprintf(stderr, "unknown argument %s\n", argv[i]); return 2; }
   }
   const std::string meta = dat.substr(0, dat.size() - 4) + ".crack.json";
@@ -68,6 +69,7 @@ int main(int argc, char** argv) {
   o.end_shift = shift;
   o.discontinuous = disc;
   o.quad.far_tol = far_tol;
+  o.quad.near_tol = near_tol;
   // outer patches: bottom (outward -e2) clamped
   {
     std::vector<Patch> P = loadDat(dat);

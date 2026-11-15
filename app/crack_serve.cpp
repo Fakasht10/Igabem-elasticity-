@@ -8,7 +8,7 @@
 //   {"cmd": "solve", "id": "any",
 //    "geometry": "/abs/geo/crack/penny_og_i0_n5.dat",          // sidecar <stem>.crack.json beside it
 //    "material": {"nu": 0.3, "E": 1.0},                        // K does not depend on E under traction loads
-//    "options": {"enrich": true, "ng": 8, "grade": 6, "shift": 0.02, "far_tol": 1e-12, "discontinuous": false},
+//    "options": {"enrich": true, "ng": 8, "grade": 6, "shift": 0.02, "far_tol": 1e-12, "near_tol": 1e-8, "discontinuous": false},
 //    "clamp": [{"normal": [0, -1, 0]}, {"patches": [3, 4]}],   // outer patches held at zero displacement
 //    "loads": [{"name": "far", "tractions": [{"normal": [0, 1, 0], "t": [0, 1, 0]}], "crack_pressure": 0}],
 //    "samples": 40}                                            // front samples per front piece
@@ -113,6 +113,7 @@ std::string solve(const Json& rq) {
   o.grade = int(oj.get("grade", 6.0));
   o.end_shift = oj.get("shift", 0.02);
   o.quad.far_tol = oj.get("far_tol", 1e-12);
+  o.quad.near_tol = oj.get("near_tol", 1e-8);
   o.discontinuous = oj.has("discontinuous") && oj["discontinuous"].asBool();
   if (!o.enrich) throw std::runtime_error("SIFs need the enrichment (options.enrich = true)");
 
@@ -138,7 +139,7 @@ std::string solve(const Json& rq) {
   std::ostringstream key;
   key.precision(17);
   key << dat << '|' << st.st_size << '|' << st.st_mtime << '|' << nu << '|' << o.enrich << o.discontinuous << '|'
-      << o.quad.n_gauss << '|' << o.grade << '|' << o.end_shift << '|' << o.quad.far_tol << '|';
+      << o.quad.n_gauss << '|' << o.grade << '|' << o.end_shift << '|' << o.quad.far_tol << ',' << o.quad.near_tol << '|';
   for (int p : o.dirichlet) key << p << ',';
 
   CrackModel* M = nullptr;

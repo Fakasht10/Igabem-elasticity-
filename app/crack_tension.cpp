@@ -48,6 +48,7 @@ int main(int argc, char** argv) {
   o.discontinuous = true;
   o.quad.n_gauss = ng;
   o.quad.far_tol = 1e-12;
+  o.quad.near_tol = 1e-8;  // near-field quadtree tolerance (see SolverOptions::near_tol)
   o.grade = grade;
   o.end_shift = shift;
   {
