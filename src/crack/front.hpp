@@ -80,7 +80,8 @@ struct FrontPiece {
   const Patch* P = nullptr;
   int patch = -1;       // upper-face crown patch
   double u0 = 0, u1 = 1;
-  int first_col = 0;    // first scalar column of K_{s,M}: first_col + 3 s + M
+  std::vector<int> kcol;  // scalar column of K_{s,M}: kcol[s] + M (pieces joined at a front corner share the end one)
+  std::vector<int> acol;  // second Williams term (r^3/2) amplitude A_{s,M}: acol[s] + M (Front::second only)
   std::vector<Vec4> Pw;  // homogeneous control points of the edge
 
   void init(const Patch* Pa, int p) {
@@ -174,6 +175,10 @@ struct Front {
   Vec3 m;                          // crack normal (upper face's solid side)
   Vec3 centroid;                   // a point of the crack (orients n)
   double mu = 1, kappa = 1;
+  // second: also the n = 3 (r^3/2) Williams term, amplitude A_{s,M} per front basis function; ell its length scale
+  // (the term is sqrt(ell / 2 pi) (r / ell)^3/2 / 2 mu times the angular functions, so A ~ K in size)
+  bool second = false;
+  double ell = 1.0;
   double kappa_outer = 0;  // Kolosov constant on outer (sign 0) patches; 0: kappa (paper Sec. 4.4 tries plane stress)
   int ncols = 0;
 
@@ -212,11 +217,37 @@ struct Front {
     int c = 0;
     for (int i = 0; i < n; ++i)
       for (int M = 0; M < 3; ++M) {
-        cols[c] = F.first_col + 3 * s[i] + M;
+        cols[c] = F.kcol[s[i]] + M;
         vals[c] = R[i] * w[M];
         ++c;
       }
+    if (second) {
+      Vec3 w3[3];
+      williams3(r, th, mu, sign == 0 && kappa_outer > 0 ? kappa_outer : kappa, ell, nv, m, tv, w3);
+      for (int i = 0; i < n; ++i)
+        for (int M = 0; M < 3; ++M) {
+          cols[c] = F.acol[s[i]] + M;
+          vals[c] = R[i] * w3[M];
+          ++c;
+        }
+    }
     return c;
+  }
+
+  // The n = 3 term of the Williams expansion (r^3/2; Kuna, Finite Elements in Fracture Mechanics, Sec. 3.2, odd n
+  // of the general mode I / II series; mode III r^n/2 sin(n th / 2)), per unit amplitude, plane strain kappa:
+  //   I:   u1 = A [(kappa + 1/2) cos(3th/2) - 3/2 cos(th/2)],  u2 = A [(kappa - 1/2) sin(3th/2) - 3/2 sin(th/2)]
+  //   II:  u1 = A [(kappa + 5/2) sin(3th/2) + 3/2 sin(th/2)],  u2 = A [-(kappa - 5/2) cos(3th/2) - 3/2 cos(th/2)]
+  //   III: u3 = 4 A sin(3th/2),            A = sqrt(ell / 2 pi) (r / ell)^3/2 / (2 mu).
+  // Checked numerically: equilibrium (Navier) and traction-free faces th = +-pi. On the faces only the opening,
+  // sliding and tearing components survive, -+(kappa + 1) A b, +-(kappa + 1) A n, -+4 A t.
+  static void williams3(double r, double th, double mu, double kappa, double ell, const Vec3& n, const Vec3& b,
+                        const Vec3& t, Vec3* w) {
+    const double A = std::sqrt(ell / (2 * M_PI)) * std::pow(r / ell, 1.5) / (2 * mu);
+    const double c3 = std::cos(1.5 * th), s3 = std::sin(1.5 * th), c1 = std::cos(0.5 * th), s1 = std::sin(0.5 * th);
+    w[0] = A * (((kappa + 0.5) * c3 - 1.5 * c1) * n + ((kappa - 0.5) * s3 - 1.5 * s1) * b);
+    w[1] = A * (((kappa + 2.5) * s3 + 1.5 * s1) * n + (-(kappa - 2.5) * c3 - 1.5 * c1) * b);
+    w[2] = A * (4 * s3) * t;
   }
 
   // Williams displacement per unit K_I, K_II, K_III at polar (r, theta) about the front, frame (n, b, t):
@@ -239,7 +270,7 @@ struct Front {
     double R[16];
     pieces[k].eval(u, C, Cu, n, s, R);
     Vec3 K = Vec3::Zero();
-    for (int i = 0; i < n; ++i) K += R[i] * x.segment<3>(pieces[k].first_col + 3 * s[i]);
+    for (int i = 0; i < n; ++i) K += R[i] * x.segment<3>(pieces[k].kcol[s[i]]);
     return K;
   }
 };

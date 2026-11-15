@@ -159,7 +159,7 @@ struct Growth {
     }
     for (size_t e = 0; e < ne; ++e) st.elems_added += addS[e] + enr[e];
     st.elems = long(ne);
-    const int nr = 3 * n + (M.opt.enrich ? M.nK : 0);
+    const int nr = 3 * n + M.extraRows();
     R.A.setZero(3 * n, nc);
     R.B.setZero(3 * n, L);
     R.acc.assign(n, CrackModel::RowAcc{});

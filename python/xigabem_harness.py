@@ -12,14 +12,19 @@ usage: xigabem_harness.py [case ...] [--force] [--timeout S] [--list]
               ellipse, ellipse_inclined (Sec. 4.2, a = 2b, in plane and pi/6),
               prism (Sec. 4.3, edge crack, pure modes I, II, III), prism_tension (Sec. 4.4)
 
-Collocation end shift 0.02 and fixed-zone front grading (layouts "<name>_graded", make_crack.py --grade d,q,L, the
-case's "grade") follow the independent convergence review; prism_a3 is its test with exact K and an r^3/2 remainder.
+Collocation end shift 0.1 (paper Eq. A.13) with the r^3/2 Williams term and 16 Gauss points. Layout suffixes:
+"_graded" fixed-zone front grading (make_crack.py --grade d,q,L, the case's "grade"); "_ig" the inner patch graded
+to the crown's element size (make_crack.py --inner-grade 1.5), which removes the end-shift dependence on curved
+fronts. prism_a3 has exact K and an r^3/2 remainder. Each layout reports its observed rate (last three levels, h ~
+dof^-1/2) and, where the case asks ("shift_check"), the K_I spread over end shifts 0.02 / 0.1 / 0.2 at those levels.
 
-Runtime (4 cores): all cases ~20 min cold (penny ~6, ellipse ~6, prism_tension ~6); every run has a hard timeout.
+Runtime (4 cores): all cases ~40 min cold (penny ~13, ellipse ~12 with the ring layout's n11 ~1 min per shift,
+prism_tension ~6); every run has a hard timeout.
 """
 
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
@@ -39,7 +44,7 @@ CASES = {
         "make": ["penny", "--layout", "{layout}"],
         "geometry": "penny_{prefix}i0_n{n}.dat",
         "levels": [3, 4, 5, 6, 7, 9, 11],
-        "layouts": ["disk", "ogrid", "disk_graded"],
+        "layouts": ["disk", "ogrid", "disk_graded", "ogrid_ig"],
         "grade": "0.05,0.3,2",
         "formulations": {"xigabem": [], "igabem": ["--plain"]},
         # independent K: interaction integral on front slices, annulus 0.1 R (crack/interaction.hpp)
@@ -49,6 +54,11 @@ CASES = {
         # (exactly zero by symmetry; 1e-5 of K_I = 1.13 is quadrature-level asymmetry), and the M-integral K_I
         "gates": {"KI_avg_err": 2.0e-3, "KII_avg_abs": 1.0e-5, "KIII_avg_abs": 1.0e-5, "KM_I_avg_err": 1.0e-3,
                   "effectivity": [0.3, 3.0]},
+        # end-shift independence (the review's open point): n = 7 and 11 also at shifts 0.02 and 0.2; on the graded
+        # inner patch the K_I spread over 0.02-0.2 must stay within 2e-4 at n = 7 and the n = 7 error within 5e-4
+        "shift_check": {"levels": [7, 11], "layouts": ["ogrid", "ogrid_ig"]},
+        "layout_gates": {"ogrid_ig": {"KI_avg_err": 5.0e-5, "shift_spread_n7": 2.0e-4, "KI_avg_err_n7": 5.0e-4,
+                                      "rate": [1.5, 99]}},
         "paper": {"table1_KI_signed_avg_err": PAPER_PENNY_TABLE1},
     },
     "penny_inclined": {
@@ -70,12 +80,17 @@ CASES = {
         "make": ["ellipse", "--layout", "{layout}"],
         "geometry": "ellipse_{prefix}i0_n{n}.dat",
         "levels": [3, 4, 5, 6, 7, 9, 11],
-        "layouts": ["disk", "disk_graded"],
+        "layouts": ["disk", "disk_graded", "ring_ig"],
         "grade": "0.05,0.3,2",
         "formulations": {"xigabem": [], "igabem": ["--plain"]},
         "extra": ["--nu", "0.3", "--load", "pressure"],
         "est_s": {3: 3, 4: 4, 5: 6, 6: 8, 7: 11, 9: 18, 11: 30},
         "gates": {"KI_avg_err": 5.0e-3},
+        # ring layout (no degenerate corner) with the inner patches graded to the crown and a crown within half the
+        # front's smallest radius of curvature (make_crack.py): end-shift independent, n7 within 5e-4
+        "shift_check": {"levels": [7, 11], "layouts": ["disk", "ring_ig"]},
+        "layout_gates": {"ring_ig": {"KI_avg_err": 1.0e-4, "shift_spread_n7": 2.0e-4, "KI_avg_err_n7": 5.0e-4,
+                                     "rate": [1.5, 99]}},
         "paper": {},
     },
     "ellipse_inclined": {
@@ -119,6 +134,7 @@ CASES = {
         "levels": [1, 2, 3, 4, 5],
         "layouts": ["split", "split_graded"],
         "grade": "0.1,0.3,2",
+        "rate_key": "KI_err",
         "formulations": {"xigabem": []},
         # --mint: interaction-integral K at 5 stations, annulus 0.2 (0.4 of the crack depth); --indicator: the TBIE
         # residual estimate eta against the crack energy error (effectivity)
@@ -127,8 +143,10 @@ CASES = {
         "post": ["adapt_front.py"],
         "est_s": {1: 10, 2: 15, 3: 25, 4: 35, 5: 45},
         # the K unknown absorbs the r^3/2 remainder at O(h) (review: 9.4% at shift 0.1, k = 3); grading cuts it ~10x.
-        # KM_track_I: the gap |K_dof - K_M| over the true K_dof error (or its inverse), at most 3
-        "gates": {"KI_err": 5.0e-3, "KM_track_I": 3.0, "effectivity": [0.3, 3.0]},
+        # KM_I_err: the interaction-integral K_I error. (The old KM_track_I, gap |K_dof - K_M| over the K_dof error,
+        # stopped meaning anything once the r^3/2 term made the field near the front exact enough that K_M and K_dof
+        # agree to 1e-7 while both sit 1.7e-5 off: the ratio is then ~300, shown but not gated.)
+        "gates": {"KI_err": 5.0e-3, "KM_I_err": 1.0e-3, "effectivity": [0.3, 3.0]},
         "gate_layouts": ["split_graded"],
         "paper": {},
     },
@@ -139,6 +157,7 @@ CASES = {
         "geometry": "prism_k{n}.dat",
         "levels": [1, 2, 3, 4, 5, 6],
         "layouts": ["discontinuous"],
+        "rate_key": "KI_err",
         "formulations": {"xigabem": []},
         "extra": [],
         "est_s": {1: 1, 2: 2, 3: 2, 4: 3, 5: 5, 6: 8},
@@ -154,6 +173,21 @@ CASES = {
 }
 
 
+SHIFTS = (0.02, 0.1, 0.2)
+
+
+def observed_rate(rs, key):
+    """Least-squares slope of log|err| against log h, h ~ dof^-1/2, over the last three levels (None if fewer)."""
+    pts = [(r["unknowns"], abs(r[key])) for r in rs if r.get(key) not in (None, -1) and r.get("unknowns")]
+    pts = [(n, e) for n, e in pts if e > 0][-3:]
+    if len(pts) < 3:
+        return None
+    xs = [-0.5 * math.log(n) for n, _ in pts]
+    ys = [math.log(e) for _, e in pts]
+    mx, my = sum(xs) / 3, sum(ys) / 3
+    return sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs)
+
+
 def stale(target, deps):
     if not os.path.exists(target):
         return True
@@ -166,28 +200,37 @@ def run_case(name, force, timeout):
     out = os.path.join(OUT, name)
     os.makedirs(out, exist_ok=True)
     binary = os.path.join(BUILD, c.get("bin", "crack_case"))
-    plan = [(lay, n, f) for lay in c["layouts"] for n in c["levels"] for f in c["formulations"]
-            if f == "xigabem" or not lay.endswith("_graded")]
-    est = sum(c["est_s"][n] * (0.25 if f == "igabem" else 1.0) for lay, n, f in plan)
+    sc = c.get("shift_check", {})
+    plan = [(lay, n, f, None) for lay in c["layouts"] for n in c["levels"] for f in c["formulations"]
+            if f == "xigabem" or not lay.endswith(("_graded", "_ig"))]
+    plan += [(lay, n, "xigabem", sh) for lay in sc.get("layouts", []) for n in sc.get("levels", [])
+             for sh in SHIFTS if sh != 0.1]
+    est = sum(c["est_s"][n] * (0.25 if f == "igabem" else 1.0) for lay, n, f, _ in plan)
     print("%s: %d runs, estimated %.0f s cold (hard timeout %d s per run)" % (name, len(plan), est, timeout))
     runs = []
-    for lay, n, f in plan:
-        base, graded = (lay[:-7], True) if lay.endswith("_graded") else (lay, False)
-        prefix = {"disk": "", "ogrid": "og_"}.get(base, "")
+    for lay, n, f, sh in plan:
+        base, mod = lay, ""
+        for m in ("_graded", "_ig"):
+            if lay.endswith(m):
+                base, mod = lay[:-len(m)], m
+        graded = mod == "_graded"
+        prefix = {"disk": "", "ogrid": "og_", "ring": "ring_"}.get(base, "")
         name = c["geometry"].format(prefix=prefix, n=n, layout=base)
-        if graded:
-            name = name[:-4] + "_g.dat"
+        suffix = {"_graded": "_g", "_ig": "_ig"}.get(mod, "")
+        name = name[:-4] + suffix + ".dat"
         geo = os.path.join(ROOT, "geo", "crack", name)
         if not os.path.exists(geo):
-            extra = ["--grade", c["grade"], "--suffix", "_g"] if graded else []
+            extra = {"_graded": ["--grade", c.get("grade", "")], "_ig": ["--inner-grade", "1.5"]}.get(mod, [])
+            extra += ["--suffix", suffix] if suffix else []
             subprocess.run([sys.executable, os.path.join(ROOT, "python", "make_crack.py")] +
                            [a.format(layout=base) for a in c["make"]] + ["--n", str(n)] + extra, check=True,
                            stdout=subprocess.DEVNULL)
-        tag = "%s_%s_n%d" % (f, lay, n)
+        tag = "%s_%s_n%d" % (f, lay, n) + ("" if sh is None else "_s%g" % sh)
         summ = os.path.join(out, tag + "_summary.json")
         if force or stale(summ, [geo, binary]):
             t0 = time.time()
             cmd = [binary, geo, "--out", os.path.join(out, tag)] + c["formulations"][f] + c["extra"]
+            cmd += [] if sh is None else ["--shift", str(sh)]
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
                                env=dict(os.environ, OMP_NUM_THREADS=os.environ.get("OMP_NUM_THREADS", "4")))
             if r.returncode != 0:
@@ -195,18 +238,44 @@ def run_case(name, force, timeout):
             print("  %-22s %6.1f s" % (tag, time.time() - t0))
         with open(summ) as fh:
             d = json.load(fh)
-        d.update({"formulation": f, "layout": lay, "n": n, "tag": tag, "graded": graded})
+        d.update({"formulation": f, "layout": lay, "n": n, "tag": tag, "graded": graded,
+                  "shift": 0.1 if sh is None else sh})
         runs.append(d)
-    # gates on the finest XIGABEM run of each layout
+    main_runs = [r for r in runs if r["shift"] == 0.1]
+    # observed rate and end-shift spread per XIGABEM layout
+    derived = {}
+    for lay in c["layouts"]:
+        rs = sorted((r for r in main_runs if r["layout"] == lay and r["formulation"] == "xigabem"), key=lambda r: r["n"])
+        dd = {"rate": observed_rate(rs, c.get("rate_key", "KI_avg_err"))}
+        for n in sc.get("levels", []) if lay in sc.get("layouts", []) else []:
+            ks = [r["KI_signed_err"] for r in runs if r["layout"] == lay and r["n"] == n and r["formulation"] == "xigabem"]
+            dd["shift_spread_n%d" % n] = max(ks) - min(ks)
+            dd["KI_signed_n%d" % n] = {("%g" % r["shift"]): r["KI_signed_err"] for r in runs
+                                         if r["layout"] == lay and r["n"] == n and r["formulation"] == "xigabem"}
+        for n in sc.get("levels", []):
+            for r in rs:
+                if r["n"] == n:
+                    dd["KI_avg_err_n%d" % n] = r.get("KI_avg_err")
+        derived[lay] = dd
+        if dd["rate"] is not None:
+            extra_s = "".join("  %s %.2e" % (k, v) for k, v in dd.items() if k.startswith("shift_spread"))
+            print("  %-14s observed rate h^%.2f%s" % (lay, dd["rate"], extra_s))
+    # gates on the finest XIGABEM run of each layout (shift 0.1), plus the layout's own gates on derived values
     verdict = {}
     for lay in c.get("gate_layouts", c["layouts"]):
-        fin = max((r for r in runs if r["layout"] == lay and r["formulation"] == "xigabem"), key=lambda r: r["n"])
+        fin = max((r for r in main_runs if r["layout"] == lay and r["formulation"] == "xigabem"), key=lambda r: r["n"])
+        vals = dict(fin, **{k: v for k, v in derived.get(lay, {}).items() if not isinstance(v, dict)})
+        if isinstance(fin.get("KM_err"), list):
+            vals["KM_I_err"] = fin["KM_err"][0]
+        gates = dict(c["gates"], **c.get("layout_gates", {}).get(lay, {}))
         # a gate is an upper bound, or a [lo, hi] range
-        verdict[lay] = {k: {"value": fin[k], "gate": g,
-                            "pass": (g[0] <= fin[k] <= g[1]) if isinstance(g, list) else fin[k] <= g}
-                        for k, g in c["gates"].items()}
+        verdict[lay] = {k: {"value": vals[k], "gate": g,
+                            "pass": vals[k] is not None and ((g[0] <= vals[k] <= g[1]) if isinstance(g, list)
+                                                             else vals[k] <= g)}
+                        for k, g in gates.items()}
     with open(os.path.join(out, "case.json"), "w") as fh:
-        json.dump({"case": name, "title": c["title"], "runs": runs, "gates": verdict, "paper": c["paper"]}, fh, indent=1)
+        json.dump({"case": name, "title": c["title"], "runs": runs, "derived": derived, "gates": verdict,
+                   "paper": c["paper"]}, fh, indent=1)
     for script in c.get("post", []):
         t0 = time.time()
         r = subprocess.run([sys.executable, os.path.join(ROOT, "python", script)], capture_output=True, text=True,

@@ -36,30 +36,31 @@ struct Mesh {
   int ndof = 0;
   double normal_sign = 1.0;  // flips normals if the files are inward oriented
 
-  // separate (optional, per patch): patches whose control points get dofs of their own, merged with no
-  // other patch (the two coincident faces of a crack, src/crack/crack_mesh.hpp).
+  // group (optional, per patch): coincident control points merge only between patches of the same group. Group 0
+  // is the ordinary conforming surface; a crack face is a group of its own (its two coincident faces must not
+  // merge with each other or with the outer surface, src/crack/dual_model.hpp); a group used by one patch only
+  // gives that patch dofs of its own.
   void build(std::vector<Patch> P, const PartitionOptions& popt, double merge_tol = 1e-9,
-             const std::vector<char>* separate = nullptr) {
+             const std::vector<int>* group = nullptr) {
     patches = std::move(P);
     // Merge coincident control points into conforming global dofs.
     l2g.assign(patches.size(), {});
     dof_point.clear();
     std::vector<std::pair<int, int>> owner;
-    std::vector<char> dof_sep;
+    std::vector<int> dof_grp;
     for (size_t ip = 0; ip < patches.size(); ++ip) {
       const Patch& Pa = patches[ip];
-      const bool sep = separate && (*separate)[ip];
+      const int grp = group ? (*group)[ip] : 0;
       l2g[ip].resize(Pa.nu * Pa.nv);
       for (int k = 0; k < Pa.nu * Pa.nv; ++k) {
         const Vec3 X = Pa.cp(k);
         int found = -1;
-        if (!sep)
-          for (size_t g = 0; g < dof_point.size(); ++g)
-            if (!dof_sep[g] && (dof_point[g] - X).norm() < merge_tol) { found = int(g); break; }
+        for (size_t g = 0; g < dof_point.size(); ++g)
+          if (dof_grp[g] == grp && (dof_point[g] - X).norm() < merge_tol) { found = int(g); break; }
         if (found < 0) {
           found = int(dof_point.size());
           dof_point.push_back(X);
-          dof_sep.push_back(sep);
+          dof_grp.push_back(grp);
           owner.push_back({int(ip), k});
         }
         l2g[ip][k] = found;

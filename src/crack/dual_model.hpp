@@ -38,6 +38,7 @@
 #include <string>
 #include <vector>
 
+
 #include "../integrator.hpp"
 #include "../json.hpp"
 #include "../kelvin.hpp"
@@ -59,8 +60,21 @@ using DisplacementFn = std::function<Vec3(const Vec3& y, int patch)>;
 struct CrackOptions {
   bool enrich = true;
   int grade = 6;                        // geometric cells toward the front in front elements (sqrt(r) integrands)
-  double end_shift = 0.02;              // crack collocation: end Greville points moved in by this much of a span
+  double end_shift = 0.1;               // crack collocation: end Greville points moved in by this much of a span
+                                        // (paper Eq. A.13). With the second term the front's shift no longer
+                                        // matters; what is left comes from the inner patch's rows on the crown's
+                                        // inner edge and goes away with make_crack --inner-grade
   std::vector<int> dirichlet;           // outer patches with prescribed displacement
+  bool continuous_faces = true;         // crack-face patches share control points within each face's crown ring
+                                        // and within its inner patches (C0 seams); false: every crack patch with
+                                        // dofs of its own
+  bool second = true;                   // also the r^3/2 Williams term (front.hpp williams3), closed by one extra
+                                        // lower-face TBIE row per new front function in the front elements: without
+                                        // it the front element's quadratic NURBS carry the r^3/2 remainder and K
+                                        // depends on where the front rows sit (prism_a3 k3: 9.4e-2 at shift 0.1)
+  double front_row = 0.3;               // second: the extra rows at this fraction of the last span from the front
+                                        // (K flat in it to 1e-6 at >= 16 Gauss points; must differ from end_shift
+                                        // and from 0.5, the last Greville point)
   bool discontinuous = false;           // every patch with dofs of its own, outer collocation like the crack's
                                         // (paper Sec. 4.3: no continuity between patches)
   SolverOptions quad;
@@ -68,6 +82,8 @@ struct CrackOptions {
 };
 
 struct Growth;
+
+constexpr int kMaxEnr = 256;  // enrichment columns at one point (front functions x terms x modes, edge correction)
 
 class CrackModel {
   friend struct Growth;
@@ -86,8 +102,10 @@ class CrackModel {
   PlanarRegion upper_region, lower_region;  // the same face seen with the upper / lower outward normal
   Front front;
   Vec3 m;
-  // scalar columns: [0, 3M) displacement coefficients, [cK, cK + nK) SIFs, [cT, cT + nT) Dirichlet tractions
-  int cK = 0, nK = 0, cT = 0, nT = 0, ncols = 0;
+  // scalar columns: [0, 3M) displacement coefficients, [cK, cK + nK) SIFs, [cA, cA + nA) second Williams term
+  // amplitudes, [cT, cT + nT) Dirichlet tractions
+  int cK = 0, nK = 0, cA = 0, nA = 0, cT = 0, nT = 0, ncols = 0;
+  int extraRows() const { return opt.enrich ? nK : 0; }  // tying rows (Eq. 13) after the collocation rows
   std::vector<int> tcol;  // traction-space dof -> scalar column / 3 offset (-1: known traction)
   double t_assemble = 0, t_solve = 0;
   long unknowns = 0;
@@ -109,15 +127,28 @@ class CrackModel {
     face.assign(np, 0);
     mirror.assign(np, -1);
     piece.assign(np, -1);
-    std::vector<char> sep(np, opt.discontinuous ? 1 : 0);
+    // merge groups: outer surface 0 (or one per patch, discontinuous); upper face 1, lower face 2 (or one per patch)
+    std::vector<int> grp(np, 0);
+    if (opt.discontinuous) for (int p = 0; p < np; ++p) grp[p] = 3 + p;
     for (int k = 0; k < p1 - p0; ++k) {
       face[p0 + k] = 1;
       face[q0 + k] = -1;
       mirror[p0 + k] = q0 + k;
       mirror[q0 + k] = p0 + k;
-      sep[p0 + k] = sep[q0 + k] = 1;
+      grp[p0 + k] = opt.continuous_faces ? 1 : 3 + np + p0 + k;
+      grp[q0 + k] = opt.continuous_faces ? 2 : 3 + np + q0 + k;
     }
-    mesh.build(std::move(P), opt.part, 1e-9, &sep);
+    // continuous faces: the crown patches form a group of their own on each face. The Williams enrichment lives
+    // on the crown only, so the field jumps at the crown's inner edge anyway (paper layout); merging across that
+    // edge forces the jump into the NURBS part and wrecks K (measured), and a ramp there trades the end shift for
+    // a ramp-width dependence. Within the crown ring and within the inner patches the seams are C0.
+    if (opt.continuous_faces)
+      for (size_t k = 0; k < meta["crown"].size(); ++k) {
+        const int p = meta["crown"][k].asInt();
+        grp[p] = 3 + 2 * np + 1;
+        grp[q0 + (p - p0)] = 3 + 2 * np + 2;
+      }
+    mesh.build(std::move(P), opt.part, 1e-9, &grp);
     ts.build(mesh);
     m = Vec3(meta["plane"]["normal"][0].asNumber(), meta["plane"]["normal"][1].asNumber(),
              meta["plane"]["normal"][2].asNumber()).normalized();
@@ -225,8 +256,47 @@ class CrackModel {
     cK = 3 * mesh.ndof;
     nK = 0;
     if (opt.enrich)
-      for (FrontPiece& F : front.pieces) { F.first_col = cK + nK; nK += 3 * F.nbasis(); }
-    cT = cK + nK;
+      for (size_t k = 0; k < front.pieces.size(); ++k) {
+        FrontPiece& F = front.pieces[k];
+        F.kcol.assign(F.nbasis(), -1);
+        // continuous faces: the front's NURBS jump is C0 across piece joints, so the SIF basis must be too (else
+        // the tying rows of Eq. 13 outnumber the jump space and the system is singular): an end basis function
+        // whose end point is an end of an earlier piece takes that piece's column
+        if (opt.continuous_faces)
+          for (int e : {0, F.nbasis() - 1}) {
+            const Vec3 X = F.Pw[e].head<3>() / F.Pw[e](3);
+            for (size_t j = 0; j < k && F.kcol[e] < 0; ++j) {
+              const FrontPiece& G = front.pieces[j];
+              for (int f : {0, G.nbasis() - 1})
+                if ((G.Pw[f].head<3>() / G.Pw[f](3) - X).norm() < 1e-9) { F.kcol[e] = G.kcol[f]; break; }
+            }
+          }
+        for (int s = 0; s < F.nbasis(); ++s)
+          if (F.kcol[s] < 0) { F.kcol[s] = cK + nK; nK += 3; }
+      }
+    // second Williams term: one amplitude per SIF function (same sharing), columns after the SIFs
+    cA = cK + nK;
+    nA = 0;
+    if (opt.enrich && opt.second) {
+      for (FrontPiece& F : front.pieces) {
+        F.acol.resize(F.nbasis());
+        for (int s = 0; s < F.nbasis(); ++s) F.acol[s] = cA + (F.kcol[s] - cK);
+      }
+      nA = nK;
+      double ell = 0;
+      int ne = 0;
+      for (const FrontPiece& F : front.pieces)
+        for (int s = 0; s < F.nbasis(); ++s) { ell += (F.Pw[s].head<3>() / F.Pw[s](3) - pt).norm(); ++ne; }
+      front.ell = ne ? ell / ne : 1.0;
+    }
+    front.second = opt.enrich && opt.second;
+    // the r^3/2 term needs 16 Gauss points: at 8 its integrals leave K depending on front_row by up to 1e-3
+    // (penny_og n9), 16 and 24 agree to 3e-7
+    if (front.second && opt.quad.n_gauss < 16) opt.quad.n_gauss = 16;
+    if (front.second && (std::abs(opt.front_row - opt.end_shift) < 0.05 || std::abs(opt.front_row - 0.5) < 0.05 ||
+                         opt.front_row <= 0 || opt.front_row >= 1))
+      throw std::runtime_error("CrackOptions::front_row must keep 0.05 away from end_shift and from 0.5");
+    cT = cA + nA;
     tcol.assign(ts.ndof, -1);
     nT = 0;
     for (int p = 0; p < n_outer; ++p) {
@@ -242,7 +312,7 @@ class CrackModel {
                                      const std::vector<DisplacementFn>& disps = {}) {
     const auto t0 = std::chrono::steady_clock::now();
     std::vector<Row> rows = collocationRows();
-    const int nr = 3 * int(rows.size()) + (opt.enrich ? nK : 0);
+    const int nr = 3 * int(rows.size()) + extraRows();
     const int L = int(loads.size());
     Eigen::MatrixXd A = Eigen::MatrixXd::Zero(nr, ncols), B = Eigen::MatrixXd::Zero(nr, L);
     ElementIntegrator quad(mesh, opt.quad);
@@ -315,7 +385,7 @@ class CrackModel {
   void factor(bool cond = false) {
     const auto t0 = std::chrono::steady_clock::now();
     f_rows = collocationRows();
-    const int nr = 3 * int(f_rows.size()) + (opt.enrich ? nK : 0);
+    const int nr = 3 * int(f_rows.size()) + extraRows();
     Eigen::MatrixXd A = Eigen::MatrixXd::Zero(nr, ncols);
     ElementIntegrator quad(mesh, opt.quad);
     const std::vector<TractionFn> none;
@@ -434,8 +504,8 @@ class CrackModel {
     const auto& l2g = mesh.l2g[pe];
     u.setZero();
     for (int l = 0; l < q.n_loc; ++l) u += q.R[l] * x.segment<3>(3 * l2g[q.idx[l]]);
-    int cols[64];
-    Vec3 vals[64];
+    int cols[kMaxEnr];
+    Vec3 vals[kMaxEnr];
     const int ne = quadEnrichment(pe, q, cols, vals);
     for (int i = 0; i < ne; ++i) u += vals[i] * x(cols[i]);
     if (pe < n_outer && dirichlet[pe]) {
@@ -501,10 +571,9 @@ class CrackModel {
         s.add(3 * g + c, E.R[l] * Vec3::Unit(c), E.Ru[l] * Vec3::Unit(c), E.Rv[l] * Vec3::Unit(c));
     }
     if (!opt.enrich || piece[p] < 0) return;
-    int cols[64];
-    Vec3 v0[64], vp[64], vm[64];
-    const int k = piece[p], sg = face[p];
-    const int n = front.shapes(k, sg, E.x, guess(p, uv(0)), cols, v0);
+    int cols[kMaxEnr];
+    Vec3 v0[kMaxEnr], vp[kMaxEnr], vm[kMaxEnr];
+    const int n = enrichment(p, uv, E.x, cols, v0);
     if (!derivs) {
       for (int i = 0; i < n; ++i) s.add(cols[i], v0[i], Vec3::Zero(), Vec3::Zero());
       return;
@@ -519,11 +588,11 @@ class CrackModel {
       a(dir) += h;
       b(dir) -= h;
       // stay inside the patch (the front edge v = 1 is never a collocation point)
-      int cp[64], cm[64];
+      int cp[kMaxEnr], cm[kMaxEnr];
       Pa.eval(a(0), a(1), Ep);
-      const int n1 = front.shapes(k, sg, Ep.x, a(0), cp, vp);
+      const int n1 = enrichment(p, a, Ep.x, cp, vp, a(0));
       Pa.eval(b(0), b(1), Ep);
-      const int n2 = front.shapes(k, sg, Ep.x, b(0), cm, vm);
+      const int n2 = enrichment(p, b, Ep.x, cm, vm, b(0));
       for (int i = 0; i < n; ++i) {
         Vec3 fp = Vec3::Zero(), fm = Vec3::Zero();
         for (int j = 0; j < n1; ++j) if (cp[j] == cols[i]) fp = vp[j];
@@ -625,11 +694,16 @@ class CrackModel {
         rows.push_back(r);
       }
     }
+    // one row per crack-face dof, at its first owner's shifted Greville point (a shared edge dof: just inside
+    // the owner patch, never on the C0 line itself)
+    std::vector<char> seen(mesh.ndof, 0);
     for (int sgn : {1, -1})
       for (int p = n_outer; p < int(mesh.patches.size()); ++p) {
         if (face[p] != sgn) continue;
         const Patch& Pa = mesh.patches[p];
         for (int k = 0; k < Pa.nu * Pa.nv; ++k) {
+          if (seen[mesh.l2g[p][k]]) continue;
+          seen[mesh.l2g[p][k]] = 1;
           Row r{sgn > 0 ? Row::Upper : Row::Lower, p, Vec2(crackPoint(Pa, k % Pa.nu, true), crackPoint(Pa, k / Pa.nu, false)),
                 Vec3::Zero(), Vec3::Zero(), PatchEval{}, {}};
           Pa.eval(r.xi(0), r.xi(1), r.E);
@@ -638,6 +712,27 @@ class CrackModel {
           rows.push_back(r);
         }
       }
+    // second Williams term: one lower-face TBIE row per amplitude function, in the front element of the function's
+    // first owner piece at u = its crack collocation abscissa, opt.front_row of the last span from the front
+    if (opt.enrich && opt.second) {
+      std::vector<char> done(nA / 3, 0);
+      for (const FrontPiece& F : front.pieces) {
+        const Patch& P = *F.P;
+        for (int s = 0; s < F.nbasis(); ++s) {
+          const int f = (F.acol[s] - cA) / 3;
+          if (done[f]) continue;
+          done[f] = 1;
+          const double v = P.V.back() - opt.front_row * (P.V.back() - P.V[P.nv - 1]);
+          PatchEval E;
+          P.eval(crackPoint(P, s, true), v, E);
+          const int q = mirror[F.patch];
+          const SurfacePoint sb = locate(mesh, E.x, [q](int pp) { return pp == q; });
+          Row r{Row::Lower, q, sb.xi, sb.E.x, Vec3::Zero(), sb.E, {}};
+          r.N = (r.E.normal() * mesh.normal_sign).normalized();
+          rows.push_back(r);
+        }
+      }
+    }
     return rows;
   }
 
@@ -660,7 +755,12 @@ class CrackModel {
   // Integrand-side shape of a quadrature point: standard basis (3 x 3 blocks) and enrichment vectors.
   int quadEnrichment(int p, const QPoint& q, int* cols, Vec3* vals) const {
     if (!opt.enrich || piece[p] < 0) return 0;
-    return front.shapes(piece[p], face[p], q.x, guess(p, q.uv(0)), cols, vals);
+    return enrichment(p, q.uv, q.x, cols, vals);
+  }
+
+  // Enrichment vectors at point x = patch p (parameter uv).
+  int enrichment(int p, const Vec2& uv, const Vec3& x, int* cols, Vec3* vals, double uguess = NAN) const {
+    return front.shapes(piece[p], face[p], x, guess(p, std::isnan(uguess) ? uv(0) : uguess), cols, vals);
   }
 
   // Element sums of a row's regularization (the rigid / linear fields' coefficients). Partial assembly (crack
@@ -707,8 +807,8 @@ class CrackModel {
           return;
         }
         for (int l = 0; l < q.n_loc; ++l) a.block<3, 3>(0, 3 * l2g[q.idx[l]]) += q.R[l] * Tw;
-        int cols[64];
-        Vec3 vals[64];
+        int cols[kMaxEnr];
+        Vec3 vals[kMaxEnr];
         const int ne = quadEnrichment(pe, q, cols, vals);
         for (int i = 0; i < ne; ++i) a.col(cols[i]) += Tw * vals[i];
         T0[grp] += Tw;
@@ -769,8 +869,8 @@ class CrackModel {
         const Eigen::Matrix3d Dw = D * (w * J), Sw = S * (w * J);
         if (!rhs_only) {
           for (int l = 0; l < q.n_loc; ++l) a.block<3, 3>(0, 3 * l2g[q.idx[l]]) -= q.R[l] * Sw;
-          int cols[64];
-          Vec3 vals[64];
+          int cols[kMaxEnr];
+          Vec3 vals[kMaxEnr];
           const int ne = quadEnrichment(pe, q, cols, vals);
           for (int i = 0; i < ne; ++i) a.col(cols[i]) -= Sw * vals[i];
         }
@@ -831,19 +931,24 @@ class CrackModel {
     }
   }
 
-  // Eq. 13: int_front (u+ - u-) phi_s dv = 0, one row per (piece, s, component); Gauss on the edge's knot spans.
+  // Eq. 13: int_front (u+ - u-) phi_s dv = 0, one row per SIF basis function (a shared corner function: over both
+  // pieces) and component; Gauss on the edges' knot spans.
   void tyingRows(Eigen::MatrixXd& A, int r0) const {
     const GaussRule g = gaussLegendre(8);
     int r = r0;
-    for (const FrontPiece& F : front.pieces) {
-      const Patch& P = *F.P;
-      const int q = mirror[F.patch];
-      std::vector<double> kn = P.uniqueKnots(P.U);
-      for (int s = 0; s < F.nbasis(); ++s) {
-        Eigen::Matrix<double, 3, Eigen::Dynamic> row = Eigen::MatrixXd::Zero(3, ncols);
-        for (size_t k = 0; k + 1 < kn.size(); ++k)
+    std::vector<std::vector<std::pair<int, int>>> fn((nK + 2) / 3);  // per SIF function: (piece, s)
+    for (size_t k = 0; k < front.pieces.size(); ++k)
+      for (int s = 0; s < front.pieces[k].nbasis(); ++s) fn[(front.pieces[k].kcol[s] - cK) / 3].push_back({int(k), s});
+    for (const auto& support : fn) {
+      Eigen::Matrix<double, 3, Eigen::Dynamic> row = Eigen::MatrixXd::Zero(3, ncols);
+      for (const auto& [k, s] : support) {
+        const FrontPiece& F = front.pieces[k];
+        const Patch& P = *F.P;
+        const int q = mirror[F.patch];
+        std::vector<double> kn = P.uniqueKnots(P.U);
+        for (size_t kk = 0; kk + 1 < kn.size(); ++kk)
           for (size_t i = 0; i < g.x.size(); ++i) {
-            const double u = kn[k] + (kn[k + 1] - kn[k]) * g.x[i], w = g.w[i] * (kn[k + 1] - kn[k]);
+            const double u = kn[kk] + (kn[kk + 1] - kn[kk]) * g.x[i], w = g.w[i] * (kn[kk + 1] - kn[kk]);
             Vec3 C, Cu;
             int n, idx[16];
             double R[16];
@@ -859,9 +964,9 @@ class CrackModel {
             for (int l = 0; l < sb.E.n_loc; ++l)
               row.block<3, 3>(0, 3 * mesh.l2g[q][sb.E.idx[l]]) -= (w * phi * sb.E.R[l]) * Eigen::Matrix3d::Identity();
           }
-        A.middleRows(r, 3) = row;
-        r += 3;
       }
+      A.middleRows(r, 3) = row;
+      r += 3;
     }
   }
 };
