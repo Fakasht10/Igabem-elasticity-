@@ -31,7 +31,7 @@ using namespace igabem::crack;
 
 int main(int argc, char** argv) {
   if (argc < 2) {
-    std::fprintf(stderr, "usage: crack_case geometry.dat [--plain] [--load far|pressure] [--out prefix] [--cond] [--check-k tol] [--check-cond C] [--discontinuous] [--near-tol T] [--mint rho]\n");
+    std::fprintf(stderr, "usage: crack_case geometry.dat [--plain] [--load far|pressure] [--out prefix] [--cond] [--check-k tol] [--check-cond C] [--discontinuous] [--near-tol T] [--mint rho] [--indicator]\n");
     return 2;
   }
   std::string dat = argv[1], load = "far", out;
@@ -40,12 +40,14 @@ int main(int argc, char** argv) {
   int ng = 8, grade = 6;
   double near_tol = 1e-8, shift = 0.02, far_tol = 1e-12;
   double check_k = -1, check_cond = -1, E = 1.0, nu = 0.0, mint = -1, check_mint = -1;
+  bool indicator = false;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--plain")) enrich = false;
     else if (!std::strcmp(argv[i], "--cond")) cond = true;
     else if (!std::strcmp(argv[i], "--check-cond") && i + 1 < argc) { cond = true; check_cond = std::atof(argv[++i]); }
     else if (!std::strcmp(argv[i], "--discontinuous")) disc = true;
     else if (!std::strcmp(argv[i], "--mint") && i + 1 < argc) mint = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--indicator")) indicator = true;
     else if (!std::strcmp(argv[i], "--check-mint") && i + 1 < argc) check_mint = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--factored")) factored = true;
     else if (!std::strcmp(argv[i], "--load") && i + 1 < argc) load = argv[++i];
@@ -255,6 +257,42 @@ int main(int argc, char** argv) {
     }
     cod_err = std::sqrt(num / den);
   }
+  // Residual indicator (as crack_prism --indicator): TBIE residual at 2 x 2 Gauss points of each lower-face element,
+  // eta^2 = sum h_e int_e |r|^2, against the crack energy error sqrt|int de . r| with de the opening error (in-plane
+  // crack, Sneddon's exact opening).
+  double eta = -1, energy = -1;
+  if (indicator && thi == 0.0) {
+    std::vector<const Element*> els;
+    for (const Element& e : M.mesh.elements) if (M.face[e.patch] == -1) els.push_back(&e);
+    std::vector<double> e2(els.size()), en(els.size());
+    const ElementIntegrator quad(M.mesh, o.quad);
+    const GaussRule g = gaussLegendre(2);
+    const TractionFn ld = load == "far" ? far : pres;
+#pragma omp parallel for schedule(dynamic)
+    for (long i = 0; i < long(els.size()); ++i) {
+      const Element& e = *els[i];
+      double area = 0, s2 = 0, se = 0;
+      for (int a = 0; a < 2; ++a)
+        for (int b = 0; b < 2; ++b) {
+          const Vec2 uv(e.rect.u0 + e.rect.du() * g.x[a], e.rect.v0 + e.rect.dv() * g.x[b]);
+          PatchEval Ev;
+          M.mesh.patches[e.patch].eval(uv(0), uv(1), Ev);
+          const double w = g.w[a] * g.w[b] * e.rect.du() * e.rect.dv() * Ev.normal().norm();
+          const Vec3 r = M.faceResidual(quad, e.patch, uv, {ld}, {x})[0];
+          const SurfacePoint sb = M.coincident(e.patch, Ev.x);
+          const Vec3 de = M.displacement(sb.patch, sb.xi, x) - M.displacement(e.patch, uv, x) - codExact(Ev.x);
+          area += w;
+          s2 += w * r.squaredNorm();
+          se += w * de.dot(r);
+        }
+      e2[i] = std::sqrt(area) * s2;
+      en[i] = se;
+    }
+    eta = energy = 0;
+    for (size_t i = 0; i < els.size(); ++i) { eta += e2[i]; energy += en[i]; }
+    eta = std::sqrt(eta);
+    energy = std::sqrt(std::abs(energy));
+  }
   if (!out.empty()) {
     FILE* fc = std::fopen((out + "_cod.csv").c_str(), "w");
     std::fprintf(fc, "rho,cod_n,cod_exact\n");
@@ -274,9 +312,10 @@ int main(int argc, char** argv) {
                 "\"KII_avg_err\": %.6e, \"KIII_avg_err\": %.6e, \"cod_L2\": %.6e, \"cond\": %.6e, \"row_ratio\": %.3e, \"residual\": %.3e, "
                 "\"t2_KI_0\": %.6e, \"t2_KII_0\": %.6e, \"t2_KI_90\": %.6e, \"t2_KIII_90\": %.6e, "
                 "\"KM_I_avg_err\": %.6e, \"KM_I_max_err\": %.6e, \"KM_dof_gap\": %.6e, \"t_mint\": %.3f, "
+                "\"eta\": %.6e, \"energy_err\": %.6e, \"effectivity\": %.4f, "
                 "\"t_assemble\": %.3f, \"t_solve\": %.3f}",
                 dat.c_str(), int(enrich), load.c_str(), M.unknowns, sI, errI, sgnI, maxI, absII, absIII, errII, errIII,
-                cod_err, M.condition, M.row_ratio, M.residual, t2[0], t2[1], t2[2], t2[3], kmI, kmImax, kmGap, t_mint, M.t_assemble, M.t_solve);
+                cod_err, M.condition, M.row_ratio, M.residual, t2[0], t2[1], t2[2], t2[3], kmI, kmImax, kmGap, t_mint, eta, energy, energy > 0 ? eta / energy : -1.0, M.t_assemble, M.t_solve);
   std::printf("%s\n", line);
   if (!out.empty()) { std::ofstream(out + "_summary.json") << line << "\n"; }
   if (check_k > 0 && enrich && !(errI <= check_k)) {
