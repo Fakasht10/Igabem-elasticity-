@@ -38,3 +38,5 @@ Mesh: refining h from 1.5 to 1.0 roughly doubles the unknowns (13–19k to 26–
 All of these are small next to the ±20–50% transfer errors, so h 1.5 is the default.
 
 Mean stress: `--walker R` calibrates on the plain series at R only. It maps the plain strength to every other R through a Walker exponent fitted per angle on the full plain table, σ_ar = σ_max^(1−γ) σ_a^γ. The fitted γ is 0.25, 0.68 and 0.33 at p = 0, 30 and 45°. On the 9 R = 0 notched series, calibrating from R = −1 moves the Weibull (L_g 30) mean error from −11% to −31%.
+
+Walker collapses the plain data per angle. The scatter of the four R levels about one curve is a log-sd of 0.09, 0.15 and 0.09, inside each series' own scatter of 0.10, 0.23 and 0.15. The notched data show almost no mean-stress effect: a γ fitted to the notched R = −1/0 pairs comes out at about 0.9–1.1, meaning amplitude only. So the plain γ is not applied by default. The likely cause is local mean-stress relaxation at the root, which a linear-elastic transfer cannot represent.
