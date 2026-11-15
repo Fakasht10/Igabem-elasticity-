@@ -160,6 +160,38 @@ class HOperator {
     }
   }
 
+  // Y += A_far X over the low-rank leaves only (user numbering): with forDenseLeaves, products whose near part is
+  // formed entry by entry.
+  void applyFar(const Eigen::MatrixXd& X, Eigen::MatrixXd& Y) const {
+    const int *tp = target_->get_permutation().data(), *sp = source_->get_permutation().data();
+    for (const auto* l : leaves()) {
+      if (l->is_dense()) continue;
+      const auto* lr = l->get_low_rank_data();
+      const int k = lr->rank_of();
+      if (k == 0) continue;
+      const int ro = l->get_target_cluster().get_offset(), m = l->get_target_cluster().get_size();
+      const int co = l->get_source_cluster().get_offset(), n = l->get_source_cluster().get_size();
+      Eigen::MatrixXd Xs(n, X.cols());
+      for (int j = 0; j < n; ++j) Xs.row(j) = X.row(sp[co + j]);
+      const Eigen::MatrixXd Ys = Eigen::Map<const Eigen::MatrixXd>(lr->get_U().data(), m, k) *
+                                 (Eigen::Map<const Eigen::MatrixXd>(lr->get_V().data(), k, n) * Xs);
+      for (int i = 0; i < m; ++i) Y.row(tp[ro + i]) += Ys.row(i);
+    }
+  }
+
+  // f(rows, m, cols, n, data) for every dense leaf: its rows and columns in the user numbering, data column-major
+  // m x n (the near field, for sparse preconditioners).
+  template <class F>
+  void forDenseLeaves(F&& f) const {
+    const int *tp = target_->get_permutation().data(), *sp = source_->get_permutation().data();
+    for (const auto* l : leaves()) {
+      if (!l->is_dense()) continue;
+      const int ro = l->get_target_cluster().get_offset(), m = l->get_target_cluster().get_size();
+      const int co = l->get_source_cluster().get_offset(), n = l->get_source_cluster().get_size();
+      f(tp + ro, m, sp + co, n, l->get_dense_data()->data());
+    }
+  }
+
   void save(std::ostream& f) const {
     const auto L = leaves();
     put(f, std::int64_t(rows()));

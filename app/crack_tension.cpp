@@ -17,6 +17,9 @@
 #include <string>
 
 #include "crack/dual_model.hpp"
+#ifdef IGABEM_HTOOL
+#include "crack/h_crack.hpp"
+#endif
 
 using namespace igabem;
 using namespace igabem::crack;
@@ -30,12 +33,19 @@ int main(int argc, char** argv) {
   int ng = 16, grade = 6;
   double E = 1000.0, nu = 0.3, sig = 1.0, check = -1, shift = 0.1;
   bool patch_faces = false;  // --patch-faces: crack patches with dofs of their own (pre-continuity)
+  bool hmat = false, hcheck = false;  // --hmat: hierarchical operator + GMRES; --hcheck: also A x vs dense
+  double h_eps = 1e-10;      // --eps: H-matrix block tolerance (1e-8 left the prism 6e-6 off dense)
+  double gtol = 1e-9;        // --gtol: GMRES relative residual (the prism's floor is ~2e-10)
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
     else if (!std::strcmp(argv[i], "--kappa-outer") && i + 1 < argc) kout = argv[++i];
     else if (!std::strcmp(argv[i], "--ng") && i + 1 < argc) ng = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--check") && i + 1 < argc) check = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--patch-faces")) patch_faces = true;
+    else if (!std::strcmp(argv[i], "--hmat")) hmat = true;
+    else if (!std::strcmp(argv[i], "--hcheck")) hmat = hcheck = true;
+    else if (!std::strcmp(argv[i], "--gtol") && i + 1 < argc) gtol = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--eps") && i + 1 < argc) h_eps = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--shift") && i + 1 < argc) shift = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--grade") && i + 1 < argc) grade = std::atoi(argv[++i]);
     else { std::fprintf(stderr, "unknown argument %s\n", argv[i]); return 2; }
@@ -67,7 +77,28 @@ int main(int argc, char** argv) {
     if (p == bot) return -sig * Vec3::UnitY();
     return Vec3::Zero();
   };
-  const std::vector<Eigen::VectorXd> X = M.solve({load});
+  std::vector<Eigen::VectorXd> X;
+  if (hmat) {
+#ifdef IGABEM_HTOOL
+    CrackHOptions ho;
+    ho.gtol = gtol;
+    ho.h.eps = h_eps;
+    CrackH H(M, ho);
+    if (hcheck) {
+      CrackModel Md = M;
+      Md.factor();
+      H.check(Md.f_A);
+    }
+    X = H.solve({load});
+    std::fprintf(stderr, "hmat: unknowns %d  build %.2f s  solve %.2f s  its %d  mem %.2f GB\n", H.unknowns(),
+                 H.st.build(), H.st.t_solve, H.st.iterations[0], H.st.mem_gb);
+#else
+    std::fprintf(stderr, "--hmat: built without Htool\n");
+    return 2;
+#endif
+  } else {
+    X = M.solve({load});
+  }
 
   // 2-D plane-strain reference (Eq. 30)
   const double q = a / W;

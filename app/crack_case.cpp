@@ -25,6 +25,9 @@
 
 #include "crack/dual_model.hpp"
 #include "crack/interaction.hpp"
+#ifdef IGABEM_HTOOL
+#include "crack/h_crack.hpp"
+#endif
 
 using namespace igabem;
 using namespace igabem::crack;
@@ -44,6 +47,9 @@ int main(int argc, char** argv) {
   bool patch_faces = false;  // --patch-faces: crack patches with dofs of their own (pre-continuity)
   bool second = true;        // --no-second: first Williams term only
   double front_row = 0.3;
+  bool hmat = false, hcheck = false;  // --hmat: hierarchical operator + GMRES (crack/h_crack.hpp)
+  double h_eps = 1e-10, h_radius = 1.0, h_gtol = 1e-10, h_eta = 2.0, h_etol = 1e-10;
+  int h_leaf = 192;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--plain")) enrich = false;
     else if (!std::strcmp(argv[i], "--cond")) cond = true;
@@ -53,6 +59,14 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--indicator")) indicator = true;
     else if (!std::strcmp(argv[i], "--check-mint") && i + 1 < argc) check_mint = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--factored")) factored = true;
+    else if (!std::strcmp(argv[i], "--hmat")) hmat = true;
+    else if (!std::strcmp(argv[i], "--hcheck")) hmat = hcheck = true;
+    else if (!std::strcmp(argv[i], "--eps") && i + 1 < argc) h_eps = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--radius") && i + 1 < argc) h_radius = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--gtol") && i + 1 < argc) h_gtol = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--entry-tol") && i + 1 < argc) h_etol = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--leaf") && i + 1 < argc) h_leaf = std::atoi(argv[++i]);
+    else if (!std::strcmp(argv[i], "--eta") && i + 1 < argc) h_eta = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--load") && i + 1 < argc) load = argv[++i];
     else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
     else if (!std::strcmp(argv[i], "--check-k") && i + 1 < argc) check_k = std::atof(argv[++i]);
@@ -111,7 +125,33 @@ int main(int argc, char** argv) {
     return -s;
   };
   std::vector<Eigen::VectorXd> X;
-  if (factored) {  // the crack_serve path: factor once, then right-hand sides alone
+  if (hmat) {
+#ifdef IGABEM_HTOOL
+    CrackHOptions ho;
+    ho.h.eps = h_eps;
+    ho.radius = h_radius;
+    ho.gtol = h_gtol;
+    ho.h.eta = h_eta;
+    ho.entry_tol = h_etol;
+    ho.h.leaf = h_leaf;
+    CrackH H(M, ho);
+    if (hcheck) {
+      CrackModel Md = M;
+      Md.factor();
+      H.check(Md.f_A);
+    }
+    X = H.solve({load == "far" ? far : pres});
+    const auto& s = H.st;
+    std::fprintf(stderr,
+                 "hmat: unknowns %d  build %.2f s (H %.2f near %.2f, moments %.2f, sums %.2f, finish %.2f, precond %.2f)"
+                 "  solve %.2f s  its %d  res %.1e  ratio %.3f  mem %.2f GB  pc nnz %ld\n",
+                 H.unknowns(), s.build(), s.t_h, s.t_near, s.t_hm, s.t_sums, s.t_finish, s.t_precond, s.t_solve,
+                 s.iterations[0], s.residuals[0], s.ratio, s.mem_gb, s.precond_nnz);
+#else
+    std::fprintf(stderr, "--hmat: built without Htool\n");
+    return 2;
+#endif
+  } else if (factored) {  // the crack_serve path: factor once, then right-hand sides alone
     M.factor(cond);
     X = M.solveFactored({load == "far" ? far : pres});
   } else {
