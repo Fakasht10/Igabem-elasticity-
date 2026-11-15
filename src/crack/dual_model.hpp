@@ -273,6 +273,12 @@ class CrackModel {
                                std::to_string(cols.size()) + " unknowns");
     unknowns = nr;
     const Eigen::MatrixXd As = A(Eigen::placeholders::all, cols);
+    if (cond) {  // row scaling: largest over median row norm (one bad row inflates cond without a near-null mode)
+      std::vector<double> rn(nr);
+      for (int i = 0; i < nr; ++i) rn[i] = As.row(i).norm();
+      std::nth_element(rn.begin(), rn.begin() + nr / 2, rn.end());
+      row_ratio = *std::max_element(rn.begin(), rn.end()) / rn[nr / 2];
+    }
     t_assemble = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     const auto t1 = std::chrono::steady_clock::now();
     Eigen::PartialPivLU<Eigen::MatrixXd> lu(As);
@@ -364,7 +370,7 @@ class CrackModel {
   }
   bool factored = false;
   double t_factor = 0, t_rhs = 0;
-  double condition = 0, residual = 0;
+  double condition = 0, residual = 0, row_ratio = 0;
 
   // L2 projection of g onto the displacement basis of every Dirichlet patch (dofs of their own required unless g
   // vanishes on the shared ones).
@@ -408,7 +414,7 @@ class CrackModel {
     return u;
   }
 
-  // The coincident point of the other face.
+  // The lower-face point coincident with x on the mirror patch.
   SurfacePoint coincident(int p, const Vec3& x) const {
     const int q = mirror[p];
     return locate(mesh, x, [q](int pp) { return pp == q; });

@@ -30,18 +30,20 @@ using namespace igabem::crack;
 
 int main(int argc, char** argv) {
   if (argc < 2) {
-    std::fprintf(stderr, "usage: crack_case geometry.dat [--plain] [--load far|pressure] [--out prefix] [--cond] [--check-k tol]\n");
+    std::fprintf(stderr, "usage: crack_case geometry.dat [--plain] [--load far|pressure] [--out prefix] [--cond] [--check-k tol] [--check-cond C] [--discontinuous]\n");
     return 2;
   }
   std::string dat = argv[1], load = "far", out;
-  bool enrich = true, cond = false;
+  bool enrich = true, cond = false, disc = false;
   bool factored = false;  // --factored: factor() + solveFactored(), as crack_serve runs
   int ng = 8, grade = 6;
   double shift = 0.02, far_tol = 1e-12;
-  double check_k = -1, E = 1.0, nu = 0.0;
+  double check_k = -1, check_cond = -1, E = 1.0, nu = 0.0;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--plain")) enrich = false;
     else if (!std::strcmp(argv[i], "--cond")) cond = true;
+    else if (!std::strcmp(argv[i], "--check-cond") && i + 1 < argc) { cond = true; check_cond = std::atof(argv[++i]); }
+    else if (!std::strcmp(argv[i], "--discontinuous")) disc = true;
     else if (!std::strcmp(argv[i], "--factored")) factored = true;
     else if (!std::strcmp(argv[i], "--load") && i + 1 < argc) load = argv[++i];
     else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
@@ -64,6 +66,7 @@ int main(int argc, char** argv) {
   o.quad.n_gauss = ng;
   o.grade = grade;
   o.end_shift = shift;
+  o.discontinuous = disc;
   o.quad.far_tol = far_tol;
   // outer patches: bottom (outward -e2) clamped
   {
@@ -227,15 +230,21 @@ int main(int argc, char** argv) {
   std::snprintf(line, sizeof line,
                 "{\"geometry\": \"%s\", \"enrich\": %d, \"load\": \"%s\", \"unknowns\": %ld, \"KI_exact\": %.12g, "
                 "\"KI_avg_err\": %.6e, \"KI_signed_err\": %.6e, \"KI_max_err\": %.6e, \"KII_avg_abs\": %.6e, \"KIII_avg_abs\": %.6e, "
-                "\"KII_avg_err\": %.6e, \"KIII_avg_err\": %.6e, \"cod_L2\": %.6e, \"cond\": %.6e, \"residual\": %.3e, "
+                "\"KII_avg_err\": %.6e, \"KIII_avg_err\": %.6e, \"cod_L2\": %.6e, \"cond\": %.6e, \"row_ratio\": %.3e, \"residual\": %.3e, "
                 "\"t2_KI_0\": %.6e, \"t2_KII_0\": %.6e, \"t2_KI_90\": %.6e, \"t2_KIII_90\": %.6e, "
                 "\"t_assemble\": %.3f, \"t_solve\": %.3f}",
                 dat.c_str(), int(enrich), load.c_str(), M.unknowns, sI, errI, sgnI, maxI, absII, absIII, errII, errIII,
-                cod_err, M.condition, M.residual, t2[0], t2[1], t2[2], t2[3], M.t_assemble, M.t_solve);
+                cod_err, M.condition, M.row_ratio, M.residual, t2[0], t2[1], t2[2], t2[3], M.t_assemble, M.t_solve);
   std::printf("%s\n", line);
   if (!out.empty()) { std::ofstream(out + "_summary.json") << line << "\n"; }
   if (check_k > 0 && enrich && !(errI <= check_k)) {
     std::fprintf(stderr, "K_I average error %.3e above %.3e\n", errI, check_k);
+    return 1;
+  }
+  // system health: condition number, LU residual (a badly integrated row shows up in both)
+  if (check_cond > 0 && !(M.condition <= check_cond && M.residual <= 1e-12)) {
+    std::fprintf(stderr, "cond %.3e (limit %.1e) or LU residual %.1e (limit 1e-12) too large\n", M.condition,
+                 check_cond, M.residual);
     return 1;
   }
   return 0;
