@@ -32,5 +32,19 @@ inline void addBlk(SparseRow& a, int c, const Eigen::Matrix3d& M) {
   for (int k = 0; k < 3; ++k) a.e.push_back({c + k, M.col(k)});
 }
 
+// Dense window of a row: columns [lo, lo + a.cols()) kept, the rest dropped (the enrichment border).
+struct WindowRow {
+  int lo = 0;
+  Eigen::Matrix<double, 3, Eigen::Dynamic> a;
+  WindowRow(int lo_, int n) : lo(lo_), a(Eigen::Matrix<double, 3, Eigen::Dynamic>::Zero(3, n)) {}
+};
+inline void addCol(WindowRow& w, int c, const Eigen::Vector3d& v) {
+  if (c >= w.lo && c < w.lo + w.a.cols()) w.a.col(c - w.lo) += v;
+}
+inline void addBlk(WindowRow& w, int c, const Eigen::Matrix3d& M) {
+  if (c + 3 > w.lo && c < w.lo + w.a.cols())
+    for (int k = 0; k < 3; ++k) addCol(w, c + k, M.col(k));
+}
+
 }  // namespace crack
 }  // namespace igabem
