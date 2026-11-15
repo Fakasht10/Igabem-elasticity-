@@ -67,7 +67,11 @@ struct CrackOptions {
   PartitionOptions part;
 };
 
+struct Growth;
+
 class CrackModel {
+  friend struct Growth;
+
  public:
   Mesh mesh;
   TractionSpace ts;
@@ -250,7 +254,16 @@ class CrackModel {
       A.middleRows(3 * r, 3) = a;
       B.middleRows(3 * r, 3) = b;
     }
-    if (opt.enrich) tyingRows(A, 3 * int(rows.size()));
+    return solveSystem(A, B, int(rows.size()), cond, disps, t0);
+  }
+
+  // Tying rows, column selection, Dirichlet data and LU solve of an assembled collocation system (rows [0, 3 nrows)
+  // collocation, the rest left for the tying rows).
+  std::vector<Eigen::VectorXd> solveSystem(Eigen::MatrixXd& A, Eigen::MatrixXd& B, int nrows, bool cond,
+                                           const std::vector<DisplacementFn>& disps,
+                                           std::chrono::steady_clock::time_point t0) {
+    const int nr = int(A.rows()), L = int(B.cols());
+    if (opt.enrich) tyingRows(A, 3 * nrows);
     // column selection: drop the (zero) Dirichlet displacement columns
     std::vector<char> fixed(mesh.ndof, 0);
     for (int p = 0; p < n_outer; ++p)

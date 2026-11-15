@@ -13,7 +13,7 @@ find_package(OpenMP)
 find_library(UMFPACK_LIB umfpack REQUIRED)
 find_path(UMFPACK_INC umfpack.h PATH_SUFFIXES suitesparse REQUIRED)
 
-foreach(app patch_test dirichlet_test interp_error cavity_test plate_test cad_test bc_case bc_validate region_validate rve_cell bead_cell crack_case crack_prism crack_serve crack_tension)
+foreach(app patch_test dirichlet_test interp_error cavity_test plate_test cad_test bc_case bc_validate region_validate rve_cell bead_cell crack_case crack_prism crack_serve crack_tension crack_grow)
   add_executable(${app} app/${app}.cpp)
   target_include_directories(${app} PRIVATE src)
   target_link_libraries(${app} PRIVATE Eigen3::Eigen)
@@ -57,6 +57,7 @@ add_test(NAME crack_penny COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/penny
 add_test(NAME crack_penny_conditioning COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/penny_i0_n4.dat --check-cond 1e7 --check-k 3e-4)
 # independent K: interaction integral on the interior field (crack/interaction.hpp); n4 measures 5.8e-5
 add_test(NAME crack_penny_mint COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/penny_i0_n4.dat --mint 0.1 --check-mint 3e-4)
+add_test(NAME crack_grow_reuse COMMAND crack_grow ${CMAKE_SOURCE_DIR}/geo/crack/senb_grow_aw0.5_n2_s0.dat ${CMAKE_SOURCE_DIR}/geo/crack/senb_grow_aw0.5_n2_s1.dat --verify --check-k 1e-8)
 add_test(NAME crack_penny_inclined COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/penny_og_i45_n5.dat --check-k 0.01)
 add_test(NAME crack_ellipse COMMAND crack_case ${CMAKE_SOURCE_DIR}/geo/crack/ellipse_i0_n5.dat --nu 0.3 --load pressure --check-k 0.02)
 add_test(NAME crack_prism_tension COMMAND crack_tension ${CMAKE_SOURCE_DIR}/geo/crack/prismt_split_c1.dat --check 0.02)
