@@ -33,9 +33,12 @@ int main(int argc, char** argv) {
   std::string dat = argv[1], out;
   bool cond = false;
   bool factored = false;  // --factored: factor() + solveFactored(), as crack_serve runs
-  int ng = 12, grade = 6;  // 8 Gauss points leave a 1e-4 floor in K (z-face elements next to the front end)
-  double near_tol = 1e-8, shift = 0.02, far_tol = 1e-12, check_k = -1, E = 1.0, nu = 0.0, a3 = 0.0, mint = -1;
+  int ng = 16, grade = 6;  // 8 Gauss points leave a 1e-4 floor in K; the r^3/2 term needs 16 (k5: 12 gives 2.3e-5, 16 and 24 1.4e-5)
+  double near_tol = 1e-8, shift = 0.1, far_tol = 1e-12, check_k = -1, E = 1.0, nu = 0.0, a3 = 0.0, mint = -1;
   bool indicator = false;
+  bool patch_faces = false;  // --patch-faces: crack patches with dofs of their own (pre-continuity)
+  bool second = true;        // --no-second: first Williams term only
+  double front_row = 0.3;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--cond")) cond = true;
     else if (!std::strcmp(argv[i], "--factored")) factored = true;
@@ -44,6 +47,9 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--nu") && i + 1 < argc) nu = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--ng") && i + 1 < argc) ng = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--grade") && i + 1 < argc) grade = std::atoi(argv[++i]);
+    else if (!std::strcmp(argv[i], "--patch-faces")) patch_faces = true;
+    else if (!std::strcmp(argv[i], "--no-second")) second = false;
+    else if (!std::strcmp(argv[i], "--front-row") && i + 1 < argc) front_row = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--shift") && i + 1 < argc) shift = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--a3") && i + 1 < argc) a3 = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--mint") && i + 1 < argc) mint = std::atof(argv[++i]);
@@ -66,6 +72,9 @@ int main(int argc, char** argv) {
   o.quad.near_tol = near_tol;
   o.grade = grade;
   o.end_shift = shift;
+  o.continuous_faces = !patch_faces;
+  o.second = second;
+  o.front_row = front_row;
   {
     const Json J = Json::load(meta);
     for (size_t i = 0; i < J["dirichlet"].size(); ++i) o.dirichlet.push_back(J["dirichlet"][i].asInt());

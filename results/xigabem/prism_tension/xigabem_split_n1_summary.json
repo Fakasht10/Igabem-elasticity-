@@ -1,1 +1,1 @@
-{"geometry": "/home/user/repo/geo/crack/prismt_split_c1.dat", "kappa_outer": "strain", "unknowns": 6438, "F_2d": 2.829125, "KI_mid": 2.872197, "KI_mid_diff": 1.522441e-02, "KII_max": 2.028e-10, "KIII_max": 1.163e-10, "residual": 1.282e-12, "t_assemble": 9.312, "t_solve": 2.120}
+{"geometry": "/home/user/repo/geo/crack/prismt_split_c1.dat", "kappa_outer": "strain", "unknowns": 6480, "F_2d": 2.829125, "KI_mid": 2.875897, "KI_mid_diff": 1.653214e-02, "KII_max": 1.607e-10, "KIII_max": 4.865e-11, "residual": 1.967e-13, "t_assemble": 7.778, "t_solve": 1.849}

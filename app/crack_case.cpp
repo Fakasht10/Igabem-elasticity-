@@ -37,10 +37,13 @@ int main(int argc, char** argv) {
   std::string dat = argv[1], load = "far", out;
   bool enrich = true, cond = false, disc = false;
   bool factored = false;  // --factored: factor() + solveFactored(), as crack_serve runs
-  int ng = 8, grade = 6;
-  double near_tol = 1e-8, shift = 0.02, far_tol = 1e-12;
+  int ng = 16, grade = 6;
+  double near_tol = 1e-8, shift = 0.1, far_tol = 1e-12;
   double check_k = -1, check_cond = -1, E = 1.0, nu = 0.0, mint = -1, check_mint = -1;
   bool indicator = false;
+  bool patch_faces = false;  // --patch-faces: crack patches with dofs of their own (pre-continuity)
+  bool second = true;        // --no-second: first Williams term only
+  double front_row = 0.3;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--plain")) enrich = false;
     else if (!std::strcmp(argv[i], "--cond")) cond = true;
@@ -56,6 +59,9 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--nu") && i + 1 < argc) nu = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--ng") && i + 1 < argc) ng = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--grade") && i + 1 < argc) grade = std::atoi(argv[++i]);
+    else if (!std::strcmp(argv[i], "--patch-faces")) patch_faces = true;
+    else if (!std::strcmp(argv[i], "--no-second")) second = false;
+    else if (!std::strcmp(argv[i], "--front-row") && i + 1 < argc) front_row = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--shift") && i + 1 < argc) shift = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--far-tol") && i + 1 < argc) far_tol = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--near-tol") && i + 1 < argc) near_tol = std::atof(argv[++i]);
@@ -72,6 +78,9 @@ int main(int argc, char** argv) {
   o.quad.n_gauss = ng;
   o.grade = grade;
   o.end_shift = shift;
+  o.continuous_faces = !patch_faces;
+  o.second = second;
+  o.front_row = front_row;
   o.discontinuous = disc;
   o.quad.far_tol = far_tol;
   o.quad.near_tol = near_tol;

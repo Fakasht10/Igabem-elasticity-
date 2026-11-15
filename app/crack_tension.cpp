@@ -27,13 +27,15 @@ int main(int argc, char** argv) {
     return 2;
   }
   std::string dat = argv[1], out, kout = "strain";
-  int ng = 12, grade = 6;
-  double E = 1000.0, nu = 0.3, sig = 1.0, check = -1, shift = 0.02;
+  int ng = 16, grade = 6;
+  double E = 1000.0, nu = 0.3, sig = 1.0, check = -1, shift = 0.1;
+  bool patch_faces = false;  // --patch-faces: crack patches with dofs of their own (pre-continuity)
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
     else if (!std::strcmp(argv[i], "--kappa-outer") && i + 1 < argc) kout = argv[++i];
     else if (!std::strcmp(argv[i], "--ng") && i + 1 < argc) ng = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--check") && i + 1 < argc) check = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--patch-faces")) patch_faces = true;
     else if (!std::strcmp(argv[i], "--shift") && i + 1 < argc) shift = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--grade") && i + 1 < argc) grade = std::atoi(argv[++i]);
     else { std::fprintf(stderr, "unknown argument %s\n", argv[i]); return 2; }
@@ -51,6 +53,7 @@ int main(int argc, char** argv) {
   o.quad.near_tol = 1e-8;  // near-field quadtree tolerance (see SolverOptions::near_tol)
   o.grade = grade;
   o.end_shift = shift;
+  o.continuous_faces = !patch_faces;
   {
     const Json J = Json::load(meta);
     for (size_t i = 0; i < J["dirichlet"].size(); ++i) o.dirichlet.push_back(J["dirichlet"][i].asInt());

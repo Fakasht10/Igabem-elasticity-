@@ -12,13 +12,14 @@ import os
 import sys
 
 import matplotlib
+import matplotlib.ticker
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 OUT = os.path.join(ROOT, "results", "xigabem")
-C = {"ogrid": "#2a78d6", "disk": "#eb6834", "paper": "#1a1a19", "plain": "#8a8a85"}
+C = {"ogrid": "#2a78d6", "ogrid_ig": "#1baf7a", "disk": "#eb6834", "paper": "#1a1a19", "plain": "#8a8a85"}
 plt.rcParams.update({"font.size": 9, "axes.spines.top": False, "axes.spines.right": False, "axes.grid": True,
                      "grid.color": "#e4e4e0", "grid.linewidth": 0.6, "lines.linewidth": 1.6, "lines.markersize": 5,
                      "legend.frameon": False, "savefig.dpi": 200})
@@ -30,15 +31,22 @@ def rd(path):
 
 
 def base(out, lay=None):
-    """Runs of the shift-0.1, ungraded baseline (baseline_shift0.1.json), sorted by level."""
-    path = os.path.join(out, "baseline_shift0.1.json")
+    """Runs of the main-branch baseline before the r^3/2 term (baseline_main.json: end shift 0.02, ng 8), by level."""
+    path = os.path.join(out, "baseline_main.json")
     if not os.path.exists(path):
         return []
     with open(path) as f:
         runs = json.load(f)["runs"]
-    return sorted((r for r in runs if lay is None or r["layout"] == lay), key=lambda r: r["n"])
+    return sorted((r for r in runs if (lay is None or r["layout"] == lay) and r.get("formulation", "xigabem") == "xigabem"),
+                  key=lambda r: r["n"])
 
 
+def main_runs(d):
+    """The case's runs at the default end shift 0.1 (shift_check runs at 0.02 / 0.2 left out)."""
+    return [r for r in d["runs"] if r.get("shift", 0.1) == 0.1]
+
+
+BEFORE = "before (shift 0.02, no $r^{3/2}$ term)"
 BASE = dict(color="#b5b5b0", ls=":", marker=".", lw=1.2)
 
 
@@ -51,7 +59,7 @@ def dofaxis(a):
 
 
 def penny(d, out):
-    runs = d["runs"]
+    runs = main_runs(d)
     sel = lambda f, lay: sorted((r for r in runs if r["formulation"] == f and r["layout"] == lay), key=lambda r: r["n"])
     fig, ax = plt.subplots(2, 2, figsize=(9.0, 5.6))
     # (a) K_I along the front
@@ -79,9 +87,13 @@ def penny(d, out):
     if xs:
         b.loglog([r["unknowns"] for r in xs], [r["KI_avg_err"] for r in xs], "D--", color=C["disk"], mfc="white",
                  ms=4, lw=1.0, label="disk, front graded")
-    bs = base(out, "disk")
+    xs = sel("xigabem", "ogrid_ig")
+    if xs:
+        b.loglog([r["unknowns"] for r in xs], [r["KI_avg_err"] for r in xs], "s-", color=C["ogrid_ig"],
+                 label="O-grid, inner patch graded")
+    bs = base(out, "ogrid")
     if bs:
-        b.loglog([r["unknowns"] for r in bs], [r["KI_avg_err"] for r in bs], label="disk, end shift 0.1 (before)", **BASE)
+        b.loglog([r["unknowns"] for r in bs], [r["KI_avg_err"] for r in bs], label="O-grid, " + BEFORE, **BASE)
     # independent K: interaction integral on the interior field (enriched, and plain IgBEM with no K unknowns)
     for f, mk, lab in (("xigabem", "v", "M-integral, XIGABEM field"), ("igabem", "^", "M-integral, plain IgBEM")):
         xs = [r for r in sel(f, "disk") if r.get("KM_I_avg_err", -1) >= 0]
@@ -131,7 +143,7 @@ def penny(d, out):
             "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     km = lambda r: "%.2e" % r["KM_I_avg_err"] if r and r.get("KM_I_avg_err", -1) >= 0 else "-"
     pk = {int(k): v for k, v in p.items()}
-    for lay in ("ogrid", "disk", "disk_graded"):
+    for lay in ("ogrid", "ogrid_ig", "disk", "disk_graded"):
         pl = {r["n"]: r for r in sel("igabem", lay)}
         for r in sel("xigabem", lay):
             near = min(pk, key=lambda k: abs(k - r["unknowns"]))
@@ -140,13 +152,55 @@ def penny(d, out):
                 lay, r["n"], r["unknowns"], r["KI_avg_err"], r["KI_max_err"], r["KI_signed_err"], ps, km(r),
                 km(pl.get(r["n"])), "%.2f" % r["effectivity"] if r.get("effectivity", -1) > 0 else "-", r["cod_L2"], "%.2e" % pl[r["n"]]["cod_L2"] if r["n"] in pl else "-",
                 r["t_assemble"] + r["t_solve"]))
-    for r in base(out, "disk"):
-        rows.append("| disk, shift 0.1 (before) | %d | %d | %.2e | %.2e | %+.2e | | | | | %.2e | | %.1f |" % (
+    for r in base(out, "ogrid"):
+        rows.append("| O-grid, before (shift 0.02, no r^3/2) | %d | %d | %.2e | %.2e | %+.2e | | | | | %.2e | | %.1f |" % (
             r["n"], r["unknowns"], r["KI_avg_err"], r["KI_max_err"], r["KI_signed_err"], r["cod_L2"],
             r["t_assemble"] + r["t_solve"]))
+    # end-shift independence (shift_check runs): signed K_I error at shifts 0.02 / 0.1 / 0.2
+    der = d.get("derived", {})
+    rows += shift_rows(der, ("ogrid", "ogrid_ig"))
+    shift_figure(d, out, der, (("ogrid", "uniform inner patch"), ("ogrid_ig", "inner patch graded")), "penny_shift",
+                 "Penny, O-grid")
     with open(os.path.join(out, "penny_table.md"), "w") as f:
         f.write("\n".join(rows) + "\n")
     print("\n".join(rows))
+
+
+def shift_rows(der, lays):
+    rows = ["", "End-shift check, signed K_I error (rate: last three levels, h ~ dof^-1/2):", "",
+            "| layout | n | shift 0.02 | shift 0.1 | shift 0.2 | spread | observed rate |", "|---|---|---|---|---|---|---|"]
+    for lay in lays:
+        for k, v in sorted(der.get(lay, {}).items(), key=lambda kv: int(kv[0][11:]) if kv[0].startswith("KI_signed_n") else 0):
+            if k.startswith("KI_signed_n"):
+                n = int(k[len("KI_signed_n"):])
+                rows.append("| %s | %d | %s | %.1e | h^%.2f |" % (
+                    lay, n, " | ".join("%+.2e" % v.get(sh, float("nan")) for sh in ("0.02", "0.1", "0.2")),
+                    der[lay]["shift_spread_n%d" % n], der[lay]["rate"] or float("nan")))
+    return rows
+
+
+def shift_figure(d, out, der, lays, name, title):
+    """Signed K_I error against the end shift at n = 7 and 11 for the given (layout, label) pairs."""
+    if not der.get(lays[-1][0], {}).get("KI_signed_n7"):
+        return
+    col = {"ogrid": C["ogrid"], "ogrid_ig": C["ogrid_ig"], "disk": C["disk"], "ring_ig": C["ogrid_ig"]}
+    fig, ax = plt.subplots(1, 2, figsize=(7.2, 2.8), sharey=True)
+    for a, n in zip(ax, (7, 11)):
+        for lay, lab in lays:
+            ks = der.get(lay, {}).get("KI_signed_n%d" % n, {})
+            if ks:
+                sh = sorted(ks, key=float)
+                a.plot([float(x) for x in sh], [ks[x] for x in sh], "o-", color=col[lay], label=lab)
+        a.axhline(0.0, color=C["paper"], lw=0.8)
+        a.set_yscale("symlog", linthresh=1e-5)
+        a.set_xlabel("collocation end shift")
+        a.set_title("(%s) n = %d" % ("ab"[n == 11], n), loc="left")
+    ax[0].set_ylabel(r"signed $K_I$ error")
+    ax[0].legend(fontsize=7)
+    fig.suptitle(title + ": $K_I$ against the collocation end shift ($r^{3/2}$ term on, 16 Gauss points)", fontsize=10)
+    fig.tight_layout()
+    for ext in ("png", "pdf"):
+        fig.savefig(os.path.join(out, name + "." + ext))
 
 
 def penny_inclined(d, out):
@@ -177,7 +231,7 @@ def penny_inclined(d, out):
     b.loglog(dof, [r["KI_max_err"] for r in runs], "--", color="#8a8a85", lw=1.0, label=r"$K_I$ max")
     bs = base(out)
     if bs:
-        b.loglog([r["unknowns"] for r in bs], [r["KI_avg_err"] for r in bs], label=r"$K_I$ mean, shift 0.1 (before)",
+        b.loglog([r["unknowns"] for r in bs], [r["KI_avg_err"] for r in bs], label=r"$K_I$ mean, " + BEFORE,
                  **BASE)
     b.loglog([d["paper"]["finest_dof"]], [d["paper"]["max_rel_err_finest"]], "s", color="#1a1a19", mfc="white",
              label="paper, max (finest)")
@@ -229,7 +283,7 @@ def prism(d, out):
     b.loglog(dof, [r["cross_max"] for r in runs], "^:", color="#8a8a85", label="largest spurious $K$")
     bs = base(out)
     if bs:
-        b.loglog([r["unknowns"] for r in bs], [r["KI_err"] for r in bs], label=r"$K_I$, shift 0.1 (before)", **BASE)
+        b.loglog([r["unknowns"] for r in bs], [r["KI_err"] for r in bs], label=r"$K_I$, " + BEFORE, **BASE)
     dofaxis(b)
     b.set_xlim(330, 5000)
     b.set_xlabel("degrees of freedom")
@@ -270,11 +324,13 @@ def ellipse(d, out):
     with open(os.path.join(OUT, "ellipse_inclined", "case.json")) as f:
         di = json.load(f)
     oi = os.path.join(OUT, "ellipse_inclined")
-    xs = sorted((r for r in d["runs"] if r["formulation"] == "xigabem" and r["layout"] == "disk"), key=lambda r: r["n"])
-    xg = sorted((r for r in d["runs"] if r["layout"] == "disk_graded"), key=lambda r: r["n"])
-    ps = sorted((r for r in d["runs"] if r["formulation"] == "igabem"), key=lambda r: r["n"])
+    mr = main_runs(d)
+    xs = sorted((r for r in mr if r["formulation"] == "xigabem" and r["layout"] == "disk"), key=lambda r: r["n"])
+    xg = sorted((r for r in mr if r["layout"] == "disk_graded"), key=lambda r: r["n"])
+    xr = sorted((r for r in mr if r["layout"] == "ring_ig"), key=lambda r: r["n"])
+    ps = sorted((r for r in mr if r["formulation"] == "igabem" and r["layout"] == "disk"), key=lambda r: r["n"])
     ri = sorted(di["runs"], key=lambda r: r["n"])
-    fig, ax = plt.subplots(2, 2, figsize=(7.2, 5.6))
+    fig, ax = plt.subplots(2, 2, figsize=(7.2, 6.8))
     def front(path):
         s = rd(path)
         th = np.degrees(np.mod(s["theta_c"], 2 * np.pi))
@@ -307,9 +363,12 @@ def ellipse(d, out):
     if xg:
         c.loglog([r["unknowns"] for r in xg], [r["KI_avg_err"] for r in xg], "D--", color="#2a78d6", mfc="white",
                  ms=4, lw=1.0, label="in plane, front graded")
-    bs = base(out)
+    if xr:
+        c.loglog([r["unknowns"] for r in xr], [r["KI_avg_err"] for r in xr], "s-", color=C["ogrid_ig"],
+                 label="in plane, ring layout, inner graded")
+    bs = base(out, "disk")
     if bs:
-        c.loglog([r["unknowns"] for r in bs], [r["KI_avg_err"] for r in bs], label="in plane, shift 0.1 (before)",
+        c.loglog([r["unknowns"] for r in bs], [r["KI_avg_err"] for r in bs], label="in plane, " + BEFORE,
                  **BASE)
     lab = {"t2_KI_0": (r"$K_I$, $\theta_c = 0$", "#2a78d6"), "t2_KII_0": (r"$K_{II}$, $\theta_c = 0$", "#eb6834"),
            "t2_KI_90": (r"$K_I$, $\theta_c = \pi/2$", "#6f47d6"), "t2_KIII_90": (r"$K_{III}$, $\theta_c = \pi/2$", "#1baf7a")}
@@ -318,11 +377,13 @@ def ellipse(d, out):
         c.axhline(di["paper"]["table2"][k][0], color=col, lw=0.8, ls="--")
     c.plot([], [], "--", color="#8a8a85", lw=0.8, label="paper Table 2 (dof not given)")
     dofaxis(c)
+    c.set_xlim(330, 8000)
+    c.xaxis.set_major_locator(matplotlib.ticker.FixedLocator([500, 1000, 2000, 5000]))
     c.set_xlabel("degrees of freedom")
     c.set_ylabel("relative SIF error")
     c.set_title("(c) SIF error", loc="left")
-    c.set_ylim(3e-4, 3.0)
-    c.legend(fontsize=5.5, loc="upper right", ncol=2)
+    c.set_ylim(3e-5, 1e-1)
+    hl = c.get_legend_handles_labels()  # figure legend below the panels (too many entries for the axes)
     e = ax[1, 1]
     e.loglog(dof, [r["cod_L2"] for r in xs], "o-", color="#2a78d6", label="XIGABEM")
     e.loglog([r["unknowns"] for r in ps], [r["cod_L2"] for r in ps], "^:", color="#8a8a85", label="IgBEM")
@@ -332,10 +393,11 @@ def ellipse(d, out):
     e.set_title("(d) in plane: crack opening", loc="left")
     e.legend(fontsize=7)
     fig.suptitle(r"Elliptical crack $a = 2b$, $\nu = 0.3$ (Rocha et al. 2024, Sec. 4.2)", fontsize=10)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.11, 1, 1))
+    fig.legend(*hl, loc="lower center", ncol=3, fontsize=6.5)
     for ext in ("png", "pdf"):
         fig.savefig(os.path.join(out, "ellipse." + ext))
-    rows = ["| n | dof | in plane: mean K_I err | shift 0.1 (before) | graded (dof) | opening L2 XIG / IgBEM | inclined: K_I(0) | K_II(0) | K_I(pi/2) | K_III(pi/2) |",
+    rows = ["| n | dof | in plane: mean K_I err | before (shift 0.02, no r^3/2) | graded (dof) | opening L2 XIG / IgBEM | inclined: K_I(0) | K_II(0) | K_I(pi/2) | K_III(pi/2) |",
             "|---|---|---|---|---|---|---|---|---|---|"]
     pl = {r["n"]: r for r in ps}
     ii = {r["n"]: r for r in ri}
@@ -351,6 +413,12 @@ def ellipse(d, out):
     t = di["paper"]["table2"]
     for i, name in enumerate(["paper XIGABEM", "paper VCCI [72]", "paper M-integral [72]"]):
         rows.append("| %s | | | | | | %s |" % (name, " | ".join("%.2e" % t[k][i] for k in lab)))
+    rows += ["", "Ring layout, inner patches graded, crown 0.125 a (in plane):", "", "| n | dof | mean K_I err | max K_I err |",
+             "|---|---|---|---|"] + ["| %d | %d | %.2e | %.2e |" % (r["n"], r["unknowns"], r["KI_avg_err"], r["KI_max_err"])
+                                     for r in xr]
+    rows += shift_rows(d.get("derived", {}), ("disk", "ring_ig"))
+    shift_figure(d, out, d.get("derived", {}), (("disk", "disk layout (paper)"), ("ring_ig", "ring, inner graded")),
+                 "ellipse_shift", "Ellipse a = 2b")
     with open(os.path.join(out, "ellipse_table.md"), "w") as f:
         f.write("\n".join(rows) + "\n")
     print("\n".join(rows))
@@ -383,7 +451,7 @@ def prism_tension(d, out):
         b.semilogx([r["unknowns"] for r in rs], [r["KI_mid"] for r in rs], "o-", color=col, label=lay)
     bs = base(out, "split")
     if bs:
-        b.semilogx([r["unknowns"] for r in bs], [r["KI_mid"] for r in bs], label="split, shift 0.1 (before)", **BASE)
+        b.semilogx([r["unknowns"] for r in bs], [r["KI_mid"] for r in bs], label="split, " + BEFORE, **BASE)
     b.axhline(F, color="#1a1a19", lw=0.9, ls="--", label="2-D plane strain")
     b.set_xlabel("degrees of freedom")
     b.set_ylabel(r"$K_I / (\sigma_0 \sqrt{\pi a})$ at $z = 3.75$")
@@ -401,7 +469,7 @@ def prism_tension(d, out):
             rows.append("| %s | %d | %d | %.4f | %+.2f%% | %.1f |" % (lay, r["n"], r["unknowns"], r["KI_mid"],
                         100 * (r["KI_mid"] / F - 1), r["t_assemble"] + r["t_solve"]))
     for r in base(out, "split"):
-        rows.append("| split, shift 0.1 (before) | %d | %d | %.4f | %+.2f%% | %.1f |" % (
+        rows.append("| split, before (shift 0.02, no r^3/2) | %d | %d | %.4f | %+.2f%% | %.1f |" % (
             r["n"], r["unknowns"], r["KI_mid"], 100 * (r["KI_mid"] / F - 1), r["t_assemble"] + r["t_solve"]))
     for k, v in d["paper"]["fig25_mid_diff"].items():
         rows.append("| paper %s | | | | %.2f%% (sign not stated) | |" % (k, 100 * v))
@@ -431,9 +499,9 @@ def prism_a3(d, out):
     b = ax[1]
     for lay, col, lab in lays:
         rs = sel(lay)
-        b.loglog([r["unknowns"] for r in rs], [r["KI_err"] for r in rs], "o-", color=col, label=lab + ", shift 0.02")
+        b.loglog([r["unknowns"] for r in rs], [r["KI_err"] for r in rs], "o-", color=col, label=lab + ", shift 0.1")
     if bs:
-        b.loglog([r["unknowns"] for r in bs], [r["KI_err"] for r in bs], label="uniform, shift 0.1 (before)", **BASE)
+        b.loglog([r["unknowns"] for r in bs], [r["KI_err"] for r in bs], label="uniform, " + BEFORE, **BASE)
     ad = os.path.join(out, "adapt", "adapt.json")
     adapt = json.load(open(ad))["history"] if os.path.exists(ad) else []
     if adapt:  # residual-driven grading (python/adapt_front.py)
@@ -474,13 +542,13 @@ def prism_a3(d, out):
         for r in sel(lay):
             m = ("%.2e | %.2e | %.2e | %.2f" % (r["KM_err"][0], r["KM_gap"][0], r["Kdof_err_at_stations"][0],
                                                r["KM_track_I"])) if r.get("KM_track_I", -1) > 0 else "- | - | - | -"
-            rows.append("| %s, shift 0.02 | %d | %d | %.2e | %s | %s | %.2e | %.1f |" % (lab, r["n"], r["unknowns"],
+            rows.append("| %s, shift 0.1 | %d | %d | %.2e | %s | %s | %.2e | %.1f |" % (lab, r["n"], r["unknowns"],
                         r["KI_err"], m, eff(r), r["modeI"]["u_L2"], r["t_assemble"] + r["t_solve"]))
     for h in adapt:
         rows.append("| adaptive step %d (lines %s) | 2 | %d | %.2e | - | - | - | - | %.2f | - | %.1f |" % (
             h["it"], ", ".join("%.3g" % x for x in h["lines"]) or "none", h["dof"], h["KI_err"], h["effectivity"], h["t"]))
     for r in bs:
-        rows.append("| uniform, shift 0.1 (before) | %d | %d | %.2e | - | - | - | - | - | %.2e | %.1f |" % (
+        rows.append("| uniform, before (shift 0.02, no r^3/2) | %d | %d | %.2e | - | - | - | - | - | %.2e | %.1f |" % (
             r["n"], r["unknowns"], r["KI_err"], r["modeI"]["u_L2"], r["t_assemble"] + r["t_solve"]))
     with open(os.path.join(out, "prism_a3_table.md"), "w") as f:
         f.write("\n".join(rows) + "\n")

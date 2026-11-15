@@ -71,6 +71,16 @@ def _facing(P, n):
     return P if np.dot(_normal(P), n) > 0 else _flip_u(P)
 
 
+def _insert_u_only(P, n):
+    """Knot insertion to n control points in u only (uniform interior knots)."""
+    new = [i / (n - P.p) for i in range(1, n - P.p)] if n > P.p + 1 else []
+    for u in new:
+        rows = [mg.insert_knot_curve(P.p, P.U, P.Pw[j], u) for j in range(P.Pw.shape[0])]
+        P.U = rows[0][0]
+        P.Pw = np.stack([r[1] for r in rows], axis=0)
+    return P
+
+
 def _insert(P, n):
     """Knot insertion to n control points per direction (uniform interior knots)."""
     for direction in (0, 1):
@@ -90,6 +100,47 @@ def _insert(P, n):
                 P.Pw = np.stack([c[1] for c in cols], axis=1)
     return P
 
+
+def _end_graded(n_el, h0, q):
+    """Interior breakpoints on [0, 1]: spacing h0 at both ends growing by q per element up to the uniform spacing
+    1 / n_el, uniform (at most 1 / n_el) in between."""
+    hu = 1.0 / n_el
+    if h0 >= hu:
+        return _bp(n_el)
+    left, d, h = [], 0.0, h0
+    while h < hu and d + h < 0.5:
+        d += h
+        left.append(d)
+        h *= q
+    a = left[-1] if left else 0.0
+    m = max(1, int(math.ceil((1.0 - 2 * a) / hu - 1e-9)))
+    mid = [a + (1.0 - 2 * a) * i / m for i in range(1, m)]
+    return sorted(left + mid + [1.0 - x for x in left])
+
+
+def _grade_ends(P, h0u, h0v, n_el, q):
+    """Knot insertion toward all four edges of a single-span patch (inner crack patch next to the crown): element
+    size h0 (parameter units, per direction) at the edges, growing by q into the interior (exact geometry)."""
+    for direction, h0 in ((0, h0u), (1, h0v)):
+        deg = P.p if direction == 0 else P.q
+        for u in _end_graded(n_el, h0, q):
+            K = P.U if direction == 0 else P.V
+            if direction == 0:
+                rows = [mg.insert_knot_curve(deg, K, P.Pw[j], u) for j in range(P.Pw.shape[0])]
+                P.U = rows[0][0]
+                P.Pw = np.stack([r[1] for r in rows], axis=0)
+            else:
+                cols = [mg.insert_knot_curve(deg, K, P.Pw[:, i], u) for i in range(P.Pw.shape[1])]
+                P.V = cols[0][0]
+                P.Pw = np.stack([c[1] for c in cols], axis=1)
+    return P
+
+
+# Inner-patch edge grading ratio (0: off). The crown is fine radially (its width over n - 2 spans) while the inner
+# patch is several times coarser; the TBIE rows of the inner patch next to the crown's inner edge then set the K
+# error and its end-shift dependence (measured: penny_og n9, shift 0.02-0.2 spread 4.3e-4 uniform, 4.5e-5 with the
+# inner patch 2x refined). Grading the inner patch toward its edges to the crown's radial element size removes it.
+INNER_GRADE = 0.0
 
 # Fixed-zone front grading (convergence review, option B): the K unknown absorbs whatever the NURBS cannot
 # represent next to the front (the r^3/2 Williams term) at O(h); graded knots within a zone of FIXED physical size
@@ -177,6 +228,38 @@ def penny_face(R, ri, e1, e3, outward):
     return out
 
 
+def penny_face_ring(R, ri, e1, e3, outward, rs_frac=0.5):
+    """Ring layout: the disk layout's crown (ri..R, inner boundary the circle ri, so it stays clear of the front's
+    medial axis on an ellipse) around an O-grid of radius ri (square with corners on rs = rs_frac ri, four ring
+    patches out to the circle ri). No degenerate patch corner (the disk layout's central patch has four, where
+    graded elements collapse). Order: square, crown 1..4, ring 1..4 (the crown stays at face positions 1..4)."""
+    og = penny_face_ogrid(ri, rs_frac * ri, e1, e3, outward)
+    return [og[0]] + penny_face(R, ri, e1, e3, outward)[1:] + og[1:]
+
+
+def _one_sided(n_el, h0, q):
+    """Interior breakpoints on [0, 1]: spacing h0 at t = 1 growing by q toward t = 0 up to 1 / n_el, then uniform."""
+    hu = 1.0 / n_el
+    if h0 >= hu:
+        return _bp(n_el)
+    right, d, h = [], 0.0, h0
+    while h < hu and d + h < 1.0:
+        d += h
+        right.append(1.0 - d)
+        h *= q
+    a = right[-1] if right else 1.0
+    m = max(1, int(math.ceil(a / hu - 1e-9)))
+    return sorted([a * i / m for i in range(1, m)] + right)
+
+
+def _insert_v(P, knots):
+    for g in knots:
+        cols = [mg.insert_knot_curve(P.q, P.V, P.Pw[:, i], g) for i in range(P.Pw.shape[1])]
+        P.V = cols[0][0]
+        P.Pw = np.stack([c[1] for c in cols], axis=1)
+    return P
+
+
 def penny_face_ogrid(R, ri, e1, e3, outward):
     """O-grid: central square with corners on the circle of radius ri, four crown patches from its sides to the
     front arcs (no degenerate patch; the crown is ri..R wide at the corners, R - ri/sqrt2 at the middles)."""
@@ -206,13 +289,27 @@ def penny(n, R=1.0, L=200.0, incline=0.0, ri_frac=0.8, layout="disk", aspect=1.0
     m = Rz @ np.array([0.0, 1.0, 0.0])
     e1, e3 = Rz @ np.array([1.0, 0.0, 0.0]), np.array([0.0, 0.0, 1.0])
     ri = ri_frac * R
-    face = penny_face if layout == "disk" else penny_face_ogrid
-    # crown patches (1..4): v radial and linear across the crown width R - ri, the front at v = 1 (the disk layout;
-    # the O-grid crown is wider at its corners, so its grading scale is the mid-side width)
-    w = R - ri if layout == "disk" else R - ri * S2
+    face = {"disk": penny_face, "ogrid": penny_face_ogrid, "ring": penny_face_ring}[layout]
+    if aspect < 1.0 and layout == "ogrid":
+        # the O-grid crown reaches ri / sqrt2 on the major axis, inside the front's medial axis |x| < a - b^2 / a,
+        # where nearest-point crack coordinates kink (measured: near-null mode there, cond 1e10, K off up to 3x)
+        if ri * S2 < R * (1.0 - aspect ** 2):
+            raise SystemExit("ellipse --layout ogrid: crown crosses the front's medial axis; use disk or ring")
+    # crown patches (1..4): v radial and linear across the crown width R - ri, the front at v = 1 (the disk and ring
+    # layouts; the O-grid crown is wider at its corners, so its grading scale is the mid-side width)
+    w = R - ri * S2 if layout == "ogrid" else R - ri
     def faces(n_out):
         ps = [_insert(P, n) for P in face(R, ri, e1, aspect * e3, n_out)]
-        return [ps[0]] + [_grade_v(P, 1.0, -1, w) for P in ps[1:]]
+        if INNER_GRADE > 0 and layout != "ring":  # inner patch: element size at its edges = the crown's radial size
+            side = 2 * ri * S2 if layout != "disk" else 2 * ri
+            h0 = (w / (n - 2)) / side
+            ps[0] = _grade_ends(face(R, ri, e1, aspect * e3, n_out)[0], h0, h0, n - 2, INNER_GRADE)
+        if INNER_GRADE > 0 and layout == "ring":  # ring patches: radial size at the crown edge = the crown's
+            width = ri * (1.0 - 0.5 * S2)  # mid-side radial width of a ring patch (rs = ri / 2)
+            for k in range(5, 9):
+                P = _insert_u_only(face(R, ri, e1, aspect * e3, n_out)[k], n)
+                ps[k] = _insert_v(P, _one_sided(n - 2, (w / (n - 2)) / width, INNER_GRADE))
+        return [ps[0]] + [_grade_v(P, 1.0, -1, w) for P in ps[1:5]] + ps[5:]
     plus, minus = faces(-m), faces(m)
     outer = cube(L)
     n0, n1 = len(outer), len(outer) + len(plus)
@@ -548,17 +645,24 @@ def main(argv=None):
                     help="prism_tension: lateral-face layout (default split); prism: split cuts the z faces at y = 0")
     ap.add_argument("--n", default="3,4,5,6,7")
     ap.add_argument("--incline", type=float, default=0.0)
-    ap.add_argument("--layout", choices=["disk", "ogrid"], default="disk")
+    ap.add_argument("--layout", choices=["disk", "ogrid", "ring"], default="disk")
     ap.add_argument("--grade", default="",
                     help="fixed-zone front grading 'd,q,L' (zone d in length units, ratio q, L layers); '' = none")
     ap.add_argument("--grow", type=int, default=0, help="senb: crack growth, write steps 0..GROW (senb_grow)")
     ap.add_argument("--front-lines", default="", help="extra knot lines at these distances from the front 'd1,d2,..'")
+    ap.add_argument("--ri-frac", type=float, default=None, help="penny/ellipse: inner boundary at this fraction of "
+                    "the crack, the crown is the rest (default 0.8; ring layout: crown width min(0.2, rho_min / 2) of "
+                    "a, rho_min = b^2 / a the front's smallest radius of curvature)")
+    ap.add_argument("--inner-grade", type=float, default=0.0,
+                    help="penny/ellipse: grade the inner patch toward its edges to the crown's radial element size, "
+                         "growth ratio q (e.g. 1.5); 0 = uniform")
     ap.add_argument("--suffix", default="", help="appended to the geometry name")
     ap.add_argument("--out", default=ROOT)
     a = ap.parse_args(argv)
     a.lateral_set = a.lateral is not None
     a.lateral = a.lateral or "split"
-    global GRADE, FRONT_LINES
+    global GRADE, FRONT_LINES, INNER_GRADE
+    INNER_GRADE = a.inner_grade
     GRADE = tuple(float(x) for x in a.grade.split(",")) if a.grade else None
     FRONT_LINES = [float(x) for x in a.front_lines.split(",")] if a.front_lines else []
     os.makedirs(a.out, exist_ok=True)
@@ -586,15 +690,25 @@ def main(argv=None):
             name = "prismt_%s_c%d" % (a.lateral, n)
         else:
             asp = a.aspect if a.kind == "ellipse" else 1.0
-            patches, meta = penny(n, incline=a.incline, layout=a.layout, aspect=asp)
+            # ring layout: nearest-point crack coordinates degrade toward the focal distance rho_min (ellipse a = 2b:
+            # crown 0.2 a gives K_I 9e-4 at n7, 0.125 a 2.2e-4, both shift-independent), so the crown is kept
+            # within half of it
+            ri = a.ri_frac if a.ri_frac is not None else (
+                1.0 - min(0.2, 0.5 * asp ** 2) if a.layout == "ring" else 0.8)
+            if INNER_GRADE > 0 and a.layout == "disk":
+                raise SystemExit("--inner-grade with the disk layout collapses elements at the central patch's "
+                                 "degenerate corners (K wrong at n9, n11); use --layout ring or ogrid")
+            patches, meta = penny(n, incline=a.incline, layout=a.layout, aspect=asp, ri_frac=ri)
             if a.kind == "ellipse":
                 meta["kind"] = "ellipse"
-            name = "%s_%si%g_n%d" % (a.kind, "" if a.layout == "disk" else "og_", a.incline, n)
+            name = "%s_%si%g_n%d" % (a.kind, {"disk": "", "ogrid": "og_", "ring": "ring_"}[a.layout], a.incline, n)
         name += a.suffix
         if GRADE:
             meta["grade"] = list(GRADE)
         if FRONT_LINES:
             meta["front_lines"] = FRONT_LINES
+        if INNER_GRADE > 0 and a.kind in ("penny", "ellipse"):
+            meta["inner_grade"] = INNER_GRADE
         path = os.path.join(a.out, name + ".dat")
         mg.write_dat(path, patches, name)
         with open(os.path.join(a.out, name + ".crack.json"), "w") as f:
