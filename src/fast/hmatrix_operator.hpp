@@ -160,19 +160,6 @@ class HOperator {
     }
   }
 
-  // f(rows, m, cols, n, data) for every dense leaf: its rows and columns in the user numbering, data column-major
-  // m x n (the near field, for sparse preconditioners).
-  template <class F>
-  void forDenseLeaves(F&& f) const {
-    const int *tp = target_->get_permutation().data(), *sp = source_->get_permutation().data();
-    for (const auto* l : leaves()) {
-      if (!l->is_dense()) continue;
-      const int ro = l->get_target_cluster().get_offset(), m = l->get_target_cluster().get_size();
-      const int co = l->get_source_cluster().get_offset(), n = l->get_source_cluster().get_size();
-      f(tp + ro, m, sp + co, n, l->get_dense_data()->data());
-    }
-  }
-
   void save(std::ostream& f) const {
     const auto L = leaves();
     put(f, std::int64_t(rows()));

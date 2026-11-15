@@ -33,6 +33,8 @@
 
 #include <Eigen/Dense>
 #include <chrono>
+#include <memory>
+#include <mutex>
 #include <functional>
 #include <stdexcept>
 #include <string>
@@ -88,9 +90,6 @@ constexpr int kMaxEnr = 256;  // enrichment columns at one point (front function
 
 class CrackModel {
   friend struct Growth;
-  friend class CrackH;
-  friend class CrackEntries;
-  friend class CrackMoments;
 
  public:
   Mesh mesh;
@@ -320,6 +319,7 @@ class CrackModel {
     const int L = int(loads.size());
     Eigen::MatrixXd A = Eigen::MatrixXd::Zero(nr, ncols), B = Eigen::MatrixXd::Zero(nr, L);
     ElementIntegrator quad(mesh, opt.quad);
+    const CacheGuard cg = cacheEnrichment(quad);
 #pragma omp parallel for schedule(dynamic)
     for (int r = 0; r < int(rows.size()); ++r) {
       Eigen::MatrixXd a = Eigen::MatrixXd::Zero(3, ncols), b = Eigen::MatrixXd::Zero(3, L);
@@ -392,6 +392,7 @@ class CrackModel {
     const int nr = 3 * int(f_rows.size()) + extraRows();
     Eigen::MatrixXd A = Eigen::MatrixXd::Zero(nr, ncols);
     ElementIntegrator quad(mesh, opt.quad);
+    const CacheGuard cg = cacheEnrichment(quad);
     const std::vector<TractionFn> none;
 #pragma omp parallel for schedule(dynamic)
     for (int r = 0; r < int(f_rows.size()); ++r) {
@@ -510,7 +511,7 @@ class CrackModel {
     for (int l = 0; l < q.n_loc; ++l) u += q.R[l] * x.segment<3>(3 * l2g[q.idx[l]]);
     int cols[kMaxEnr];
     Vec3 vals[kMaxEnr];
-    const int ne = quadEnrichment(pe, q, cols, vals);
+    const int ne = opt.enrich && piece[pe] >= 0 ? enrichment(pe, q.uv, q.x, cols, vals) : 0;
     for (int i = 0; i < ne; ++i) u += vals[i] * x(cols[i]);
     if (pe < n_outer && dirichlet[pe]) {
       t.setZero();
@@ -756,9 +757,65 @@ class CrackModel {
     return P.greville(i, in_u);
   }
 
-  // Integrand-side shape of a quadrature point: standard basis (3 x 3 blocks) and enrichment vectors.
-  int quadEnrichment(int p, const QPoint& q, int* cols, Vec3* vals) const {
+  // Enrichment vectors at the cached far-field quadrature points of one integrator, filled per (element, order) on
+  // first use: the nearest-point projection on the front behind every enrichment evaluation was 55% of the crack
+  // assembly (gprof, penny n5), and every row meets the same cached points of the enriched elements.
+  struct EnrichmentCache {
+    const ElementIntegrator* quad = nullptr;
+    struct Slot {
+      std::once_flag once;
+      std::vector<int> ptr, col;
+      std::vector<Vec3> val;
+    };
+    std::vector<std::unique_ptr<Slot[]>> slots;  // per element (enriched only), per order
+    int max_order = 0;
+  };
+  // Use (and fill) a cache for the integrator quad while the returned guard lives.
+  struct CacheGuard {
+    const CrackModel* M;
+    ~CacheGuard() { M->ecache_.reset(); }
+  };
+  [[nodiscard]] CacheGuard cacheEnrichment(const ElementIntegrator& quad) const {
+    auto c = std::make_shared<EnrichmentCache>();
+    c->quad = &quad;
+    c->max_order = quad.maxCachedOrder();
+    c->slots.resize(mesh.elements.size());
+    if (opt.enrich)
+      for (size_t ie = 0; ie < mesh.elements.size(); ++ie)
+        if (piece[mesh.elements[ie].patch] >= 0) c->slots[ie].reset(new EnrichmentCache::Slot[c->max_order + 1]);
+    ecache_ = c;
+    return CacheGuard{this};
+  }
+  mutable std::shared_ptr<EnrichmentCache> ecache_;
+
+  // Integrand-side shape of a quadrature point of element ie (integrator quad): enrichment vectors.
+  int quadEnrichment(const ElementIntegrator& quad, int ie, const QPoint& q, int* cols, Vec3* vals) const {
+    const int p = mesh.elements[ie].patch;
     if (!opt.enrich || piece[p] < 0) return 0;
+    const EnrichmentCache* c = ecache_.get();
+    if (c && c->quad == &quad && q.id >= 0 && c->slots[ie]) {
+      // the order of the rule holding q.id
+      int m = 2;
+      while (m < c->max_order && quad.cachedFirst(ie, m + 1) <= q.id) ++m;
+      const long f = quad.cachedFirst(ie, m);
+      EnrichmentCache::Slot& S = c->slots[ie][m];
+      std::call_once(S.once, [&] {
+        int cs[kMaxEnr];
+        Vec3 vs[kMaxEnr];
+        S.ptr.assign(1, 0);
+        for (long id = f; id < f + long(m) * m; ++id) {
+          const int n = enrichment(p, quad.cachedUV(id), quad.cachedX(id), cs, vs);
+          S.col.insert(S.col.end(), cs, cs + n);
+          S.val.insert(S.val.end(), vs, vs + n);
+          S.ptr.push_back(int(S.col.size()));
+        }
+      });
+      const long k = q.id - f;
+      const int b = S.ptr[k], n = S.ptr[k + 1] - b;
+      std::copy(S.col.begin() + b, S.col.begin() + b + n, cols);
+      std::copy(S.val.begin() + b, S.val.begin() + b + n, vals);
+      return n;
+    }
     return enrichment(p, q.uv, q.x, cols, vals);
   }
 
@@ -809,7 +866,7 @@ class CrackModel {
       for (int l = 0; l < q.n_loc; ++l) addBlk(a, 3 * l2g[q.idx[l]], q.R[l] * Tw);
       int cols[kMaxEnr];
       Vec3 vals[kMaxEnr];
-      const int ne = quadEnrichment(pe, q, cols, vals);
+      const int ne = quadEnrichment(quad, int(&e - mesh.elements.data()), q, cols, vals);
       for (int i = 0; i < ne; ++i) addCol(a, cols[i], Tw * vals[i]);
       T0[grp] += Tw;
       if (unknown_t) {
@@ -887,7 +944,7 @@ class CrackModel {
         for (int l = 0; l < q.n_loc; ++l) addBlk(a, 3 * l2g[q.idx[l]], -(q.R[l] * Sw));
         int cols[kMaxEnr];
         Vec3 vals[kMaxEnr];
-        const int ne = quadEnrichment(pe, q, cols, vals);
+        const int ne = quadEnrichment(quad, int(&e - mesh.elements.data()), q, cols, vals);
         for (int i = 0; i < ne; ++i) addCol(a, cols[i], -(Sw * vals[i]));
       }
       if (unknown_t) {

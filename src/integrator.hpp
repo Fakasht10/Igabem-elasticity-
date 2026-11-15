@@ -159,6 +159,9 @@ class ElementIntegrator {
   // Cached far-field points (for callers that cache per-point data).
   long numCached() const { return long(cx_.size()); }
   const Vec3& cachedX(long id) const { return cx_[id]; }
+  const Vec2& cachedUV(long id) const { return cuv_[id]; }
+  // First point id of element ie's cached m x m rule (-1: none).
+  long cachedFirst(size_t ie, int m) const { return m <= max_cached_ && m >= 2 ? first_[ie][m] : -1; }
   const Vec3& cachedNJ(long id) const { return cnj_[id]; }
 
   template <class F>
