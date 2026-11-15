@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
   bool second = true;        // --no-second: first Williams term only
   double front_row = 0.3;
   bool hmat = false, hcheck = false;  // --hmat: hierarchical operator + GMRES (crack/h_crack.hpp)
-  double h_eps = 1e-8, h_radius = 1.0, h_gtol = 1e-10, h_eta = 2.0, h_etol = 1e-10;
+  double h_eps = 1e-10, h_radius = 1.0, h_gtol = 1e-10, h_eta = 2.0, h_etol = 1e-10;
   int h_leaf = 192;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--plain")) enrich = false;

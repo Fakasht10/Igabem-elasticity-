@@ -255,7 +255,7 @@ struct CrackHOptions {
   double radius = 1.0;     // preconditioner: near entries with |x_row - anchor| <= radius * support radius
   int restart = 200;
   double entry_tol = 1e-10;  // far-field quadrature tolerance of the ACA's samples (not on enriched elements)
-  CrackHOptions() { h.eps = 1e-8; h.eta = 2.0; h.leaf = 192; }
+  CrackHOptions() { h.eps = 1e-10; h.eta = 2.0; h.leaf = 192; }
 };
 
 class CrackH {
