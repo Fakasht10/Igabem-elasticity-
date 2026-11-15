@@ -1,12 +1,14 @@
 // Unit checks of the crack kernels (src/crack):
 //   planar  the open-face coefficients (planar.hpp) against the one-sided limits they stand for, computed by
 //           brute-force quadrature at z = x -+ h m as h -> 0 (Richardson in h), for a disk and a square face;
-//   front   projection, frame and the Williams face functions against the closed forms of a circular front.
+//   front   projection, frame and the Williams face functions against the closed forms of a circular front;
+//   M-int   the interaction integral of interaction.hpp on the exact Williams field (tilted frame) returns its K.
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 
 #include "crack/front.hpp"
+#include "crack/interaction.hpp"
 #include "crack/planar.hpp"
 #include "quadrature.hpp"
 
@@ -142,7 +144,38 @@ static void frontCase(const std::string& dat) {
   check("front: projection on the radius, |C| = 1", ep, 1e-12);
 }
 
+// The slice integral on the exact mixed-mode Williams field returns its SIFs (any annulus: path independence).
+static void interactionCase() {
+  Material mat;
+  const double E = 1.0, nu = 0.3;
+  mat.mu = E / (2 * (1 + nu));
+  mat.lambda = E * nu / ((1 + nu) * (1 - 2 * nu));
+  const double kappa = 3 - 4 * nu;
+  SliceFrame f;
+  f.C = Vec3(0.2, -0.1, 0.4);
+  f.b = Vec3(1.0, 2.0, 0.5).normalized();
+  f.n = f.b.cross(Vec3::UnitZ()).normalized();
+  f.t = f.n.cross(f.b);
+  Eigen::Matrix3d Rm;
+  Rm << f.n, f.b, f.t;
+  const Vec3 K(1.0, 0.3, -0.5);
+  for (double rho : {0.05, 0.3}) {
+    const SliceRule S = sliceRule(f, rho, InteractionOptions{});
+    std::vector<Eigen::Matrix3d> G(S.x.size());
+    for (size_t p = 0; p < S.x.size(); ++p) {
+      Eigen::Matrix3d g = Eigen::Matrix3d::Zero();
+      for (int M = 0; M < 3; ++M) g += K(M) * williamsGrad(M, S.r[p], S.th[p], mat.mu, kappa);
+      G[p] = Rm * g * Rm.transpose();
+    }
+    const Vec3 Km = sliceK(f, S, G, mat);
+    char buf[64];
+    std::snprintf(buf, sizeof buf, "M-integral: exact Williams field, rho %.2f", rho);
+    check(buf, (Km - K).norm(), 1e-8);
+  }
+}
+
 int main() {
+  interactionCase();
   frontCase(std::string(IGABEM_SOURCE_DIR) + "/geo/crack/penny_i0_n5.dat");
   // disk of radius 1 in the plane y = 0 (m = e2), seen from an off-centre point
   PlanarRegion disk;

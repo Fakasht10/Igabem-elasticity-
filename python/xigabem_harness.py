@@ -42,11 +42,12 @@ CASES = {
         "layouts": ["disk", "ogrid", "disk_graded"],
         "grade": "0.05,0.3,2",
         "formulations": {"xigabem": [], "igabem": ["--plain"]},
-        "extra": [],
-        "est_s": {3: 2, 4: 4, 5: 5, 6: 6, 7: 8, 9: 17, 11: 40},
+        # independent K: interaction integral on front slices, annulus 0.1 R (crack/interaction.hpp)
+        "extra": ["--mint", "0.1"],
+        "est_s": {3: 4, 4: 6, 5: 8, 6: 10, 7: 14, 9: 25, 11: 55},
         # gates on the finest XIGABEM level (n = 11): mean |K_I error| (paper reaches 1.4e-3 at n = 7), |K_II|, |K_III|
-        # (exactly zero by symmetry; 1e-5 of K_I = 1.13 is quadrature-level asymmetry)
-        "gates": {"KI_avg_err": 2.0e-3, "KII_avg_abs": 1.0e-5, "KIII_avg_abs": 1.0e-5},
+        # (exactly zero by symmetry; 1e-5 of K_I = 1.13 is quadrature-level asymmetry), and the M-integral K_I
+        "gates": {"KI_avg_err": 2.0e-3, "KII_avg_abs": 1.0e-5, "KIII_avg_abs": 1.0e-5, "KM_I_avg_err": 1.0e-3},
         "paper": {"table1_KI_signed_avg_err": PAPER_PENNY_TABLE1},
     },
     "penny_inclined": {
@@ -118,10 +119,12 @@ CASES = {
         "layouts": ["split", "split_graded"],
         "grade": "0.1,0.3,2",
         "formulations": {"xigabem": []},
-        "extra": ["--a3", "1"],
-        "est_s": {1: 1, 2: 2, 3: 3, 4: 5, 5: 8},
-        # the K unknown absorbs the r^3/2 remainder at O(h) (review: 9.4% at shift 0.1, k = 3); grading cuts it ~10x
-        "gates": {"KI_err": 5.0e-3},
+        # --mint: interaction-integral K at 5 stations, annulus 0.2 (0.4 of the crack depth)
+        "extra": ["--a3", "1", "--mint", "0.2"],
+        "est_s": {1: 10, 2: 15, 3: 25, 4: 35, 5: 45},
+        # the K unknown absorbs the r^3/2 remainder at O(h) (review: 9.4% at shift 0.1, k = 3); grading cuts it ~10x.
+        # KM_track_I: the gap |K_dof - K_M| over the true K_dof error (or its inverse), at most 3
+        "gates": {"KI_err": 5.0e-3, "KM_track_I": 3.0},
         "gate_layouts": ["split_graded"],
         "paper": {},
     },

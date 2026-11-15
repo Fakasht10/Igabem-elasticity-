@@ -1,6 +1,6 @@
 // Prism with an edge crack, pure-mode loading (Rocha, Trevelyan & Leonel 2024, Sec. 4.3, Table 3, Fig. 21).
 //
-//   crack_prism geo/crack/prism_k2.dat [--out prefix] [--check-k tol] [--nu NU] [--cond] [--factored] [--a3 A]
+//   crack_prism geo/crack/prism_k2.dat [--out prefix] [--check-k tol] [--nu NU] [--cond] [--factored] [--a3 A] [--mint rho]
 //
 // [-1, 1]^2 x [0, 2], crack y = 0, -1 <= x <= 0, straight front x = 0 along z (python/make_crack.py prism). The
 // single-term Williams field with K_M = 1 (Eq. 29; plane strain for I and II, antiplane for III) is an exact
@@ -20,6 +20,7 @@
 #include <string>
 
 #include "crack/dual_model.hpp"
+#include "crack/interaction.hpp"
 
 using namespace igabem;
 using namespace igabem::crack;
@@ -33,7 +34,7 @@ int main(int argc, char** argv) {
   bool cond = false;
   bool factored = false;  // --factored: factor() + solveFactored(), as crack_serve runs
   int ng = 12, grade = 6;  // 8 Gauss points leave a 1e-4 floor in K (z-face elements next to the front end)
-  double near_tol = 1e-8, shift = 0.02, far_tol = 1e-12, check_k = -1, E = 1.0, nu = 0.0, a3 = 0.0;
+  double near_tol = 1e-8, shift = 0.02, far_tol = 1e-12, check_k = -1, E = 1.0, nu = 0.0, a3 = 0.0, mint = -1;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--cond")) cond = true;
     else if (!std::strcmp(argv[i], "--factored")) factored = true;
@@ -44,6 +45,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--grade") && i + 1 < argc) grade = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--shift") && i + 1 < argc) shift = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--a3") && i + 1 < argc) a3 = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--mint") && i + 1 < argc) mint = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--far-tol") && i + 1 < argc) far_tol = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--near-tol") && i + 1 < argc) near_tol = std::atof(argv[++i]);
     else { std::fprintf(stderr, "unknown argument %s\n", argv[i]); return 2; }
@@ -170,6 +172,33 @@ int main(int argc, char** argv) {
   for (auto& a : avg) for (double& v : a) v /= ns;
   for (auto& a : err) for (double& v : a) v /= ns;
 
+  // Independent K (crack/interaction.hpp): slice interaction integrals of radius mint at 5 stations along the front,
+  // per mode: average |K_M - 1| (own mode), and the K_dof - K_M gap against the true K_dof error.
+  double kmErr[3] = {-1, -1, -1}, kmGap[3] = {-1, -1, -1}, kdErr[3] = {-1, -1, -1}, t_mint = 0;
+  if (mint > 0) {
+    const auto tm0 = std::chrono::steady_clock::now();
+    std::vector<std::pair<int, double>> st;
+    for (int i = 0; i < 5; ++i) st.push_back({0, F.u0 + (F.u1 - F.u0) * (0.1 + 0.2 * i)});
+    FILE* fm = out.empty() ? nullptr : std::fopen((out + "_mint.csv").c_str(), "w");
+    if (fm) std::fprintf(fm, "mode,z,K_M,K_M_rho,K_M_rho2,K_dof\n");
+    for (int Mo = 0; Mo < 3; ++Mo) {
+      const CrackField field(M, X[Mo], loads[Mo]);
+      const auto KM = interactionK(M.front, st, mint, M.mat, std::cref(field));
+      kmErr[Mo] = kmGap[Mo] = kdErr[Mo] = 0;
+      for (size_t i = 0; i < st.size(); ++i) {
+        const double Kd = M.front.sif(0, st[i].second, X[Mo])(Mo), Km = KM[i].K(Mo);
+        kmErr[Mo] += std::abs(Km - 1) / st.size();
+        kmGap[Mo] += std::abs(Kd - Km) / st.size();
+        kdErr[Mo] += std::abs(Kd - 1) / st.size();
+        if (fm)
+          std::fprintf(fm, "%d,%.12g,%.12g,%.12g,%.12g,%.12g\n", Mo + 1, sliceFrame(M.front, 0, st[i].second).C.dot(ft),
+                       Km, KM[i].K1(Mo), KM[i].K2(Mo), Kd);
+      }
+    }
+    if (fm) std::fclose(fm);
+    t_mint = std::chrono::duration<double>(std::chrono::steady_clock::now() - tm0).count();
+  }
+
   // relative L2 error of the displacement on the z faces and the crack faces, per mode
   double l2[3];
   {
@@ -207,6 +236,10 @@ int main(int argc, char** argv) {
     for (int N = 0; N < 3; ++N) if (N != Mo) cross = std::max(cross, avg[Mo][N]);
   c += std::snprintf(line + c, sizeof line - c, ", \"KI_err\": %.6e, \"KII_err\": %.6e, \"KIII_err\": %.6e, "
                      "\"cross_max\": %.6e", err[0][0], err[1][1], err[2][2], cross);
+  c += std::snprintf(line + c, sizeof line - c, ", \"KM_err\": [%.6e, %.6e, %.6e], \"KM_gap\": [%.6e, %.6e, %.6e], "
+                     "\"Kdof_err_at_stations\": [%.6e, %.6e, %.6e], \"KM_track_I\": %.4f, \"t_mint\": %.3f", kmErr[0],
+                     kmErr[1], kmErr[2], kmGap[0], kmGap[1], kmGap[2], kdErr[0], kdErr[1], kdErr[2],
+                     mint > 0 ? std::max(kmGap[0] / kdErr[0], kdErr[0] / kmGap[0]) : -1.0, t_mint);
   std::snprintf(line + c, sizeof line - c, ", \"K_max_err\": %.6e, \"cond\": %.6e, \"residual\": %.3e, "
                 "\"t_assemble\": %.3f, \"t_solve\": %.3f}", emax, M.condition, M.residual, M.t_assemble, M.t_solve);
   std::printf("%s\n", line);

@@ -53,7 +53,7 @@ def dofaxis(a):
 def penny(d, out):
     runs = d["runs"]
     sel = lambda f, lay: sorted((r for r in runs if r["formulation"] == f and r["layout"] == lay), key=lambda r: r["n"])
-    fig, ax = plt.subplots(2, 2, figsize=(7.2, 5.6))
+    fig, ax = plt.subplots(2, 2, figsize=(9.0, 5.6))
     # (a) K_I along the front
     a = ax[0, 0]
     xs = sel("xigabem", "ogrid")
@@ -82,6 +82,12 @@ def penny(d, out):
     bs = base(out, "disk")
     if bs:
         b.loglog([r["unknowns"] for r in bs], [r["KI_avg_err"] for r in bs], label="disk, end shift 0.1 (before)", **BASE)
+    # independent K: interaction integral on the interior field (enriched, and plain IgBEM with no K unknowns)
+    for f, mk, lab in (("xigabem", "v", "M-integral, XIGABEM field"), ("igabem", "^", "M-integral, plain IgBEM")):
+        xs = [r for r in sel(f, "disk") if r.get("KM_I_avg_err", -1) >= 0]
+        if xs:
+            b.loglog([r["unknowns"] for r in xs], [r["KM_I_avg_err"] for r in xs], ":", marker=mk, color=C["disk"],
+                     mfc="white", ms=4, lw=1.0, label=lab)
     p = d["paper"]["table1_KI_signed_avg_err"]
     b.loglog([int(k) for k in p], [abs(v) for v in p.values()], "s--", color=C["paper"], mfc="white",
              label="paper, Table 1")
@@ -89,7 +95,7 @@ def penny(d, out):
     b.set_xlabel("degrees of freedom")
     b.set_ylabel(r"mean $|K_I - K_I^{exact}| / K_I^{exact}$")
     b.set_title("(b) $K_I$ error (XIGABEM)", loc="left")
-    b.legend(fontsize=6, loc="lower left")
+    b.legend(fontsize=6, loc="upper left", bbox_to_anchor=(1.02, 1.0), borderaxespad=0)
     # (c) COD L2 vs dof
     c = ax[1, 0]
     for lay in ("ogrid", "disk"):
@@ -121,19 +127,21 @@ def penny(d, out):
     for ext in ("png", "pdf"):
         fig.savefig(os.path.join(out, "penny." + ext))
     # table
-    rows = ["| layout | n | dof (XIG) | K_I mean err | K_I max err | K_I signed | paper signed (dof) | COD L2 XIG | COD L2 IgBEM | XIG time [s] |",
-            "|---|---|---|---|---|---|---|---|---|---|"]
+    rows = ["| layout | n | dof (XIG) | K_I mean err | K_I max err | K_I signed | paper signed (dof) | K_M err XIG | K_M err IgBEM | COD L2 XIG | COD L2 IgBEM | XIG time [s] |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    km = lambda r: "%.2e" % r["KM_I_avg_err"] if r and r.get("KM_I_avg_err", -1) >= 0 else "-"
     pk = {int(k): v for k, v in p.items()}
     for lay in ("ogrid", "disk", "disk_graded"):
         pl = {r["n"]: r for r in sel("igabem", lay)}
         for r in sel("xigabem", lay):
             near = min(pk, key=lambda k: abs(k - r["unknowns"]))
             ps = "%.2e (%d)" % (pk[near], near) if abs(near - r["unknowns"]) < 15 else "-"
-            rows.append("| %s | %d | %d | %.2e | %.2e | %+.2e | %s | %.2e | %s | %.1f |" % (
-                lay, r["n"], r["unknowns"], r["KI_avg_err"], r["KI_max_err"], r["KI_signed_err"], ps, r["cod_L2"],
-                "%.2e" % pl[r["n"]]["cod_L2"] if r["n"] in pl else "-", r["t_assemble"] + r["t_solve"]))
+            rows.append("| %s | %d | %d | %.2e | %.2e | %+.2e | %s | %s | %s | %.2e | %s | %.1f |" % (
+                lay, r["n"], r["unknowns"], r["KI_avg_err"], r["KI_max_err"], r["KI_signed_err"], ps, km(r),
+                km(pl.get(r["n"])), r["cod_L2"], "%.2e" % pl[r["n"]]["cod_L2"] if r["n"] in pl else "-",
+                r["t_assemble"] + r["t_solve"]))
     for r in base(out, "disk"):
-        rows.append("| disk, shift 0.1 (before) | %d | %d | %.2e | %.2e | %+.2e | | %.2e | | %.1f |" % (
+        rows.append("| disk, shift 0.1 (before) | %d | %d | %.2e | %.2e | %+.2e | | | | %.2e | | %.1f |" % (
             r["n"], r["unknowns"], r["KI_avg_err"], r["KI_max_err"], r["KI_signed_err"], r["cod_L2"],
             r["t_assemble"] + r["t_solve"]))
     with open(os.path.join(out, "penny_table.md"), "w") as f:
@@ -426,12 +434,19 @@ def prism_a3(d, out):
         b.loglog([r["unknowns"] for r in rs], [r["KI_err"] for r in rs], "o-", color=col, label=lab + ", shift 0.02")
     if bs:
         b.loglog([r["unknowns"] for r in bs], [r["KI_err"] for r in bs], label="uniform, shift 0.1 (before)", **BASE)
+    for lay, col, lab in lays:  # interaction integral: its own error, and the gap it reports for K_dof
+        rs = [r for r in sel(lay) if "KM_err" in r and r["KM_err"][0] >= 0]
+        if rs:
+            b.loglog([r["unknowns"] for r in rs], [r["KM_err"][0] for r in rs], "v:", color=col, mfc="white", ms=4,
+                     lw=1.0, label=lab + ", M-integral")
+            b.loglog([r["unknowns"] for r in rs], [r["KM_gap"][0] for r in rs], "x", color=col, ms=5,
+                     label=lab + r", $|K_{dof} - K_M|$")
     dofaxis(b)
     b.set_xlim(330, 5000)
     b.set_xlabel("degrees of freedom")
     b.set_ylabel(r"mean $|K_I - 1|$")
     b.set_title("(b) $K_I$ error", loc="left", fontsize=8.5)
-    b.legend(fontsize=6)
+    b.legend(fontsize=5, loc="lower left", framealpha=0.9)
     c = ax[2]
     for lay, col, lab in lays:
         rs = sel(lay)
@@ -447,13 +462,16 @@ def prism_a3(d, out):
     fig.tight_layout()
     for ext in ("png", "pdf"):
         fig.savefig(os.path.join(out, "prism_a3." + ext))
-    rows = ["| mesh | k | dof | mean abs(K_I - 1) | u L2 | time [s] |", "|---|---|---|---|---|---|"]
+    rows = ["| mesh | k | dof | mean abs(K_I - 1) | K_M err | abs(K_dof - K_M) at stations | true K_dof err at stations | track ratio | u L2 | time [s] |",
+            "|---|---|---|---|---|---|---|---|---|---|"]
     for lay, _, lab in lays:
         for r in sel(lay):
-            rows.append("| %s, shift 0.02 | %d | %d | %.2e | %.2e | %.1f |" % (lab, r["n"], r["unknowns"], r["KI_err"],
-                        r["modeI"]["u_L2"], r["t_assemble"] + r["t_solve"]))
+            m = ("%.2e | %.2e | %.2e | %.2f" % (r["KM_err"][0], r["KM_gap"][0], r["Kdof_err_at_stations"][0],
+                                               r["KM_track_I"])) if r.get("KM_track_I", -1) > 0 else "- | - | - | -"
+            rows.append("| %s, shift 0.02 | %d | %d | %.2e | %s | %.2e | %.1f |" % (lab, r["n"], r["unknowns"],
+                        r["KI_err"], m, r["modeI"]["u_L2"], r["t_assemble"] + r["t_solve"]))
     for r in bs:
-        rows.append("| uniform, shift 0.1 (before) | %d | %d | %.2e | %.2e | %.1f |" % (
+        rows.append("| uniform, shift 0.1 (before) | %d | %d | %.2e | - | - | - | - | %.2e | %.1f |" % (
             r["n"], r["unknowns"], r["KI_err"], r["modeI"]["u_L2"], r["t_assemble"] + r["t_solve"]))
     with open(os.path.join(out, "prism_a3_table.md"), "w") as f:
         f.write("\n".join(rows) + "\n")

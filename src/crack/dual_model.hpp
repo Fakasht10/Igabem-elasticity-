@@ -414,6 +414,26 @@ class CrackModel {
     return u;
   }
 
+  // Boundary densities at a quadrature point of patch pe (unit normal n) from a solution x: displacement (enrichment
+  // included) and traction (Dirichlet patches: the solved traction coefficients; elsewhere the load).
+  void densities(int pe, const QPoint& q, const Vec3& n, const Eigen::VectorXd& x, const TractionFn& load, Vec3& u,
+                 Vec3& t) const {
+    const auto& l2g = mesh.l2g[pe];
+    u.setZero();
+    for (int l = 0; l < q.n_loc; ++l) u += q.R[l] * x.segment<3>(3 * l2g[q.idx[l]]);
+    int cols[64];
+    Vec3 vals[64];
+    const int ne = quadEnrichment(pe, q, cols, vals);
+    for (int i = 0; i < ne; ++i) u += vals[i] * x(cols[i]);
+    if (pe < n_outer && dirichlet[pe]) {
+      t.setZero();
+      const int off = ts.offset[pe];
+      for (int l = 0; l < q.n_loc; ++l) t += q.R[l] * x.segment<3>(tcol[off + q.idx[l]]);
+    } else {
+      t = load(q.x, n, pe);
+    }
+  }
+
   // The lower-face point coincident with x on the mirror patch.
   SurfacePoint coincident(int p, const Vec3& x) const {
     const int q = mirror[p];
