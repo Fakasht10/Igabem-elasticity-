@@ -4,6 +4,7 @@
 //   S_im  = C_ijkl N_j dT_km/dx_l             (traction of T at x)
 // Returns non-zero if any relative error exceeds 1e-7.
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 #include "kelvin.hpp"
@@ -54,6 +55,19 @@ int main() {
   }
   const double eT = (Tfd - Ta).norm() / Ta.norm(), eD = (Dfd - Da).norm() / Da.norm(),
                eS = (Sfd - Sa).norm() / Sa.norm();
-  std::printf("rel. error  T: %.2e  D: %.2e  S: %.2e  dU/dx: %.2e  dT/dx: %.2e\n", eT, eD, eS, eP, eQ);
-  return (eT < 1e-7 && eD < 1e-7 && eS < 1e-7 && eP < 1e-7 && eQ < 1e-7) ? 0 : 1;
+  // closed-form D, S (eval) against the spelled-out contractions (evalRef): random points, normals, scales
+  double eC = 0.0;
+  unsigned s = 12345;
+  auto rnd = [&]() { s = s * 1103515245u + 12345u; return ((s >> 8) & 0xffff) / 32768.0 - 1.0; };
+  for (int i = 0; i < 20000; ++i) {
+    const V3 d = V3(rnd(), rnd(), rnd()) * std::pow(10.0, 3.0 * rnd());
+    const V3 Ni = V3(rnd(), rnd(), rnd()).normalized(), ni = V3(rnd(), rnd(), rnd()).normalized();
+    M3 D1, S1, D2, S2;
+    KT.eval(d, Ni, ni, D1, S1);
+    KT.evalRef(d, Ni, ni, D2, S2);
+    eC = std::max({eC, (D1 - D2).norm() / D2.norm(), (S1 - S2).norm() / S2.norm()});
+  }
+  std::printf("rel. error  T: %.2e  D: %.2e  S: %.2e  dU/dx: %.2e  dT/dx: %.2e  closed vs ref: %.2e\n", eT, eD, eS, eP,
+              eQ, eC);
+  return (eT < 1e-7 && eD < 1e-7 && eS < 1e-7 && eP < 1e-7 && eQ < 1e-7 && eC < 1e-12) ? 0 : 1;
 }

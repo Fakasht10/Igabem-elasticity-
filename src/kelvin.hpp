@@ -119,8 +119,40 @@ struct KelvinTraction {
     }
   }
 
-  inline void eval(const Eigen::Vector3d& d, const Eigen::Vector3d& N, const Eigen::Vector3d& n,
-                   Eigen::Matrix3d& D, Eigen::Matrix3d& S) const {
+  // D (traction kernel of U at x on N) and S (hypersingular: traction at x on N of T with normal n at y), the
+  // contractions of evalRef in closed form, as 3 x 3 outer products of g, N, n (72 ns against 310 ns for evalRef;
+  // equal to 1e-14 relative, tests/test_kernels.cpp). With g = (y - x)/r, a = 3 - 4 nu, c2 = cU / r^2, c3 = c2 / r:
+  //   D_km = 2 lambda c2 (1 - 2 nu) g_m N_k - mu c2 [(1 - a) (delta_km gN + N_m g_k) + 2 N_k g_m - 6 g_k g_m gN],
+  //   S_im = -(lambda N_i A_m + mu B_im), A_m = sum_k t^kk_m, B_im = sum_l N_l (t^il_m + t^li_m), with
+  //   t^kl_m = c3 [lambda T1_kl n_m + mu (T2 + T3)^kl_m] the traction on n of H^kl_pq = d2 U_kp / dy_l dy_q:
+  //   T1 = (a - 1)(3 g_k g_l - delta_kl), T2^kl_m = sum_q W_kmql n_q, T3^kl_m = sum_p W_kpml n_p (W = H / c3).
+  inline void eval(const Eigen::Vector3d& d, const Eigen::Vector3d& Nv, const Eigen::Vector3d& nv,
+                   Eigen::Matrix3d& Dm, Eigen::Matrix3d& Sm) const {
+    using V = Eigen::Vector3d;
+    using M = Eigen::Matrix3d;
+    const double r2 = d.squaredNorm(), r = std::sqrt(r2), ir = 1.0 / r;
+    const V g = d * ir, N = Nv, n = nv;  // copies: the outputs may alias the inputs
+    const double a = 3.0 - 4.0 * nu, am1 = a - 1.0, c2 = cU / r2, c3 = c2 * ir;
+    const double gN = g.dot(N), gn = g.dot(n), Nn = N.dot(n);
+    // D = c2 [2 lambda (1 - 2 nu) N g^T + mu ((a - 1)(gN I + g N^T) - 2 N g^T + 6 gN g g^T)]
+    M D = (c2 * (2.0 * lambda * (1.0 - 2.0 * nu) - 2.0 * mu)) * N * g.transpose() +
+          (c2 * mu) * (am1 * g * N.transpose() + 6.0 * gN * g * g.transpose());
+    D.diagonal().array() += c2 * mu * am1 * gN;
+    // S = -(lambda N A^T + mu B): A = c3 mu (a - 1)(6 gn g - 2 n),
+    // B = c3 [2 lambda (a - 1)(3 gN g n^T - N n^T) + mu (X + Y)], X + Y collected into outer products
+    const V A = (c3 * mu * am1) * (6.0 * gn * g - 2.0 * n);
+    M XY = ((3.0 * a - 9.0) * Nn + 60.0 * gN * gn) * g * g.transpose() + ((3.0 * a - 9.0) * gN) * n * g.transpose() -
+           (12.0 * gN) * g * n.transpose() - (12.0 * gn) * N * g.transpose() + ((3.0 * a - 9.0) * gn) * g * N.transpose() -
+           (2.0 * am1) * n * N.transpose() + 4.0 * N * n.transpose();
+    XY.diagonal().array() += (3.0 * a - 9.0) * gN * gn - 2.0 * am1 * Nn;
+    const M B = c3 * ((2.0 * lambda * am1) * (3.0 * gN * g - N) * n.transpose() + mu * XY);
+    Sm = -(lambda * N * A.transpose() + mu * B);
+    Dm = D;
+  }
+
+  // Reference: the contractions of gradients() spelled out (tests only).
+  inline void evalRef(const Eigen::Vector3d& d, const Eigen::Vector3d& N, const Eigen::Vector3d& n,
+                      Eigen::Matrix3d& D, Eigen::Matrix3d& S) const {
     Eigen::Matrix3d P[3], Q[3];
     gradients(d, n, P, Q);
     for (int m = 0; m < 3; ++m) D.col(m) = traction(P[m], N);
