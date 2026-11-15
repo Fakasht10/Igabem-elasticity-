@@ -90,6 +90,9 @@ constexpr int kMaxEnr = 256;  // enrichment columns at one point (front function
 
 class CrackModel {
   friend struct Growth;
+  friend class CrackH;
+  friend class CrackEntries;
+  friend class CrackMoments;
 
  public:
   Mesh mesh;
