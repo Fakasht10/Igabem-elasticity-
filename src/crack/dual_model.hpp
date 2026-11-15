@@ -650,14 +650,33 @@ class CrackModel {
     return front.shapes(piece[p], face[p], q.x, guess(p, q.uv(0)), cols, vals);
   }
 
+  // Element sums of a row's regularization (the rigid / linear fields' coefficients). Partial assembly (crack
+  // growth): a row is the sum of per-element raw contributions plus a finish that depends only on these sums and the
+  // row's own point, so the raw part of an unchanged element can be kept and the finish redone.
+  struct RowAcc {
+    Eigen::Matrix3d T0[2], Mn[3], S0[2], S1[2][3];
+    RowAcc() {
+      for (auto& m : T0) m.setZero();
+      for (auto& m : Mn) m.setZero();
+      for (auto& m : S0) m.setZero();
+      for (auto& g : S1) for (auto& m : g) m.setZero();
+    }
+  };
+
   // rhs_only: the load columns b alone (a untouched), for new load cases on a factored operator.
+  // use (optional): integrate only elements i with use[i]; acc (optional): sums start from *acc and are stored back;
+  // finish = false: raw element contributions only.
   void dbieRow(const ElementIntegrator& quad, const Row& row, const std::vector<TractionFn>& loads,
-               Eigen::MatrixXd& a, Eigen::MatrixXd& b, bool rhs_only = false) const {
+               Eigen::MatrixXd& a, Eigen::MatrixXd& b, bool rhs_only = false, const std::vector<char>* use = nullptr,
+               RowAcc* acc = nullptr, bool finish = true) const {
     const Kelvin K(mat);
     const int L = int(loads.size());
     const SourcePoint src{row.patch, row.xi, row.x};
-    Eigen::Matrix3d T0[2] = {Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Zero()};
+    RowAcc local;
+    RowAcc& A_ = acc ? *acc : local;
+    Eigen::Matrix3d* T0 = A_.T0;
     for (const Element& e : mesh.elements) {
+      if (use && !(*use)[&e - mesh.elements.data()]) continue;
       const int pe = e.patch;
       const auto& l2g = mesh.l2g[pe];
       const int grp = (row.kind == Row::Upper && face[pe] == -1) ? 1 : 0;
@@ -687,7 +706,7 @@ class CrackModel {
         }
       });
     }
-    if (rhs_only) return;
+    if (rhs_only || !finish) return;
     if (row.kind == Row::Outer) {
       if (piece[row.patch] >= 0) {  // enriched outer patch: the whole field at x
         Shape own;
@@ -710,18 +729,19 @@ class CrackModel {
   }
 
   void tbieRow(const ElementIntegrator& quad, const Row& row, const std::vector<TractionFn>& loads,
-               Eigen::MatrixXd& a, Eigen::MatrixXd& b, bool rhs_only = false) const {
+               Eigen::MatrixXd& a, Eigen::MatrixXd& b, bool rhs_only = false, const std::vector<char>* use = nullptr,
+               RowAcc* acc = nullptr, bool finish = true) const {
     const KelvinTraction K(mat);
     const int L = int(loads.size());
     const SourcePoint src{row.patch, row.xi, row.x};
     const Vec3 N = row.N;
-    Eigen::Matrix3d Mn[3], S0[2], S1[2][3];
-    for (int k = 0; k < 3; ++k) Mn[k].setZero();
-    for (int g = 0; g < 2; ++g) {
-      S0[g].setZero();
-      for (int k = 0; k < 3; ++k) S1[g][k].setZero();
-    }
+    RowAcc local;
+    RowAcc& A_ = acc ? *acc : local;
+    Eigen::Matrix3d(&Mn)[3] = A_.Mn;
+    Eigen::Matrix3d(&S0)[2] = A_.S0;
+    Eigen::Matrix3d(&S1)[2][3] = A_.S1;
     for (const Element& e : mesh.elements) {
+      if (use && !(*use)[&e - mesh.elements.data()]) continue;
       const int pe = e.patch;
       const auto& l2g = mesh.l2g[pe];
       const int grp = face[pe] == 1 ? 1 : 0;
@@ -754,6 +774,7 @@ class CrackModel {
         S0[grp] += Sw;
       });
     }
+    if (!finish) return;
     const SurfacePoint sb = coincident(row.patch, row.x);
     const FaceCoefficients fc = faceCoefficients(upper_region, mat, row.x, sb.N, N);
     auto sigmaTerm = [&](const Eigen::Matrix3d& G) {  // sum_k Mn[k] sigma(G).col(k)
