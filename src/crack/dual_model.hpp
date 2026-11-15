@@ -47,6 +47,7 @@
 #include "../traction_space.hpp"
 #include "front.hpp"
 #include "planar.hpp"
+#include "row_sink.hpp"
 
 namespace igabem {
 namespace crack {
@@ -779,54 +780,69 @@ class CrackModel {
   // rhs_only: the load columns b alone (a untouched), for new load cases on a factored operator.
   // use (optional): integrate only elements i with use[i]; acc (optional): sums start from *acc and are stored back;
   // finish = false: raw element contributions only.
-  void dbieRow(const ElementIntegrator& quad, const Row& row, const std::vector<TractionFn>& loads,
-               Eigen::MatrixXd& a, Eigen::MatrixXd& b, bool rhs_only = false, const std::vector<char>* use = nullptr,
-               RowAcc* acc = nullptr, bool finish = true) const {
-    const Kelvin K(mat);
+  // One element's raw contribution to a DBIE row (no finish): coefficients into a, loads into b, sums into A_.
+  template <class RowT>
+  void dbieElem(const ElementIntegrator& quad, const Kelvin& K, const Row& row, const Element& e,
+               const std::vector<TractionFn>& loads, RowT& a, Eigen::MatrixXd& b, bool rhs_only, RowAcc& A_) const {
     const int L = int(loads.size());
     const SourcePoint src{row.patch, row.xi, row.x};
+    Eigen::Matrix3d* T0 = A_.T0;
+    const int pe = e.patch;
+    const auto& l2g = mesh.l2g[pe];
+    const int grp = (row.kind == Row::Upper && face[pe] == -1) ? 1 : 0;
+    const bool unknown_t = pe < n_outer && dirichlet[pe];
+    const int off = ts.offset[pe];
+    quad.integrate(src, e, [&](const QPoint& q, double w) {
+      const Vec3 nJ = q.normal() * mesh.normal_sign;
+      const double J = nJ.norm();
+      const Vec3 n = nJ / J;
+      Eigen::Matrix3d U, T;
+      K.eval(q.x - row.x, n, U, T);
+      const Eigen::Matrix3d Tw = T * (w * J), Uw = U * (w * J);
+      if (rhs_only) {
+        if (!unknown_t) for (int c = 0; c < L; ++c) b.col(c) += Uw * loads[c](q.x, n, pe);
+        return;
+      }
+      for (int l = 0; l < q.n_loc; ++l) addBlk(a, 3 * l2g[q.idx[l]], q.R[l] * Tw);
+      int cols[kMaxEnr];
+      Vec3 vals[kMaxEnr];
+      const int ne = quadEnrichment(pe, q, cols, vals);
+      for (int i = 0; i < ne; ++i) addCol(a, cols[i], Tw * vals[i]);
+      T0[grp] += Tw;
+      if (unknown_t) {
+        for (int l = 0; l < q.n_loc; ++l) addBlk(a, tcol[off + q.idx[l]], -(q.R[l] * Uw));
+      } else {
+        for (int c = 0; c < L; ++c) b.col(c) += Uw * loads[c](q.x, n, pe);
+      }
+    });
+  }
+
+  template <class RowT>
+  void dbieRow(const ElementIntegrator& quad, const Row& row, const std::vector<TractionFn>& loads,
+               RowT& a, Eigen::MatrixXd& b, bool rhs_only = false, const std::vector<char>* use = nullptr,
+               RowAcc* acc = nullptr, bool finish = true) const {
+    const Kelvin K(mat);
     RowAcc local;
     RowAcc& A_ = acc ? *acc : local;
-    Eigen::Matrix3d* T0 = A_.T0;
     for (const Element& e : mesh.elements) {
       if (use && !(*use)[&e - mesh.elements.data()]) continue;
-      const int pe = e.patch;
-      const auto& l2g = mesh.l2g[pe];
-      const int grp = (row.kind == Row::Upper && face[pe] == -1) ? 1 : 0;
-      const bool unknown_t = pe < n_outer && dirichlet[pe];
-      const int off = ts.offset[pe];
-      quad.integrate(src, e, [&](const QPoint& q, double w) {
-        const Vec3 nJ = q.normal() * mesh.normal_sign;
-        const double J = nJ.norm();
-        const Vec3 n = nJ / J;
-        Eigen::Matrix3d U, T;
-        K.eval(q.x - row.x, n, U, T);
-        const Eigen::Matrix3d Tw = T * (w * J), Uw = U * (w * J);
-        if (rhs_only) {
-          if (!unknown_t) for (int c = 0; c < L; ++c) b.col(c) += Uw * loads[c](q.x, n, pe);
-          return;
-        }
-        for (int l = 0; l < q.n_loc; ++l) a.block<3, 3>(0, 3 * l2g[q.idx[l]]) += q.R[l] * Tw;
-        int cols[kMaxEnr];
-        Vec3 vals[kMaxEnr];
-        const int ne = quadEnrichment(pe, q, cols, vals);
-        for (int i = 0; i < ne; ++i) a.col(cols[i]) += Tw * vals[i];
-        T0[grp] += Tw;
-        if (unknown_t) {
-          for (int l = 0; l < q.n_loc; ++l) a.block<3, 3>(0, tcol[off + q.idx[l]]) -= q.R[l] * Uw;
-        } else {
-          for (int c = 0; c < L; ++c) b.col(c) += Uw * loads[c](q.x, n, pe);
-        }
-      });
+      dbieElem(quad, K, row, e, loads, a, b, rhs_only, A_);
     }
     if (rhs_only || !finish) return;
+    dbieFinish(row, a, A_);
+  }
+
+  // The finish of a DBIE row from its element sums A_: the rigid-mode terms at the row's own (and coincident) point.
+  template <class RowT>
+  void dbieFinish(const Row& row, RowT& a, const RowAcc& A_) const {
+    const Eigen::Matrix3d* T0 = A_.T0;
     if (row.kind == Row::Outer) {
       if (piece[row.patch] >= 0) {  // enriched outer patch: the whole field at x
         Shape own;
         shapeAt(row.patch, row.xi, row.E, own, false);
-        for (size_t i = 0; i < own.col.size(); ++i) a.col(own.col[i]) -= T0[0] * own.val[i];
+        for (size_t i = 0; i < own.col.size(); ++i) addCol(a, own.col[i], -(T0[0] * own.val[i]));
       } else {
-        for (const auto& [g, NB] : row.basis) a.block<3, 3>(0, 3 * g) -= NB * T0[0];
+        for (const auto& [g, NB] : row.basis) addBlk(a, 3 * g, -(NB * T0[0]));
       }
       return;
     }
@@ -837,57 +853,79 @@ class CrackModel {
     shapeAt(sb.patch, sb.xi, sb.E, mir, false);
     const FaceCoefficients fc = faceCoefficients(lower_region, mat, row.x, m, m);
     const Eigen::Matrix3d J = fc.CT + 0.5 * Eigen::Matrix3d::Identity();
-    for (size_t i = 0; i < own.col.size(); ++i) a.col(own.col[i]) -= (T0[0] + J) * own.val[i];
-    for (size_t i = 0; i < mir.col.size(); ++i) a.col(mir.col[i]) -= (T0[1] - J) * mir.val[i];
-  }
+    for (size_t i = 0; i < own.col.size(); ++i) addCol(a, own.col[i], -((T0[0] + J) * own.val[i]));
+    for (size_t i = 0; i < mir.col.size(); ++i) addCol(a, mir.col[i], -((T0[1] - J) * mir.val[i]));
+    }
 
-  void tbieRow(const ElementIntegrator& quad, const Row& row, const std::vector<TractionFn>& loads,
-               Eigen::MatrixXd& a, Eigen::MatrixXd& b, bool rhs_only = false, const std::vector<char>* use = nullptr,
-               RowAcc* acc = nullptr, bool finish = true) const {
-    const KelvinTraction K(mat);
+
+  // One element's raw contribution to a TBIE row (no finish): coefficients into a, loads into b, sums into A_.
+  template <class RowT>
+  void tbieElem(const ElementIntegrator& quad, const KelvinTraction& K, const Row& row, const Element& e,
+               const std::vector<TractionFn>& loads, RowT& a, Eigen::MatrixXd& b, bool rhs_only, RowAcc& A_) const {
     const int L = int(loads.size());
     const SourcePoint src{row.patch, row.xi, row.x};
     const Vec3 N = row.N;
-    RowAcc local;
-    RowAcc& A_ = acc ? *acc : local;
     Eigen::Matrix3d(&Mn)[3] = A_.Mn;
     Eigen::Matrix3d(&S0)[2] = A_.S0;
     Eigen::Matrix3d(&S1)[2][3] = A_.S1;
+    const int pe = e.patch;
+    const auto& l2g = mesh.l2g[pe];
+    const int grp = face[pe] == 1 ? 1 : 0;
+    const bool unknown_t = pe < n_outer && dirichlet[pe];
+    const int off = ts.offset[pe];
+    quad.integrate(src, e, [&](const QPoint& q, double w) {
+      const Vec3 nJ = q.normal() * mesh.normal_sign;
+      const double J = nJ.norm();
+      const Vec3 n = nJ / J, d = q.x - row.x;
+      Eigen::Matrix3d D, S;
+      K.eval(d, N, n, D, S);
+      const Eigen::Matrix3d Dw = D * (w * J), Sw = S * (w * J);
+      if (!rhs_only) {
+        for (int l = 0; l < q.n_loc; ++l) addBlk(a, 3 * l2g[q.idx[l]], -(q.R[l] * Sw));
+        int cols[kMaxEnr];
+        Vec3 vals[kMaxEnr];
+        const int ne = quadEnrichment(pe, q, cols, vals);
+        for (int i = 0; i < ne; ++i) addCol(a, cols[i], -(Sw * vals[i]));
+      }
+      if (unknown_t) {
+        if (!rhs_only)
+          for (int l = 0; l < q.n_loc; ++l) addBlk(a, tcol[off + q.idx[l]], q.R[l] * Dw);
+      } else {
+        for (int c = 0; c < L; ++c) b.col(c) -= Dw * loads[c](q.x, n, pe);
+      }
+      for (int k = 0; k < 3; ++k) {
+        Mn[k] += Dw * n(k);
+        S1[grp][k] += Sw * d(k);
+      }
+      S0[grp] += Sw;
+    });
+  }
+
+  template <class RowT>
+  void tbieRow(const ElementIntegrator& quad, const Row& row, const std::vector<TractionFn>& loads,
+               RowT& a, Eigen::MatrixXd& b, bool rhs_only = false, const std::vector<char>* use = nullptr,
+               RowAcc* acc = nullptr, bool finish = true) const {
+    const KelvinTraction K(mat);
+    RowAcc local;
+    RowAcc& A_ = acc ? *acc : local;
     for (const Element& e : mesh.elements) {
       if (use && !(*use)[&e - mesh.elements.data()]) continue;
-      const int pe = e.patch;
-      const auto& l2g = mesh.l2g[pe];
-      const int grp = face[pe] == 1 ? 1 : 0;
-      const bool unknown_t = pe < n_outer && dirichlet[pe];
-      const int off = ts.offset[pe];
-      quad.integrate(src, e, [&](const QPoint& q, double w) {
-        const Vec3 nJ = q.normal() * mesh.normal_sign;
-        const double J = nJ.norm();
-        const Vec3 n = nJ / J, d = q.x - row.x;
-        Eigen::Matrix3d D, S;
-        K.eval(d, N, n, D, S);
-        const Eigen::Matrix3d Dw = D * (w * J), Sw = S * (w * J);
-        if (!rhs_only) {
-          for (int l = 0; l < q.n_loc; ++l) a.block<3, 3>(0, 3 * l2g[q.idx[l]]) -= q.R[l] * Sw;
-          int cols[kMaxEnr];
-          Vec3 vals[kMaxEnr];
-          const int ne = quadEnrichment(pe, q, cols, vals);
-          for (int i = 0; i < ne; ++i) a.col(cols[i]) -= Sw * vals[i];
-        }
-        if (unknown_t) {
-          if (!rhs_only)
-            for (int l = 0; l < q.n_loc; ++l) a.block<3, 3>(0, tcol[off + q.idx[l]]) += q.R[l] * Dw;
-        } else {
-          for (int c = 0; c < L; ++c) b.col(c) -= Dw * loads[c](q.x, n, pe);
-        }
-        for (int k = 0; k < 3; ++k) {
-          Mn[k] += Dw * n(k);
-          S1[grp][k] += Sw * d(k);
-        }
-        S0[grp] += Sw;
-      });
+      tbieElem(quad, K, row, e, loads, a, b, rhs_only, A_);
     }
     if (!finish) return;
+    tbieFinish(row, loads, a, b, rhs_only, A_);
+  }
+
+  // The finish of a TBIE row from its element sums A_: the linear-field terms at the row's own and coincident points
+  // and the crack-face loads through Hooke's law.
+  template <class RowT>
+  void tbieFinish(const Row& row, const std::vector<TractionFn>& loads, RowT& a, Eigen::MatrixXd& b,
+                  bool rhs_only, const RowAcc& A_) const {
+    const int L = int(loads.size());
+    const Vec3 N = row.N;
+    const Eigen::Matrix3d(&Mn)[3] = A_.Mn;
+    const Eigen::Matrix3d(&S0)[2] = A_.S0;
+    const Eigen::Matrix3d(&S1)[2][3] = A_.S1;
     const SurfacePoint sb = coincident(row.patch, row.x);
     const FaceCoefficients fc = faceCoefficients(upper_region, mat, row.x, sb.N, N);
     auto sigmaTerm = [&](const Eigen::Matrix3d& G) {  // sum_k Mn[k] sigma(G).col(k)
@@ -912,14 +950,14 @@ class CrackModel {
       shapeAt(row.patch, row.xi, row.E, own, true);
       for (size_t i = 0; i < own.col.size(); ++i) {
         const Eigen::Matrix3d G = surfaceGradient(mat, tangential(row.E, own.du[i], own.dv[i]), Vec3::Zero(), N);
-        a.col(own.col[i]) += -sigmaTerm(G) + S0[0] * own.val[i] + lin(S1[0], G) + fc.Fa * own.val[i] + fb(G);
+        addCol(a, own.col[i], -sigmaTerm(G) + S0[0] * own.val[i] + lin(S1[0], G) + fc.Fa * own.val[i] + fb(G));
       }
       // coincident (upper) side: u_L+
       Shape mir;
       shapeAt(sb.patch, sb.xi, sb.E, mir, true);
       for (size_t i = 0; i < mir.col.size(); ++i) {
         const Eigen::Matrix3d G = surfaceGradient(mat, tangential(sb.E, mir.du[i], mir.dv[i]), Vec3::Zero(), sb.N);
-        a.col(mir.col[i]) += S0[1] * mir.val[i] + lin(S1[1], G) - fc.Fa * mir.val[i] - fb(G);
+        addCol(a, mir.col[i], S0[1] * mir.val[i] + lin(S1[1], G) - fc.Fa * mir.val[i] - fb(G));
       }
     }
     // known crack-face tractions enter the linear fields through Hooke's law
@@ -929,7 +967,8 @@ class CrackModel {
       const Eigen::Matrix3d Gp = surfaceGradient(mat, Eigen::Matrix3d::Zero(), tp, sb.N);
       b.col(c) -= -sigmaTerm(Gm) + lin(S1[0], Gm) + fb(Gm) + lin(S1[1], Gp) - fb(Gp);
     }
-  }
+    }
+
 
   // Eq. 13: int_front (u+ - u-) phi_s dv = 0, one row per SIF basis function (a shared corner function: over both
   // pieces) and component; Gauss on the edges' knot spans.
