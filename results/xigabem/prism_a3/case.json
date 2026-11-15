@@ -48,11 +48,28 @@
    "KII_err": 0.001038288,
    "KIII_err": 0.0004931306,
    "cross_max": 0.0002435415,
+   "KM_err": [
+    0.1257342,
+    0.001471725,
+    0.000417732
+   ],
+   "KM_gap": [
+    0.1094318,
+    0.000453189,
+    7.928873e-05
+   ],
+   "Kdof_err_at_stations": [
+    0.1377457,
+    0.001018536,
+    0.0004970207
+   ],
+   "KM_track_I": 1.2587,
+   "t_mint": 22.397,
    "K_max_err": 0.3844604,
    "cond": 0.0,
    "residual": 1.418e-15,
-   "t_assemble": 1.331,
-   "t_solve": 0.151,
+   "t_assemble": 0.627,
+   "t_solve": 0.025,
    "formulation": "xigabem",
    "layout": "split",
    "n": 1,
@@ -105,11 +122,28 @@
    "KII_err": 8.303996e-05,
    "KIII_err": 1.607908e-05,
    "cross_max": 2.093595e-05,
+   "KM_err": [
+    0.04609137,
+    7.908628e-05,
+    1.237849e-05
+   ],
+   "KM_gap": [
+    0.04825383,
+    3.433843e-06,
+    3.805499e-06
+   ],
+   "Kdof_err_at_stations": [
+    0.02124102,
+    8.252012e-05,
+    1.618399e-05
+   ],
+   "KM_track_I": 2.2717,
+   "t_mint": 13.826,
    "K_max_err": 0.1942814,
    "cond": 0.0,
    "residual": 6.009e-16,
-   "t_assemble": 2.157,
-   "t_solve": 0.895,
+   "t_assemble": 0.948,
+   "t_solve": 0.018,
    "formulation": "xigabem",
    "layout": "split",
    "n": 2,
@@ -162,11 +196,28 @@
    "KII_err": 1.322807e-05,
    "KIII_err": 1.185869e-05,
    "cross_max": 2.577481e-06,
+   "KM_err": [
+    0.01858458,
+    1.619462e-05,
+    9.818287e-06
+   ],
+   "KM_gap": [
+    0.02890456,
+    3.317777e-06,
+    2.499467e-06
+   ],
+   "Kdof_err_at_stations": [
+    0.01031999,
+    1.287684e-05,
+    1.231775e-05
+   ],
+   "KM_track_I": 2.8008,
+   "t_mint": 11.121,
    "K_max_err": 0.1245127,
    "cond": 0.0,
    "residual": 8.111e-16,
-   "t_assemble": 3.317,
-   "t_solve": 1.256,
+   "t_assemble": 1.728,
+   "t_solve": 0.054,
    "formulation": "xigabem",
    "layout": "split",
    "n": 3,
@@ -219,11 +270,28 @@
    "KII_err": 1.543135e-06,
    "KIII_err": 2.175353e-05,
    "cross_max": 5.284884e-07,
+   "KM_err": [
+    0.005946258,
+    4.847714e-06,
+    2.115098e-05
+   ],
+   "KM_gap": [
+    0.01943318,
+    4.144679e-06,
+    1.202423e-06
+   ],
+   "Kdof_err_at_stations": [
+    0.01348692,
+    7.030354e-07,
+    2.23534e-05
+   ],
+   "KM_track_I": 1.4409,
+   "t_mint": 10.172,
    "K_max_err": 0.08960121,
    "cond": 0.0,
    "residual": 1.136e-15,
-   "t_assemble": 5.138,
-   "t_solve": 2.15,
+   "t_assemble": 2.532,
+   "t_solve": 0.154,
    "formulation": "xigabem",
    "layout": "split",
    "n": 4,
@@ -276,11 +344,28 @@
    "KII_err": 6.649473e-06,
    "KIII_err": 2.823855e-05,
    "cross_max": 1.042018e-06,
+   "KM_err": [
+    0.001288001,
+    3.508953e-06,
+    3.021189e-05
+   ],
+   "KM_gap": [
+    0.009160302,
+    3.80907e-06,
+    1.998969e-06
+   ],
+   "Kdof_err_at_stations": [
+    0.0104483,
+    7.318023e-06,
+    2.914367e-05
+   ],
+   "KM_track_I": 1.1406,
+   "t_mint": 10.87,
    "K_max_err": 0.06871741,
    "cond": 0.0,
    "residual": 1.131e-15,
-   "t_assemble": 7.566,
-   "t_solve": 2.06,
+   "t_assemble": 4.072,
+   "t_solve": 0.413,
    "formulation": "xigabem",
    "layout": "split",
    "n": 5,
@@ -333,11 +418,28 @@
    "KII_err": 0.001284753,
    "KIII_err": 0.000493477,
    "cross_max": 0.0001537086,
+   "KM_err": [
+    0.06218043,
+    0.001408758,
+    0.0004742039
+   ],
+   "KM_gap": [
+    0.01158839,
+    0.0001263099,
+    3.821208e-05
+   ],
+   "Kdof_err_at_stations": [
+    0.05059204,
+    0.001282448,
+    0.0005003449
+   ],
+   "KM_track_I": 4.3658,
+   "t_mint": 8.966,
    "K_max_err": 0.05623938,
    "cond": 0.0,
    "residual": 8.745e-16,
-   "t_assemble": 2.728,
-   "t_solve": 0.374,
+   "t_assemble": 1.547,
+   "t_solve": 0.016,
    "formulation": "xigabem",
    "layout": "split_graded",
    "n": 1,
@@ -390,11 +492,28 @@
    "KII_err": 8.519351e-05,
    "KIII_err": 1.014094e-05,
    "cross_max": 1.704496e-05,
+   "KM_err": [
+    0.0153652,
+    8.197565e-05,
+    1.071612e-05
+   ],
+   "KM_gap": [
+    0.004653794,
+    2.524927e-06,
+    2.144605e-06
+   ],
+   "Kdof_err_at_stations": [
+    0.01071141,
+    8.450058e-05,
+    1.056983e-05
+   ],
+   "KM_track_I": 2.3017,
+   "t_mint": 8.174,
    "K_max_err": 0.0127486,
    "cond": 0.0,
    "residual": 2.996e-15,
-   "t_assemble": 4.158,
-   "t_solve": 0.959,
+   "t_assemble": 2.106,
+   "t_solve": 0.057,
    "formulation": "xigabem",
    "layout": "split_graded",
    "n": 2,
@@ -447,11 +566,28 @@
    "KII_err": 1.204638e-05,
    "KIII_err": 2.472015e-06,
    "cross_max": 3.184477e-06,
+   "KM_err": [
+    0.004997905,
+    1.234222e-05,
+    2.436257e-06
+   ],
+   "KM_gap": [
+    0.001751688,
+    2.806493e-07,
+    6.211381e-07
+   ],
+   "Kdof_err_at_stations": [
+    0.003246217,
+    1.247873e-05,
+    2.992996e-06
+   ],
+   "KM_track_I": 1.8532,
+   "t_mint": 7.429,
    "K_max_err": 0.005045417,
    "cond": 0.0,
    "residual": 1.366e-15,
-   "t_assemble": 6.79,
-   "t_solve": 1.765,
+   "t_assemble": 3.213,
+   "t_solve": 0.121,
    "formulation": "xigabem",
    "layout": "split_graded",
    "n": 3,
@@ -504,11 +640,28 @@
    "KII_err": 5.668455e-06,
    "KIII_err": 4.091008e-06,
    "cross_max": 9.859741e-07,
+   "KM_err": [
+    0.001474767,
+    6.134466e-06,
+    4.266903e-06
+   ],
+   "KM_gap": [
+    0.0004046209,
+    4.794093e-07,
+    1.721783e-06
+   ],
+   "Kdof_err_at_stations": [
+    0.001070147,
+    6.083867e-06,
+    5.812231e-06
+   ],
+   "KM_track_I": 2.6448,
+   "t_mint": 8.608,
    "K_max_err": 0.003512036,
    "cond": 0.0,
    "residual": 1.678e-15,
-   "t_assemble": 8.565,
-   "t_solve": 2.772,
+   "t_assemble": 4.077,
+   "t_solve": 0.316,
    "formulation": "xigabem",
    "layout": "split_graded",
    "n": 4,
@@ -561,11 +714,28 @@
    "KII_err": 1.677901e-06,
    "KIII_err": 5.756513e-06,
    "cross_max": 7.923026e-07,
+   "KM_err": [
+    4.613581e-05,
+    1.362133e-06,
+    6.823099e-06
+   ],
+   "KM_gap": [
+    0.0003453591,
+    5.535186e-07,
+    1.511222e-06
+   ],
+   "Kdof_err_at_stations": [
+    0.0003641932,
+    1.915652e-06,
+    7.322747e-06
+   ],
+   "KM_track_I": 1.0545,
+   "t_mint": 9.128,
    "K_max_err": 0.003449967,
    "cond": 0.0,
    "residual": 1.618e-15,
-   "t_assemble": 14.707,
-   "t_solve": 3.679,
+   "t_assemble": 7.612,
+   "t_solve": 0.692,
    "formulation": "xigabem",
    "layout": "split_graded",
    "n": 5,
@@ -578,6 +748,11 @@
    "KI_err": {
     "value": 0.000677857,
     "gate": 0.005,
+    "pass": true
+   },
+   "KM_track_I": {
+    "value": 1.0545,
+    "gate": 3.0,
     "pass": true
    }
   }

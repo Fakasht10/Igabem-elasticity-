@@ -24,13 +24,14 @@
 #include <string>
 
 #include "crack/dual_model.hpp"
+#include "crack/interaction.hpp"
 
 using namespace igabem;
 using namespace igabem::crack;
 
 int main(int argc, char** argv) {
   if (argc < 2) {
-    std::fprintf(stderr, "usage: crack_case geometry.dat [--plain] [--load far|pressure] [--out prefix] [--cond] [--check-k tol] [--check-cond C] [--discontinuous] [--near-tol T]\n");
+    std::fprintf(stderr, "usage: crack_case geometry.dat [--plain] [--load far|pressure] [--out prefix] [--cond] [--check-k tol] [--check-cond C] [--discontinuous] [--near-tol T] [--mint rho]\n");
     return 2;
   }
   std::string dat = argv[1], load = "far", out;
@@ -38,12 +39,14 @@ int main(int argc, char** argv) {
   bool factored = false;  // --factored: factor() + solveFactored(), as crack_serve runs
   int ng = 8, grade = 6;
   double near_tol = 1e-8, shift = 0.02, far_tol = 1e-12;
-  double check_k = -1, check_cond = -1, E = 1.0, nu = 0.0;
+  double check_k = -1, check_cond = -1, E = 1.0, nu = 0.0, mint = -1, check_mint = -1;
   for (int i = 2; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--plain")) enrich = false;
     else if (!std::strcmp(argv[i], "--cond")) cond = true;
     else if (!std::strcmp(argv[i], "--check-cond") && i + 1 < argc) { cond = true; check_cond = std::atof(argv[++i]); }
     else if (!std::strcmp(argv[i], "--discontinuous")) disc = true;
+    else if (!std::strcmp(argv[i], "--mint") && i + 1 < argc) mint = std::atof(argv[++i]);
+    else if (!std::strcmp(argv[i], "--check-mint") && i + 1 < argc) check_mint = std::atof(argv[++i]);
     else if (!std::strcmp(argv[i], "--factored")) factored = true;
     else if (!std::strcmp(argv[i], "--load") && i + 1 < argc) load = argv[++i];
     else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
@@ -185,6 +188,42 @@ int main(int argc, char** argv) {
   }
   if (ns) { errI /= ns; sgnI /= ns; absII /= ns; absIII /= ns; errII /= ns; errIII /= ns; }
 
+  // Independent K: interaction integral on slices normal to the front (crack/interaction.hpp), annulus radius
+  // rho = mint * b, two stations per front piece; traction-free faces only (no face term).
+  double kmI = -1, kmImax = -1, kmGap = -1, t_mint = 0;
+  if (mint > 0 && load == "far") {
+    const auto tm0 = std::chrono::steady_clock::now();
+    std::vector<std::pair<int, double>> st;
+    for (size_t k = 0; k < M.front.pieces.size(); ++k) {
+      const FrontPiece& F = M.front.pieces[k];
+      for (int i = 0; i < 2; ++i) st.push_back({int(k), F.u0 + (F.u1 - F.u0) * (i + 0.5) / 2});
+    }
+    const CrackField field(M, x, far);
+    const auto KM = interactionK(M.front, st, mint * bx, M.mat, std::cref(field));
+    FILE* fm = out.empty() ? nullptr : std::fopen((out + "_mint.csv").c_str(), "w");
+    if (fm) std::fprintf(fm, "piece,u,theta_c,KI_M,KII_M,KIII_M,KI_M_rho,KI_M_rho2,KI_dof,KI_exact\n");
+    kmI = kmImax = kmGap = 0;
+    for (size_t i = 0; i < st.size(); ++i) {
+      const auto [k, u] = st[i];
+      const SliceFrame f = sliceFrame(M.front, k, u);
+      const double thc = std::atan2(f.C.dot(e3) / bx, f.C.dot(e1) / ax);
+      const Vec3 Kx = kExact(thc), Kd = enrich ? M.front.sif(k, u, x) : Vec3::Constant(NAN);
+      const double e = std::abs(KM[i].K(0) - Kx(0)) / Kx(0);
+      kmI += e;
+      kmImax = std::max(kmImax, e);
+      if (enrich) kmGap += std::abs(Kd(0) - KM[i].K(0)) / Kx(0);
+      if (fm)
+        std::fprintf(fm, "%d,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g\n", k, u, thc, KM[i].K(0), KM[i].K(1),
+                     KM[i].K(2), KM[i].K1(0), KM[i].K2(0), Kd(0), Kx(0));
+    }
+    kmI /= st.size();
+    kmGap = enrich ? kmGap / st.size() : -1;
+    if (fm) std::fclose(fm);
+    t_mint = std::chrono::duration<double>(std::chrono::steady_clock::now() - tm0).count();
+  } else if (mint > 0) {
+    std::fprintf(stderr, "--mint: loaded crack faces need the face term; skipped for --load %s\n", load.c_str());
+  }
+
   // crack opening: relative L2 over the upper face (in-plane crack only), and the profile along e1
   double cod_err = -1;
   const Vec3 m = M.m;
@@ -234,13 +273,18 @@ int main(int argc, char** argv) {
                 "\"KI_avg_err\": %.6e, \"KI_signed_err\": %.6e, \"KI_max_err\": %.6e, \"KII_avg_abs\": %.6e, \"KIII_avg_abs\": %.6e, "
                 "\"KII_avg_err\": %.6e, \"KIII_avg_err\": %.6e, \"cod_L2\": %.6e, \"cond\": %.6e, \"row_ratio\": %.3e, \"residual\": %.3e, "
                 "\"t2_KI_0\": %.6e, \"t2_KII_0\": %.6e, \"t2_KI_90\": %.6e, \"t2_KIII_90\": %.6e, "
+                "\"KM_I_avg_err\": %.6e, \"KM_I_max_err\": %.6e, \"KM_dof_gap\": %.6e, \"t_mint\": %.3f, "
                 "\"t_assemble\": %.3f, \"t_solve\": %.3f}",
                 dat.c_str(), int(enrich), load.c_str(), M.unknowns, sI, errI, sgnI, maxI, absII, absIII, errII, errIII,
-                cod_err, M.condition, M.row_ratio, M.residual, t2[0], t2[1], t2[2], t2[3], M.t_assemble, M.t_solve);
+                cod_err, M.condition, M.row_ratio, M.residual, t2[0], t2[1], t2[2], t2[3], kmI, kmImax, kmGap, t_mint, M.t_assemble, M.t_solve);
   std::printf("%s\n", line);
   if (!out.empty()) { std::ofstream(out + "_summary.json") << line << "\n"; }
   if (check_k > 0 && enrich && !(errI <= check_k)) {
     std::fprintf(stderr, "K_I average error %.3e above %.3e\n", errI, check_k);
+    return 1;
+  }
+  if (check_mint > 0 && !(kmI >= 0 && kmI <= check_mint)) {
+    std::fprintf(stderr, "M-integral K_I average error %.3e above %.3e\n", kmI, check_mint);
     return 1;
   }
   // system health: condition number, LU residual (a badly integrated row shows up in both)
