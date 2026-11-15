@@ -1,0 +1,58 @@
+{
+ "id": "ezeh-susmel-pla",
+ "material": "PLA (New Verbatim white, 2.85 mm), Ultimaker 2 Extended+, nozzle 0.4 mm 240 C, bed 60 C, 30 mm/s, layer 0.1 mm, shell 0.4 mm, 100% infill, filaments +-45 deg to the specimen axis; p = manufacturing angle (specimen axis vs build plate vertical)",
+ "sources": {
+  "plain": "Ezeh & Susmel 2019, Int J Fatigue 126:319-326, doi 10.1016/j.ijfatigue.2019.05.014, Table 1 (accepted manuscript eprints.whiterose.ac.uk/146276)",
+  "notched": "Ezeh & Susmel 2020, Int J Fatigue 136:105583, doi 10.1016/j.ijfatigue.2020.105583, Table 1 (accepted manuscript eprints.whiterose.ac.uk/158161)"
+ },
+ "test": "axial sinusoidal 10 Hz, room temperature, run-out 2e6; strengths are amplitudes at N_ref = 2e6, P_S = 50%, notched on the nominal net section; T = scatter ratio sigma_10% / sigma_90%",
+ "N_ref": 2.0e6,
+ "E_MPa": 3479.0, "nu": 0.35, "UTS_MPa": 42.9,
+ "plain_specimen": {"shape": "plain", "W": 6.0, "T": 3.0, "gauge_length_mm": null,
+                    "note": "dog-bone, net width 6, thickness 3 and 5 mm; gauge length not given in the text (Fig. 1b)"},
+ "specimens": {
+  "blunt":        {"shape": "edge", "WG": 25.0, "WN": 6.0, "T": 3.0, "rho": 3.0,  "alpha_deg": 0.0,  "L": 86.0},
+  "intermediate": {"shape": "edge", "WG": 25.0, "WN": 6.0, "T": 3.0, "rho": 1.0,  "alpha_deg": 0.0,  "L": 86.0},
+  "sharp":        {"shape": "edge", "WG": 25.0, "WN": 6.0, "T": 3.0, "rho": 0.15, "alpha_deg": 35.0, "L": 86.0}
+ },
+ "plain": [
+  {"p": 0,  "R": -1,   "n": 15, "k": 7.7, "sigma_A50": 10.4, "T": 1.185, "UTS": 42.6},
+  {"p": 0,  "R": -0.5, "n": 15, "k": 8.9, "sigma_A50": 10.1, "T": 1.266, "UTS": 42.6},
+  {"p": 0,  "R": 0,    "n": 12, "k": 7.4, "sigma_A50": 6.1,  "T": 1.592, "UTS": 42.6},
+  {"p": 0,  "R": 0.3,  "n": 14, "k": 7.0, "sigma_A50": 5.1,  "T": 1.216, "UTS": 42.6},
+  {"p": 30, "R": -1,   "n": 16, "k": 4.3, "sigma_A50": 4.5,  "T": 1.911, "UTS": 40.9},
+  {"p": 30, "R": -0.5, "n": 11, "k": 7.2, "sigma_A50": 5.5,  "T": 1.498, "UTS": 40.9},
+  {"p": 30, "R": 0,    "n": 9,  "k": 6.9, "sigma_A50": 4.7,  "T": 1.699, "UTS": 40.9},
+  {"p": 30, "R": 0.3,  "n": 9,  "k": 5.8, "sigma_A50": 3.3,  "T": 2.174, "UTS": 40.9},
+  {"p": 45, "R": -1,   "n": 11, "k": 6.5, "sigma_A50": 6.3,  "T": 1.355, "UTS": 42.5},
+  {"p": 45, "R": -0.5, "n": 10, "k": 7.6, "sigma_A50": 6.0,  "T": 1.399, "UTS": 42.5},
+  {"p": 45, "R": 0,    "n": 11, "k": 7.5, "sigma_A50": 4.7,  "T": 1.302, "UTS": 42.5},
+  {"p": 45, "R": 0.3,  "n": 10, "k": 6.7, "sigma_A50": 3.1,  "T": 1.882, "UTS": 42.5}
+ ],
+ "notched": [
+  {"notch": "blunt", "p": 45, "R": -1, "n": 13, "k": 6.3, "sigma_nA50": 9.2, "T": 1.698},
+  {"notch": "blunt", "p": 45, "R": 0,  "n": 8,  "k": 8.3, "sigma_nA50": 7.5, "T": 1.520},
+  {"notch": "blunt", "p": 30, "R": -1, "n": 9,  "k": 4.8, "sigma_nA50": 6.7, "T": 1.299},
+  {"notch": "blunt", "p": 30, "R": 0,  "n": 9,  "k": 7.5, "sigma_nA50": 6.9, "T": 1.435},
+  {"notch": "blunt", "p": 0,  "R": -1, "n": 10, "k": 5.4, "sigma_nA50": 8.2, "T": 1.702},
+  {"notch": "blunt", "p": 0,  "R": 0,  "n": 9,  "k": 7.3, "sigma_nA50": 7.3, "T": 1.335},
+  {"notch": "intermediate", "p": 45, "R": -1, "n": 9,  "k": 4.3, "sigma_nA50": 4.4, "T": 1.451},
+  {"notch": "intermediate", "p": 45, "R": 0,  "n": 9,  "k": 5.0, "sigma_nA50": 4.3, "T": 1.442},
+  {"notch": "intermediate", "p": 30, "R": -1, "n": 8,  "k": 4.8, "sigma_nA50": 5.1, "T": 1.305},
+  {"notch": "intermediate", "p": 30, "R": 0,  "n": 9,  "k": 5.4, "sigma_nA50": 4.7, "T": 1.291},
+  {"notch": "intermediate", "p": 0,  "R": -1, "n": 10, "k": 4.1, "sigma_nA50": 4.9, "T": 1.818},
+  {"notch": "intermediate", "p": 0,  "R": 0,  "n": 7,  "k": 4.6, "sigma_nA50": 4.4, "T": 1.252},
+  {"notch": "sharp", "p": 45, "R": -1, "n": 8, "k": 3.7, "sigma_nA50": 4.1, "T": 1.170},
+  {"notch": "sharp", "p": 45, "R": 0,  "n": 8, "k": 4.5, "sigma_nA50": 3.7, "T": 1.326},
+  {"notch": "sharp", "p": 30, "R": -1, "n": 8, "k": 4.1, "sigma_nA50": 4.8, "T": 1.749},
+  {"notch": "sharp", "p": 30, "R": 0,  "n": 7, "k": 4.7, "sigma_nA50": 3.9, "T": 1.265},
+  {"notch": "sharp", "p": 0,  "R": -1, "n": 8, "k": 3.7, "sigma_nA50": 4.3, "T": 1.477},
+  {"notch": "sharp", "p": 0,  "R": 0,  "n": 8, "k": 5.0, "sigma_nA50": 4.5, "T": 1.280}
+ ],
+ "notes": [
+  "2020 Fig. 5 prints T = 1.702 (R=-1) and 1.361 (R=0) for sharp p=0; Table 1 values kept.",
+  "TCD as calibrated by the authors on the unified plain curve + sharp notch (2020 eq. 6): L_M(N_f) = 16.4 N_f^-0.242 mm; point method used, line method rejected by them at short lives (2 L > half net width).",
+  "Same printer, filament and settings in both papers; same-batch not stated."
+ ],
+ "tcd_reference": {"A_mm": 16.4, "b": -0.242}
+}
