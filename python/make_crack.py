@@ -465,6 +465,78 @@ def senb(n, W=10.0, B=4.0, a_W=0.5, S_W=4.0, pad=0.05, overhang=0.5, crown=0.2):
     return outer + plus + minus, meta
 
 
+def senb_grow(n, a, a0, steps, W=10.0, B=4.0, S_W=4.0, pad=0.05, overhang=0.5, m=2):
+    """SENB of make_crack.senb with a crack growing from a0 by steps of c = m h0 (h0 = a0 / (4 n)), meshed so that
+    every step shares all patches outside the moving front window (crack growth on a cached operator,
+    src/crack/growth.hpp). The growth zone y in [a0 - c, a0 + (steps + 1) c] is tiled by bands of height c: on the
+    crack faces one patch per band below the front, the last one the crown; on each z face, at |x| <= c (split at
+    x = 0), one patch per band, the two bands around the front (|y - a| <= c) enriched. Below and above the zone,
+    the far z-face patches, bottom, top and ends do not depend on a. a must be a0 + k c, 0 <= k <= steps."""
+    e1, e2, e3 = np.eye(3)
+    S = S_W * W
+    L2, w2 = 0.5 * S + overhang * W, 0.5 * pad * W
+    h0, hmax = a0 / (4.0 * n), W / (2.0 * n)
+    c = m * h0
+    k = round((a - a0) / c)
+    if abs(a - a0 - k * c) > 1e-9 * W or not 0 <= k <= steps:
+        raise ValueError("a must be a0 + k c, k = 0..steps (c = %g)" % c)
+    zlo, zhi = a0 - c, a0 + (steps + 1) * c
+    bands = [zlo + j * c for j in range(steps + 3)]                     # band edges zlo .. zhi
+    sy = sorted(set(stations(0.0, zlo, [zlo], h0, hmax)) | {zlo + i * h0 for i in range(round((zhi - zlo) / h0) + 1)}
+                | set(stations(zhi, W, [zhi], h0, hmax)))
+    sxl, sxr = stations(-L2, 0.0, [0.0], h0, hmax), stations(0.0, L2, [0.0], h0, hmax)
+    near = lambda st, v: min(st, key=lambda t: abs(t - v))
+    xlo, xhi = near(sxl[:-1], -c), near(sxr[1:], c)
+    zs = stations(0.0, B, [0.0, B], 2 * h0, hmax)
+    def cut(st, lo, hi):
+        pts = [t for t in st if lo - 1e-9 <= t <= hi + 1e-9]
+        return [(t - lo) / (hi - lo) for t in pts]
+    def padded(st, lo, hi):
+        return [lo] + [t for t in sorted(set(st)) if lo + 0.3 * h0 < t < hi - 0.3 * h0] + [hi]
+    def rect(x0, x1, y0, y1, z, nz):
+        sx = sxl if x1 <= 0 else sxr
+        return box_patch([x0, y0, z], (x1 - x0) * e1, (y1 - y0) * e2, cut(sx, x0, x1), cut(sy, y0, y1), nz)
+    outer, names = [], {"supports": [], "nose": [], "bottom": [], "top": [], "ends": [], "z_window": [], "z_far": []}
+    def add(P, group):
+        names[group].append(len(outer))
+        outer.append(P)
+    for z, nz in ((0.0, -e3), (B, e3)):
+        for x0, x1 in ((xlo, 0.0), (0.0, xhi)):
+            add(rect(x0, x1, 0.0, zlo, z, nz), "z_far")
+            for y0, y1 in zip(bands[:-1], bands[1:]):
+                add(rect(x0, x1, y0, y1, z, nz), "z_window" if abs(0.5 * (y0 + y1) - a) < c else "z_far")
+            add(rect(x0, x1, zhi, W, z, nz), "z_far")
+        for x0, x1 in ((-L2, xlo), (xhi, L2)):
+            add(rect(x0, x1, 0.0, W, z, nz), "z_far")
+    bx = [-L2, -0.5 * S - w2, -0.5 * S + w2, 0.0, 0.5 * S - w2, 0.5 * S + w2, L2]
+    zf = [t / B for t in zs]
+    for lo, hi in zip(bx[:-1], bx[1:]):
+        sx = sxl if hi <= 0 else sxr
+        grp = "supports" if abs(abs(0.5 * (lo + hi)) - 0.5 * S) < w2 else "bottom"
+        add(box_patch([lo, 0, 0], (hi - lo) * e1, B * e3, cut(padded(sx, lo, hi), lo, hi), zf, -e2), grp)
+    for lo, hi in ((-L2, -w2), (-w2, w2), (w2, L2)):
+        add(box_patch([lo, W, 0], (hi - lo) * e1, B * e3, cut(padded(sxl + sxr, lo, hi), lo, hi), zf, e2),
+            "nose" if lo == -w2 else "top")
+    for x, nx in ((-L2, -e1), (L2, e1)):
+        add(box_patch([x, 0, 0], W * e2, B * e3, cut(stations(0, W, [], hmax, hmax), 0, W), zf, nx), "ends")
+    # crack faces: mouth 0..zlo, then one band patch per c up to the front; the last band is the crown
+    cy = [0.0] + [b for b in bands if b <= a + 1e-9]
+    def face(outward):
+        return [box_patch([0, y0, 0], B * e3, (y1 - y0) * e2, zf, cut(sy, y0, y1), outward)
+                for y0, y1 in zip(cy[:-1], cy[1:])]
+    plus, minus = face(-e1), face(e1)
+    n0, nf = len(outer), len(plus)
+    meta = {
+        "kind": "senb", "outer": [0, n0], "plus": [n0, n0 + nf], "minus": [n0 + nf, n0 + 2 * nf],
+        "crown": [n0 + nf - 1], "front_edge": "v1", "enriched_outer": [[p, 0] for p in names["z_window"]],
+        "patches": names,
+        "plane": {"point": [0.0, 0.5 * a, 0.5 * B], "normal": [1.0, 0.0, 0.0], "e1": [0.0, 1.0, 0.0], "e3": [0.0, 0.0, 1.0]},
+        "W": W, "B": B, "a": a, "S": S, "L": 2 * L2, "pad": pad * W, "crown_c": c, "n": n,
+        "growth": {"a0": a0, "step": c, "steps": steps, "k": k},
+    }
+    return outer + plus + minus, meta
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("kind", choices=["penny", "ellipse", "prism", "prism_tension", "senb"])
@@ -479,6 +551,7 @@ def main(argv=None):
     ap.add_argument("--layout", choices=["disk", "ogrid"], default="disk")
     ap.add_argument("--grade", default="",
                     help="fixed-zone front grading 'd,q,L' (zone d in length units, ratio q, L layers); '' = none")
+    ap.add_argument("--grow", type=int, default=0, help="senb: crack growth, write steps 0..GROW (senb_grow)")
     ap.add_argument("--front-lines", default="", help="extra knot lines at these distances from the front 'd1,d2,..'")
     ap.add_argument("--suffix", default="", help="appended to the geometry name")
     ap.add_argument("--out", default=ROOT)
@@ -493,6 +566,18 @@ def main(argv=None):
         if a.kind == "prism":  # --lateral split cuts the z faces at the crack plane
             patches, meta = prism(n, "split" if a.lateral == "split" and a.lateral_set else "enriched")
             name = "prism_%sk%d" % ("split_" if meta["lateral"] == "split" else "", n)
+        elif a.kind == "senb" and a.grow > 0:  # growth sequence: one geometry per step, written here
+            a0 = a.a_w * a.width
+            for k in range(a.grow + 1):
+                c = 2 * a0 / (4.0 * n)
+                patches, meta = senb_grow(n, a0 + k * c, a0, a.grow, W=a.width, B=a.thickness)
+                name = "senb_grow_aw%g_n%d_s%d" % (a.a_w, n, k) + a.suffix
+                path = os.path.join(a.out, name + ".dat")
+                mg.write_dat(path, patches, name)
+                with open(os.path.join(a.out, name + ".crack.json"), "w") as f:
+                    json.dump(meta, f, indent=1)
+                print(path)
+            continue
         elif a.kind == "senb":
             patches, meta = senb(n, W=a.width, B=a.thickness, a_W=a.a_w)
             name = "senb_aw%g_n%d" % (a.a_w, n)
