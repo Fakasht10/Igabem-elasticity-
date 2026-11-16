@@ -7,7 +7,7 @@ s_n fails at the N where its effective stress equals the smooth curve:
     kt        Kt s_n = A N^B
     weibull   s_n (J_notch / V_plain)^(1/m) = A N^B            m given (fixed for every N)
     tcd       s_n sigma(L(N)/2) = A N^B (point) or the line mean over 2 L(N), with L(N) = A_L N^b_L (Susmel and Taylor's
-              L-N law; here borrowed from another data set: blind)
+              L-N law; here fitted on another data set, Ezeh & Susmel 2020 PLA: a cross-dataset transfer)
 Scores are on log10 life: mean bias, rms, and the share within a factor 2 and 3. Every specimen is one point.
 """
 import argparse
@@ -41,10 +41,10 @@ def main(argv=None):
     ap.add_argument("--data", default=os.path.join(HERE, "data", "seifollahi_kabir.json"))
     ap.add_argument("--h", type=float, default=1.5)
     ap.add_argument("--gauge", type=float, default=50.0)
-    ap.add_argument("--m", type=float, nargs="*", default=[7.5], help="Weibull moduli taken from elsewhere (blind)")
+    ap.add_argument("--m", type=float, nargs="*", default=[7.5], help="Weibull moduli fitted on another data set (Ezeh-Susmel PLA)")
     ap.add_argument("--m-fit", type=float, nargs="*", default=[12.0], help="Weibull moduli fitted on these notches")
     ap.add_argument("--L", type=float, nargs=2, default=[16.4, -0.242], metavar=("A_L", "b_L"),
-                    help="TCD L(N) = A_L N^b_L mm (default Ezeh & Susmel 2020 PLA)")
+                    help="TCD L(N) = A_L N^b_L mm fitted on another data set (default Ezeh & Susmel 2020 PLA)")
     ap.add_argument("--out", default=OUT)
     a = ap.parse_args(argv)
     d = json.load(open(a.data))
@@ -55,10 +55,10 @@ def main(argv=None):
     lig = min(Specimen.from_dict(v).ligament for v in d["specimens"].values())
     LN = lambda N: min(a.L[0] * N ** a.L[1], 0.95 * lig)          # held inside the ligament at very short lives
     crit = {"Kt (blind)": lambda f: (lambda N: float(f["Kt_mean"]))}
-    for m, tag in [(m, "blind") for m in a.m] + [(m, "fitted") for m in a.m_fit]:
+    for m, tag in [(m, "fitted on Ezeh-Susmel") for m in a.m] + [(m, "fitted here") for m in a.m_fit]:
         crit[f"Weibull m {m:g} ({tag})"] = lambda f, m=m: (lambda N, w=1.0 / C.weibull(f, 1.0, m, V): w)
-    crit["TCD point, L(N) (blind)"] = lambda f: (lambda N: 1.0 / C.tcd_point(f, 1.0, LN(N)))
-    crit["TCD line, L(N) (blind)"] = lambda f: (lambda N: 1.0 / C.tcd_line(f, 1.0, LN(N)))
+    crit["TCD point, L(N) fitted on Ezeh-Susmel"] = lambda f: (lambda N: 1.0 / C.tcd_point(f, 1.0, LN(N)))
+    crit["TCD line, L(N) fitted on Ezeh-Susmel"] = lambda f: (lambda N: 1.0 / C.tcd_line(f, 1.0, LN(N)))
     rows = []
     for k, pts in raw.items():
         if k == "smooth":
@@ -125,7 +125,7 @@ def main(argv=None):
     print("\n".join(lines))
 
 
-def figure_overview(raw, A, B, F, crit, rows, path, show=("TCD line, L(N) (blind)", "TCD point, L(N) (blind)")):
+def figure_overview(raw, A, B, F, crit, rows, path, show=("TCD line, L(N) fitted on Ezeh-Susmel", "TCD point, L(N) fitted on Ezeh-Susmel")):
     """(a) all data sets on one S-N plot with the predicted notch curves; (b) predicted vs measured life, every
     notched specimen, every criterion."""
     import matplotlib
@@ -149,12 +149,12 @@ def figure_overview(raw, A, B, F, crit, rows, path, show=("TCD line, L(N) (blind
         for c in show:
             eff = crit[c](F[k])
             a.plot(Ns, [A * N ** B / eff(N) for N in Ns], color=col[k], ls=ls[c], lw=1.4,
-                   label=f"{k}: {c.replace(' (blind)', '')}, blind")
+                   label=f"{k}: {c}")
     a.set(xscale="log", xlim=(3e3, 2e5), ylim=(8, 17), xlabel="cycles to failure $N_f$",
           ylabel=r"net stress amplitude $\sigma_a$ (MPa)", title="(a) Seifollahi & Kabir 2026, YZ PLA, R = 0.05")
     a.grid(alpha=0.3, which="both")
     a.legend(fontsize=7.5, loc="upper right", ncol=1)
-    cc = {"Kt (blind)": "0.55", "TCD point, L(N) (blind)": "#d62728", "TCD line, L(N) (blind)": "#ff7f0e"}
+    cc = {"Kt (blind)": "0.55", "TCD point, L(N) fitted on Ezeh-Susmel": "#d62728", "TCD line, L(N) fitted on Ezeh-Susmel": "#ff7f0e"}
     wc = iter(["#1f77b4", "#17becf"])
     cc.update({c: next(wc) for c in crit if c not in cc})
     lo, hi = 50, 5e5
@@ -184,7 +184,7 @@ def figure(d, raw, A, B, F, crit, path):
     notches = [k for k in raw if k != "smooth"]
     fig, axs = plt.subplots(1, len(notches), figsize=(5.2 * len(notches), 4.0), sharey=True)
     Ns = np.geomspace(2e3, 3e5, 60)
-    sty = {"Kt (blind)": ("0.5", ":"), "TCD point, L(N) (blind)": ("#d62728", "-"), "TCD line, L(N) (blind)": ("#ff7f0e", "--")}
+    sty = {"Kt (blind)": ("0.5", ":"), "TCD point, L(N) fitted on Ezeh-Susmel": ("#d62728", "-"), "TCD line, L(N) fitted on Ezeh-Susmel": ("#ff7f0e", "--")}
     wc = iter(["#1f77b4", "#17becf", "#9467bd", "#2ca02c"])
     sty.update({c: (next(wc), "-.") for c in crit if c not in sty})
     for ax, k in zip(np.atleast_1d(axs), notches):

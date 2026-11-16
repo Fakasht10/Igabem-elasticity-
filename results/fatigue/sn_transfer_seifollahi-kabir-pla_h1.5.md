@@ -3,12 +3,12 @@
 | criterion | n | mean log10(N_pred/N) | rms log10 | within x2 | within x3 |
 |---|---|---|---|---|---|
 | Kt (blind) | 14 | -1.83 | 1.83 | 0/14 | 0/14 |
-| Weibull m 7.5 (blind) | 14 | +0.74 | 0.75 | 0/14 | 0/14 |
-| Weibull m 12 (fitted) | 14 | +0.05 | 0.10 | 14/14 | 14/14 |
-| TCD point, L(N) (blind) | 14 | -0.10 | 0.15 | 12/14 | 14/14 |
-| TCD line, L(N) (blind) | 14 | +0.08 | 0.13 | 14/14 | 14/14 |
+| Weibull m 7.5 (fitted on Ezeh-Susmel) | 14 | +0.74 | 0.75 | 0/14 | 0/14 |
+| Weibull m 12 (fitted here) | 14 | +0.05 | 0.10 | 14/14 | 14/14 |
+| TCD point, L(N) fitted on Ezeh-Susmel | 14 | -0.10 | 0.15 | 12/14 | 14/14 |
+| TCD line, L(N) fitted on Ezeh-Susmel | 14 | +0.08 | 0.13 | 14/14 | 14/14 |
 
-| notch | s_a (MPa) | N test | Kt (blind) | Weibull m 7.5 (blind) | Weibull m 12 (fitted) | TCD point, L(N) (blind) | TCD line, L(N) (blind) |
+| notch | s_a (MPa) | N test | Kt (blind) | Weibull m 7.5 (fitted on Ezeh-Susmel) | Weibull m 12 (fitted here) | TCD point, L(N) fitted on Ezeh-Susmel | TCD line, L(N) fitted on Ezeh-Susmel |
 |---|---|---|---|---|---|---|---|
 | edge | 10.46 | 55,250 | 993 | 318,092 | 71,043 | 27,056 | 45,284 |
 | edge | 10.46 | 58,920 | 993 | 318,092 | 71,043 | 27,056 | 45,284 |

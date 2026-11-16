@@ -1,6 +1,6 @@
 """Seifollahi & Kabir 2026 (YZ PLA, laser-cut double edge notch and hole R2, R 0.05) at N = 2e4: Weibull against m,
 the m and TCD lengths that reproduce each notch, cross-calibration edge <-> hole, and TCD with the Ezeh-Susmel
-L(N) = 16.4 N^-0.242 mm (another PLA, printer and lab: a blind cross-dataset check).
+L(N) = 16.4 N^-0.242 mm (fitted on another PLA, printer and lab: a cross-dataset transfer).
 
     cd python && python3 -m fatigue.study_seifollahi        (fields cached by fatigue.transfer; < 5 s)
 """

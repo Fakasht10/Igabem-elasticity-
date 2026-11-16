@@ -56595,16 +56595,16 @@ The specimens are YZ (on-edge) PLA cut from concentric-infill plates, with the f
 | m that reproduces the notch | 13.0 | 11.6 |
 | cross-calibrated Weibull (m from the other notch) | +6 % | −6 % |
 | cross-calibrated TCD PM (L from the other notch, 1.9–2.0 mm) | +1 % | −1 % |
-| **TCD with the Ezeh–Susmel L(N) = 16.4 N^−0.242 = 1.49 mm, blind across data sets**, PM / LM | −8 % / +2 % | −11 % / +1 % |
+| **TCD with L(N) = 16.4 N^−0.242 = 1.49 mm fitted on Ezeh–Susmel (another printer, PLA and lab): it transfers**, PM / LM | −8 % / +2 % | −11 % / +1 % |
 
-The two notches have nearly the same field (same net section, Kt 2.15 and 2.39), so the cross-calibration is a weak test. The cross-dataset TCD result is a real test: L comes from a different printer, PLA and lab.
+The two notches have nearly the same field (same net section, Kt 2.15 and 2.39), so the cross-calibration is a weak test. Key finding: the TCD length fitted on one PLA data set transfers to another printer, PLA and lab (all 14 lives within ×2). It is "fitted on another data set", not blind.
 
 Full S–N transfer (`python3 -m fatigue.sn_transfer`): each of the 14 notched specimens is predicted from the smooth Basquin curve. Errors are log10 of predicted over measured life.
 
 | criterion | mean log10 error | rms log10 error | within ×2 | within ×3 |
 |---|---|---|---|---|
 | Kt (blind) | −1.83 | 1.83 | 0/14 | 0/14 |
-| Weibull, m 7.5 from Ezeh–Susmel (blind) | +0.74 | 0.75 | 0/14 | 0/14 |
+| Weibull, m 7.5 fitted on Ezeh–Susmel | +0.74 | 0.75 | 0/14 | 0/14 |
 | Weibull, m 12 (fitted on these notches) | +0.05 | 0.10 | 14/14 | 14/14 |
-| TCD point, Ezeh–Susmel L(N) (blind) | −0.10 | 0.15 | 12/14 | 14/14 |
-| TCD line, Ezeh–Susmel L(N) (blind) | +0.08 | 0.13 | 14/14 | 14/14 |
+| TCD point, L(N) fitted on Ezeh–Susmel | −0.10 | 0.15 | 12/14 | 14/14 |
+| TCD line, L(N) fitted on Ezeh–Susmel | +0.08 | 0.13 | 14/14 | 14/14 |
