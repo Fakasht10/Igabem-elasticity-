@@ -235,7 +235,7 @@ def figure(res, notches, rows, uts, path):
           Line2D([], [], marker="o", mfc="none", mec="0.7", ls=""),
           Line2D([], [], marker="v", mfc="none", mec="#9467bd", ls="", ms=8),
           Line2D([], [], marker="s", color="#1f77b4", ls=""), Line2D([], [], marker="P", color="#d62728", ls="", ms=8)]
-    lb = ["plain P50, Fig. 1 (calibration)", "plain P10 / P90 (paper)", "plain points, Fig. 1 (extracted, calibration)",
+    lb = ["plain P50, Fig. 1 (calibration)" if PLAIN["printed"] else "plain P50, refit on Fig. 1 points (calibration)", "plain P10 / P90 (paper)" if PLAIN["printed"] else "plain P10 / P90 (refit)", "plain points, Fig. 1 (extracted, calibration)",
           "V r0.15: FITTED", "U r1: HELD OUT", "U r3: HELD OUT"]
     for tag, gtitle, names in GROUPS:
         nc = len(names) if len(names) <= 3 else 2
@@ -247,7 +247,7 @@ def figure(res, notches, rows, uts, path):
             ax.plot(Ns, P50(Ns), "k-", lw=1.6)
             ax.plot(Ns, P50(Ns) * math.sqrt(PLAIN["T"]), "k--", lw=1)
             ax.plot(Ns, P50(Ns) / math.sqrt(PLAIN["T"]), "k--", lw=1)
-            ax.scatter([q["N"] for q in plain], [q["smax_uts"] for q in plain], s=9, facecolor="none", edgecolors="0.7",
+            ax.scatter([q["N"] for q in plain], [q["smax_uts"] * ((1 - q["R"]) / 2) ** PLAIN["gamma"] for q in plain], s=9, facecolor="none", edgecolors="0.7",
                        linewidths=0.5, zorder=1)
             for k in ("sharp", "intermediate", "blunt"):
                 N = np.array([x[4] for x in rows if x[0] == k])
@@ -264,8 +264,10 @@ def figure(res, notches, rows, uts, path):
         for ax in axs[-1]:
             ax.set_xlabel("cycles to failure $N_f$ (specimen)")
         for ax in axs[:, 0]:
-            ax.set_ylabel(r"$\sigma_{eff,max}/\sigma_{UTS}$")
-        fig.suptitle(f"{gtitle}: Ezeh-Susmel PLA, fitted on plain + sharp V, U notches held out", fontsize=12)
+            ax.set_ylabel(r"$\sigma_{eff,max}/\sigma_{UTS}$" if PLAIN["printed"] else
+                          rf"$\sigma_{{eff,max}}^{{1-\gamma}}\sigma_{{eff,a}}^{{\gamma}}/\sigma_{{UTS}}$, $\gamma$ {PLAIN['gamma']:g}")
+        fig.suptitle(f"{gtitle}: Ezeh-Susmel PLA, " + ("sigma_max" if PLAIN["printed"] else f"Walker gamma {PLAIN['gamma']:g}")
+                     + ", fitted on plain + sharp V, U notches held out", fontsize=12)
         fig.legend(hd, lb, loc="outside lower center", ncol=3, fontsize=9.5, frameon=False)
         for ext in ("png", "pdf"):
             fig.savefig(f"{path}_{tag}.{ext}", dpi=170)
@@ -296,8 +298,9 @@ def ranking(res, path):
     ax.set_yticks(y, [TITLE[r[1]] for r in rows])
     ax.invert_yaxis()
     ax.set_xlabel("rms log10(S_eff / P50), bar = both held-out U notches")
-    ax.set_title("Held-out error by method: Ezeh-Susmel PLA, fitted on plain + sharp V\n"
-                 "colour: grey baselines, blue TCD point, green TCD line, red volume / gradient, orange modified HSV", fontsize=11)
+    gtxt = "sigma_max (Fig. 1 band as printed)" if PLAIN["printed"] else f"Walker gamma {PLAIN['gamma']:g} (plain refit)"
+    ax.set_title(f"Held-out error by method: Ezeh-Susmel PLA, {gtxt}\nfitted on plain + sharp V; colour = family "
+                 "(grey baseline, blue TCD point, green TCD line,\nred volume / gradient, orange modified HSV)", fontsize=10.5)
     ax.grid(alpha=0.3, axis="x")
     ax.set_xlim(0, 0.9)
     ax.legend(fontsize=9, loc="center right")
