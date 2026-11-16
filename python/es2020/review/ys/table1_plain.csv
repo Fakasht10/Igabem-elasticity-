@@ -1,0 +1,20 @@
+# Yaren & Susmel, Procedia Struct. Integrity 76 (2026) 99-106, accepted manuscript (SHURA 36837), PDF page 4 (paper p.3), Table 1
+# REAL: transcribed from the printed table (text layer and 220-dpi render agree cell by cell). Series summary statistics, NOT specimens.
+# dsigma0_50_MPa = nominal stress RANGE at 2e6 cycles, P_S 50% (text p.4: "the stress range at the endurance limit"); voids ignored in nominal stress
+# k = negative inverse slope; T_sigma = sigma(PS10%)/sigma(PS90%), log-normal, 95% confidence; dv_mm '-' printed for 100% in-fill
+row,infill_pct,R,raster_deg,dsigma0_50_MPa,k,T_sigma,n_tests,dv_mm,flag
+1,100,-1,0,6.3,7.0,1.40,13,-,
+2,100,-1,45,5.5,8.0,1.50,7,-,
+3,100,0.1,0,3.9,8.4,1.42,12,-,
+4,80,-1,0,2.8,4.0,1.42,9,0.30,used by authors to calibrate kt (text says 8 values averaged; table says 9 tests)
+5,80,-1,45,3.8,6.1,1.49,9,0.26,
+6,80,0.1,0,2.5,7.7,1.21,9,0.30,
+7,60,-1,0,2.4,4.2,1.46,9,0.40,
+8,60,-1,45,2.7,5.3,1.47,8,0.53,
+9,60,0.1,0,1.7,6.2,1.34,9,0.40,
+10,40,-1,0,1.3,3.8,2.05,8,0.75,
+11,40,-1,45,2.6,8.3,1.37,8,0.84,
+12,40,0.1,0,0.9,4.1,1.53,11,0.75,
+13,20,-1,0,1.6,4.6,1.53,9,1.62,higher than 40% row 10 although text says strength rises monotonically with in-fill
+14,20,-1,45,1.8,6.1,1.65,10,1.60,
+15,20,0.1,0,0.8,4.5,1.58,9,1.62,

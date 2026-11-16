@@ -1,0 +1,28 @@
+run s 115.91291856765747
+['net', 'kt', 'peterson', 'neuber', 'gradient', 'elhaddad', 'elhaddad_paper', 'neuber_nsr', 'net_nsr', 'net_triax', 'neuber_triax', 'neuber_nsr_triax', 'sed', 'sed_const', 'sed_split', 'sed_split_const', 'point_eta', 'line_eta', 'point_etaw', 'weibull_mN', 'lsa_peak', 'lsa_point', 'grad_paperL', 'mhsv_fix', 'elhaddad_nsr']
+figs57 held-out n 102 series 12
+net              rms 0.145  diff vs net +0.000  90%CI specimen [+0.000,+0.000] series-cluster [+0.000,+0.000] | rms R-offset removed 0.111 | within-series 0.054, sd of series means 0.114
+kt               rms 0.391  diff vs net +0.247  90%CI specimen [+0.229,+0.263] series-cluster [+0.203,+0.296] | rms R-offset removed 0.380 | within-series 0.054, sd of series means 0.108
+peterson         rms 0.205  diff vs net +0.060  90%CI specimen [+0.048,+0.073] series-cluster [+0.041,+0.076] | rms R-offset removed 0.179 | within-series 0.092, sd of series means 0.116
+neuber           rms 0.171  diff vs net +0.026  90%CI specimen [+0.018,+0.033] series-cluster [+0.014,+0.036] | rms R-offset removed 0.140 | within-series 0.072, sd of series means 0.114
+gradient         rms 0.154  diff vs net +0.009  90%CI specimen [-0.005,+0.024] series-cluster [-0.016,+0.038] | rms R-offset removed 0.118 | within-series 0.108, sd of series means 0.109
+elhaddad         rms 0.199  diff vs net +0.054  90%CI specimen [+0.041,+0.067] series-cluster [+0.036,+0.068] | rms R-offset removed 0.172 | within-series 0.096, sd of series means 0.118
+elhaddad_paper   rms 0.258  diff vs net +0.113  90%CI specimen [+0.101,+0.124] series-cluster [+0.083,+0.135] | rms R-offset removed 0.238 | within-series 0.083, sd of series means 0.115
+neuber_nsr       rms 0.137  diff vs net -0.008  90%CI specimen [-0.018,+0.001] series-cluster [-0.017,+0.003] | rms R-offset removed 0.110 | within-series 0.094, sd of series means 0.092
+net_nsr          rms 0.147  diff vs net +0.003  90%CI specimen [-0.007,+0.012] series-cluster [-0.009,+0.014] | rms R-offset removed 0.135 | within-series 0.103, sd of series means 0.072
+net_triax        rms 0.343  diff vs net +0.199  90%CI specimen [+0.171,+0.226] series-cluster [+0.128,+0.263] | rms R-offset removed 0.332 | within-series 0.075, sd of series means 0.113
+neuber_triax     rms 0.268  diff vs net +0.123  90%CI specimen [+0.112,+0.133] series-cluster [+0.097,+0.148] | rms R-offset removed 0.251 | within-series 0.063, sd of series means 0.103
+neuber_nsr_triax rms 0.172  diff vs net +0.027  90%CI specimen [+0.016,+0.037] series-cluster [+0.020,+0.034] | rms R-offset removed 0.143 | within-series 0.113, sd of series means 0.111
+sed              rms 0.194  diff vs net +0.049  90%CI specimen [+0.037,+0.061] series-cluster [+0.039,+0.058] | rms R-offset removed 0.166 | within-series 0.123, sd of series means 0.121
+sed_const        rms 0.174  diff vs net +0.030  90%CI specimen [+0.025,+0.033] series-cluster [+0.018,+0.038] | rms R-offset removed 0.148 | within-series 0.054, sd of series means 0.117
+sed_split        rms 0.193  diff vs net +0.049  90%CI specimen [+0.037,+0.059] series-cluster [+0.038,+0.058] | rms R-offset removed 0.165 | within-series 0.122, sd of series means 0.120
+sed_split_const  rms 0.174  diff vs net +0.029  90%CI specimen [+0.025,+0.033] series-cluster [+0.017,+0.038] | rms R-offset removed 0.147 | within-series 0.054, sd of series means 0.118
+point_eta        rms 0.220  diff vs net +0.076  90%CI specimen [+0.063,+0.087] series-cluster [+0.054,+0.095] | rms R-offset removed 0.198 | within-series 0.098, sd of series means 0.111
+line_eta         rms 0.281  diff vs net +0.137  90%CI specimen [+0.126,+0.147] series-cluster [+0.110,+0.164] | rms R-offset removed 0.265 | within-series 0.062, sd of series means 0.102
+point_etaw       rms 0.250  diff vs net +0.105  90%CI specimen [+0.093,+0.117] series-cluster [+0.081,+0.127] | rms R-offset removed 0.231 | within-series 0.079, sd of series means 0.107
+weibull_mN       rms 0.139  diff vs net -0.006  90%CI specimen [-0.022,+0.011] series-cluster [-0.044,+0.031] | rms R-offset removed 0.099 | within-series 0.078, sd of series means 0.108
+lsa_peak         rms 0.284  diff vs net +0.139  90%CI specimen [+0.111,+0.168] series-cluster [+0.083,+0.195] | rms R-offset removed 0.276 | within-series 0.086, sd of series means 0.079
+lsa_point        rms 0.157  diff vs net +0.012  90%CI specimen [+0.003,+0.021] series-cluster [-0.002,+0.030] | rms R-offset removed 0.119 | within-series 0.083, sd of series means 0.112
+grad_paperL      rms 0.146  diff vs net +0.002  90%CI specimen [-0.012,+0.015] series-cluster [-0.023,+0.030] | rms R-offset removed 0.108 | within-series 0.099, sd of series means 0.108
+mhsv_fix         rms 0.278  diff vs net +0.134  90%CI specimen [+0.125,+0.143] series-cluster [+0.108,+0.155] | rms R-offset removed 0.263 | within-series 0.054, sd of series means 0.115
+elhaddad_nsr     rms 0.175  diff vs net +0.031  90%CI specimen [+0.017,+0.043] series-cluster [+0.020,+0.041] | rms R-offset removed 0.154 | within-series 0.118, sd of series means 0.099
