@@ -59,13 +59,13 @@ def set_plain(gamma, printed):
 NAMES = {"blunt": "U r3", "intermediate": "U r1", "sharp": "V r0.15"}
 CRIT = {"net": ([], []), "kt": ([], []), "tcd_ln_paper": ([], []), "tcd_ln": (["A", "B"], [16.4, -0.242]),
         "tcd_const": (["L"], [0.5]), "tcd_line": (["L"], [0.5]),
-        "tcd_line_ln": (["A", "B"], [16.4, -0.242]), "sup_tcd": (["L", "l"], [0.5, 1.0]), "sup_tcd_line": (["L", "l"], [0.5, 1.0]),
+        "tcd_line_ln": (["A", "B"], [16.4, -0.242]), "sup_tcd": (["l"], [0.05]), "sup_tcd_line": (["l"], [0.05]),
         "weibull": (["m"], [10.0]), "hotspot": (["l"], [1.0]), "mhsv": (["L_FCI"], [0.4]),
         "mhsv_e": (["e"], [0.1]), "hsv90": (["m"], [10.0]), "hsv80": (["m"], [10.0])}
 TITLE = {"net": "net stress (no notch factor)", "kt": "elastic peak Kt x net", "tcd_ln_paper": "TCD point, authors' L(N)",
          "tcd_ln": "TCD point, L(N) = A N^B", "tcd_const": "TCD point, constant L", "tcd_line": "TCD line, constant L",
-         "tcd_line_ln": "TCD line, L(N) = A N^B", "sup_tcd": "supported TCD point, L and l",
-         "sup_tcd_line": "supported TCD line, L and l", "weibull": "Weibull, m",
+         "tcd_line_ln": "TCD line, L(N) = A N^B", "sup_tcd": "supported TCD point, l (L 0.49 authors')",
+         "sup_tcd_line": "supported TCD line, l (L 0.49 authors')", "weibull": "Weibull, m",
          "hotspot": "supported hot spot, l", "mhsv": "modified HSV, L_FCI",
          "mhsv_e": "modified HSV, exponent e (L_FCI 0.4 measured)", "hsv90": "HSV, peak x (V90/V_plain)^(1/m)",
          "hsv80": "HSV, peak x (V80/V_plain)^(1/m)"}
@@ -115,10 +115,13 @@ def feff(name, n, N, th):
         return n.lm(th[0])
     if name == "tcd_line_ln":
         return n.lm(th[0] * N ** th[1])
-    if name == "sup_tcd":                             # supported TCD: sigma(L/2) / (1 + sqrt(l chi0)), f >= 1
-        return max(1.0, n.pm(th[0]) / (1 + math.sqrt(th[1] * n.chi)))
+    # supported TCD: sigma(L/2) / (1 + sqrt(l chi0)), f >= 1. With one calibration notch L and l are not both
+    # identifiable (the sharp-V objective is flat along a curve, and lands on the f >= 1 cap), so L is held at the
+    # authors' L_M(2e6) = 0.49 mm and only l is fitted.
+    if name == "sup_tcd":
+        return max(1.0, n.pm(L_CD) / (1 + math.sqrt(th[0] * n.chi)))
     if name == "sup_tcd_line":
-        return max(1.0, n.lm(th[0]) / (1 + math.sqrt(th[1] * n.chi)))
+        return max(1.0, n.lm(L_CD) / (1 + math.sqrt(th[0] * n.chi)))
     if name == "weibull":
         return n.weib(th[0])
     if name == "hotspot":
@@ -208,7 +211,8 @@ def main(argv=None):
     figure(res, notches, rows, uts, os.path.join(a.out, f"fig_calib_sharp_holdout{tag}"))
 
 
-GROUPS = [("baselines", "Baselines (no free parameter)", ["net", "kt"]),
+GROUPS = [("focus", "Methods in question", ["weibull", "hsv80", "tcd_line", "sup_tcd_line"]),
+          ("baselines", "Baselines (no free parameter)", ["net", "kt"]),
           ("tcd_point", "TCD point family", ["tcd_ln_paper", "tcd_ln", "tcd_const", "sup_tcd"]),
           ("tcd_line", "TCD line family", ["tcd_line", "tcd_line_ln", "sup_tcd_line"]),
           ("volume", "Volume and gradient methods", ["weibull", "hsv90", "hsv80", "hotspot"]),
