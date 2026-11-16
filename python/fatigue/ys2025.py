@@ -78,3 +78,79 @@ def profiles(name, h=None, nd=160, log=print):
     np.savez(out, **res)
     log(f"{name}: Kt mid {s1[-1, 0]:.3f}, face {s1[0, 0]:.3f}, {unk} unknowns, {res['seconds']:.0f} s")
     return res
+
+
+def _edge_segments(name):
+    """Free in-plane boundary of the quarter from the root to the grip end, as [('line', p, q) | ('arc', p, c, q)]."""
+    if name == "plain":
+        yt = math.sqrt(R_PLAIN ** 2 - (R_PLAIN - (WG - WN) / 2) ** 2)
+        return [("arc", (WN / 2, 0.0), (WN / 2 + R_PLAIN, 0.0), (WG / 2, yt)), ("line", (WG / 2, yt), (WG / 2, L_PLAIN / 2))]
+    from fatigue.specimens import outline
+    seg = outline(SPECS[name])                       # a -> b (ligament), arc, [flank], side edge, grip end, axis
+    i0 = next(i for i, g in enumerate(seg) if g[0] == "arc")
+    return seg[i0:-2]                                # drop the grip end and the symmetry axis
+
+
+def _seg_cells(g, n, grade):
+    """Cell centres, lengths and arc-length start of a segment; graded towards its start when grade."""
+    t = np.concatenate([[0.0], np.geomspace(2e-3, 1.0, n)]) if grade else np.linspace(0.0, 1.0, n + 1)
+    tm = 0.5 * (t[1:] + t[:-1])
+    if g[0] == "line":
+        p, q = np.asarray(g[1]), np.asarray(g[2]); L = np.linalg.norm(q - p)
+        return p + tm[:, None] * (q - p), np.diff(t) * L, L
+    p, c, q = map(np.asarray, (g[1], g[2], g[3])); r = np.linalg.norm(p - c)
+    a0, a1 = math.atan2(*(p - c)[::-1]), math.atan2(*(q - c)[::-1])
+    da = (a1 - a0 + math.pi) % (2 * math.pi) - math.pi
+    a = a0 + tm * da
+    return c + r * np.c_[np.cos(a), np.sin(a)], np.diff(t) * abs(da) * r, abs(da) * r
+
+
+def surface(name, log=print):
+    """sigma_1 / net stress ON every free face of the specimen, with area weights for the FULL specimen (quarter x 4).
+    edge: the notch/hourglass face, flank and gross side edge (outline from the root to the grip end) x thickness;
+          s (arc length from the root, mm), z, s1 (ns, nz), dA (ns, nz) mm^2, seg (segment index per s).
+    side: flat faces z = 0 and z = T (mirror), triangle centroids x, y, s1, dA (both faces, full specimen).
+    Cached in WORK; the solve itself is read from the solution cache."""
+    out = os.path.join(WORK, f"surface_{name}.npz")
+    if os.path.exists(out):
+        return dict(np.load(out))
+    import triangle
+    dat, info = geometry(name)
+    body = plain_case() if name == "plain" else case(SPECS[name])
+    rho = R_PLAIN if name == "plain" else SPECS[name].rho
+    segs = _edge_segments(name)
+    P, ds, sseg, s0 = [], [], [], 0.0
+    for k, g in enumerate(segs):
+        L = _seg_cells(g, 2, False)[2]
+        n = 60 if k == 0 else max(8, int(math.ceil(L / 0.5)))
+        X, d_, L = _seg_cells(g, n, k == 0 or k == 1)
+        P.append(X); ds.append(d_); sseg += [k] * len(X)
+    X2, ds = np.vstack(P), np.concatenate(ds); s = np.cumsum(ds) - 0.5 * ds
+    ze = np.concatenate([[0.0], np.geomspace(T / 400, T / 2, 14)]); ze = np.concatenate([ze, T - ze[-2::-1]])
+    zc, dz = 0.5 * (ze[1:] + ze[:-1]), np.diff(ze)
+    pts_e = np.array([(x, y, z) for x, y in X2 for z in zc])
+    # side face: graded triangulation of the quarter outline
+    poly = [(0.0, 0.0)] + [tuple(x) for x in np.vstack([[segs[0][1]], X2])] + [tuple(segs[-1][-1]), (0.0, segs[-1][-1][1])]
+    poly = np.array(poly); sg = np.array([(i, (i + 1) % len(poly)) for i in range(len(poly))])
+    h0 = min(rho / 6, 0.4); hf = 1.5
+    Tr = triangle.triangulate(dict(vertices=poly, segments=sg), "pq30a%f" % (hf ** 2 / 2))
+    for _ in range(14):
+        V = Tr["vertices"][Tr["triangles"]]; c = V.mean(1)
+        dist = np.hypot(c[:, 0] - WN / 2, c[:, 1]); h = np.minimum(hf, h0 + 0.25 * dist)
+        a1, a2 = V[:, 1] - V[:, 0], V[:, 2] - V[:, 0]; A = 0.5 * np.abs(a1[:, 0] * a2[:, 1] - a1[:, 1] * a2[:, 0])
+        if np.all(A <= h ** 2 / 2 * 1.5):
+            break
+        Tr = triangle.triangulate(dict(vertices=Tr["vertices"], segments=Tr["segments"], triangles=Tr["triangles"],
+                                       triangle_max_area=h ** 2 / 2), "rpq30a")
+    V = Tr["vertices"][Tr["triangles"]]; c = V.mean(1)
+    a1, a2 = V[:, 1] - V[:, 0], V[:, 2] - V[:, 0]; A = 0.5 * np.abs(a1[:, 0] * a2[:, 1] - a1[:, 1] * a2[:, 0])
+    pts_s = np.c_[c, np.zeros(len(c))]
+    with Solve(dat, body, 3000.0, 0.35, workdir=os.path.join(WORK, f"run_{name}_h0"), log=log) as S:
+        se, _ = S.stress(pts_e, True); ss, _ = S.stress(pts_s, True); cached = S.from_cache
+    s1e = np.linalg.eigvalsh(se)[..., -1].reshape(len(X2), len(zc)); s1s = np.linalg.eigvalsh(ss)[..., -1]
+    res = dict(edge_s=s, edge_xy=X2, edge_z=zc, edge_s1=s1e, edge_dA=4 * np.outer(ds, dz), edge_seg=np.array(sseg),
+               side_xy=c, side_s1=s1s, side_dA=8 * A, from_cache=cached,
+               area_edge=4 * ds.sum() * T, area_side=8 * A.sum())
+    np.savez(out, **res)
+    log(f"{name}: surface max s1 edge {s1e.max():.3f}, side {s1s.max():.3f}; {len(pts_e)} + {len(pts_s)} points; solve from cache {cached}")
+    return res
