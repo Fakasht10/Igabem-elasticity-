@@ -1,0 +1,22 @@
+Traceback (most recent call last):
+  File "/tmp/claude-0/audit/run_mode.py", line 12, in <module>
+    o=minimize(nll,o.x,method='Nelder-Mead',options=dict(maxiter=20000,xatol=1e-7,fatol=1e-10))
+  File "/usr/local/lib/python3.13/site-packages/scipy/optimize/_minimize.py", line 772, in minimize
+    res = _minimize_neldermead(fun, x0, args, callback, bounds=bounds,
+                               **options)
+  File "/usr/local/lib/python3.13/site-packages/scipy/optimize/_optimize.py", line 884, in _minimize_neldermead
+    fxe = func(xe)
+  File "/usr/local/lib/python3.13/site-packages/scipy/optimize/_optimize.py", line 561, in function_wrapper
+    fx = function(np.copy(x), *(wrapper_args + args))
+  File "/tmp/claude-0/audit/fit.py", line 57, in nll
+    p=dict(zip(names,x)); c=f(p)
+                            ~^^^
+  File "/tmp/claude-0/audit/fit.py", line 44, in f
+    F=Fbase(p['a0'],p['kap'],p['n'],p.get('Lc',L0))
+  File "/tmp/claude-0/audit/fit.py", line 31, in Fbase
+    a=a0+kap*v; F[ii]=p**-n*(Kf(k,a+r)+(Wst(a,r)-1)*wf(k,a))
+                                        ~~~^^^^^
+  File "/tmp/claude-0/audit/fit.py", line 25, in Wst
+    def Wst(a,r): return (a+r)/math.sqrt(r*(2*a+r))
+                               ~~~~~~~~~^^^^^^^^^^^
+ValueError: math domain error

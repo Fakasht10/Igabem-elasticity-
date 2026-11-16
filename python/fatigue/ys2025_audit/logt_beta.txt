@@ -1,0 +1,3 @@
+beta stored nll 268.7634 my-opt (GL256 fit) on their objective 269.1302
+   from stored L-BFGS-B 268.7634 -> Powell 268.7634 -> NM 268.7634 {'lnsD': 4.2354, 'k': 5.096, 'gam': 0.3255, 'lnsZ': -0.1819, 'a0': 0.4329, 'kap': 3.5379, 'n': 0.226, 'b': 1.1773} amax 6.31
+   from mine L-BFGS-B 268.7635 -> Powell 268.7635 -> NM 268.7635 {'lnsD': 4.2371, 'k': 5.0961, 'gam': 0.325, 'lnsZ': -0.1819, 'a0': 0.4377, 'kap': 3.5381, 'n': 0.2268, 'b': 1.1841} amax 6.31

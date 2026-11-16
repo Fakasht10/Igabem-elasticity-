@@ -1,0 +1,3 @@
+/tmp/claude-0/audit/fit.py:47: RuntimeWarning: invalid value encountered in log1p
+  if var=='beta': lnsX=lnsX+np.log1p(p['b']*Dh*comp)
+beta wide 575.9s AIC 546.614 {'lnsD': 4.5089, 'k': 5.1392, 'gam': 0.2325, 'lnsZ': -0.2015, 'a0': 1.0855, 'kap': 13.3315, 'n': -0.097, 'b': 2.4531} onb [] amax 23.22 {'best': np.float64(265.30706928304204), 'q10': 267.23594368002125, 'median': 269.1138517396813, 'n_within_0p01': 1, 'lbfgs_only_best': 265.30706928304204, 'n': 40}

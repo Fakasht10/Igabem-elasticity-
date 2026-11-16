@@ -1,0 +1,1 @@
+baseline wide AIC 615.728 {'lnsD': 4.6193, 'k': 4.5901, 'gam': 0.3755, 'lnsZ': -0.0361, 'a0': 0.8125, 'kap': 14.3059, 'n': -0.1848} amax 24.56 [np.float64(300.864), np.float64(300.864), np.float64(300.864), np.float64(300.864), np.float64(300.864), np.float64(300.955)]
