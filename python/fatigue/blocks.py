@@ -13,6 +13,7 @@ surface (top z = T, bottom z = 0 and the walls extruded from the outline) is the
     h      element size away from the root
     n_arc  spans along each half of the root arc
     h0, g  first size and growth of the radial grading away from the root and along the flank
+    h_far  largest element at the grip (default 4 h): the rows above y = Y1 grow from h to it
     hz0    first size of the through-thickness grading towards both free faces (at most T / nz further in)
 All of it takes well under a second; the geometry never changes with the mesh.
 """
@@ -183,11 +184,25 @@ def _direction(P, k, along, root_pt):
     return d, np.linalg.norm(start[:2] - root_pt) < np.linalg.norm(end[:2] - root_pt)
 
 
-def build(s, h=1.5, n_arc=None, h0=None, g=1.4, nz=12, hz0=None, coarsen=0, **kw):
+def _coarsen(knots, near, c):
+    """Level c of a class's knots, a subset of level c - 1. Away from the root (classes with no end at it) every
+    2^c-th knot is kept, so the far field coarsens fast; a class graded from the root loses its c knots nearest the
+    root end(s), so the root elements grow one ring per level (sizes h0 -> h0 (1 + g) -> ...) and the rest stays."""
+    k = sorted(knots)
+    if near is None:
+        return k[2 ** c - 1::2 ** c]
+    if 0 in near:
+        k = k[c:]
+    if 1 in near:
+        k = k[:len(k) - c] if c < len(k) else []
+    return k
+
+
+def build(s, h=1.5, n_arc=None, h0=None, g=1.4, nz=12, hz0=None, coarsen=0, h_far=None, **kw):
     """Refined exact quarter: (patches, names, info). Sizes in mm; h0 defaults to rho / 8, n_arc (spans on each half
     of the root arc) to the half-arc length / h0, so the root elements are about square in the plane. Geometry never changes:
-    every refinement is a knot insertion, the same knots across every shared edge (conforming). coarsen = c keeps
-    every 2^c-th knot of each class: the nested coarse levels of a convergence study, the default being the finest."""
+    every refinement is a knot insertion, the same knots across every shared edge (conforming). coarsen = c gives the
+    nested coarser levels of a convergence study (the default is the finest): see _coarsen."""
     h0 = h0 or s.rho / 8
     hz0 = s.T / 60 if hz0 is None else hz0             # 0 = uniform nz spans through the thickness
     if n_arc is None:
@@ -204,12 +219,15 @@ def build(s, h=1.5, n_arc=None, h0=None, g=1.4, nz=12, hz0=None, coarsen=0, **kw
                 want[root] = [i / n for i in range(1, n)]
     c, Cp, d_ = map(np.asarray, (info["c"], info["Cp"], info["d"]))
     C = np.array([s.WN / 2 + s.rho, 0.0])
+    b = np.array([s.WN / 2, 0.0])
+    near = {}                                # graded classes: which end(s) of the class lie at the root
 
     def set_dir(name, along, root_pt, knots):
         k = names.index(name)
         d, at_start = _direction(P, k, np.r_[along, 0.0], root_pt)
         root, f = cls.find((k, d))
-        want[root] = [x if at_start != f else 1 - x for x in knots] if True else knots
+        want[root] = [x if at_start != f else 1 - x for x in knots]
+        near[root] = (0,) if at_start != f else (1,)          # class end(s) at the point of interest
 
     for half in ("F1.wall0", "F2.wall0"):        # each half of the root arc is its own knot class (F1 links to L1,
         k = names.index(half)                     # F2 to M2), so both need the arc spans
@@ -221,7 +239,13 @@ def build(s, h=1.5, n_arc=None, h0=None, g=1.4, nz=12, hz0=None, coarsen=0, **kw
         else:
             zk = [i / nz for i in range(1, nz)]
         want[cls.find((k, zd))[0]] = zk                                                     # 2. through the thickness
-        want[cls.find((k, 1 - zd))[0]] = [i / n_arc for i in range(1, n_arc)]              # 3. along the root arc
+        near[cls.find((k, zd))[0]] = (0, 1)
+        ra, fa = cls.find((k, 1 - zd))
+        want[ra] = [i / n_arc for i in range(1, n_arc)]                                      # 3. along the root arc
+        e0 = X[0, 0, :2]                                  # does this half start at the root b?
+        e1 = X[0, -1, :2] if zd == 1 else X[-1, 0, :2]
+        if half == "F1.wall0":
+            near[ra] = (0,) if (np.linalg.norm(e0 - b) < np.linalg.norm(e1 - b)) != fa else (1,)
     radial = graded(info["R"] - s.rho, h0, g, h)
     set_dir("F2.top", Cp - c, C, radial)                                                   # 4. radial, from the root
     last = (info["R"] - s.rho) * (1 - (radial[-1] if radial else 0.0))     # the fan's outermost radial size: the
@@ -229,9 +253,13 @@ def build(s, h=1.5, n_arc=None, h0=None, g=1.4, nz=12, hz0=None, coarsen=0, **kw
     set_dir("L1.top", np.array([-1.0, 0.0]), np.array([Kx, 0.0]),          # the size does not jump at the seam
             graded(Kx, min(last * g, h), g, h))
     set_dir("S1.top", d_ - c, c, graded(float(np.linalg.norm(d_ - c)), h0, g, h))          # 5. along the flank
-    if coarsen:                          # nested coarser level: keep every 2^coarsen-th knot of every class, so the
-        m = 2 ** coarsen                 # default graded mesh is the finest level and each coarser one is a subset
-        want = {r: sorted(v)[m - 1::m] for r, v in want.items()}
+    Y1, H = info["Y1"], s.L / 2                                                            # 6. grip rows: from h
+    set_dir("T1.top", np.array([0.0, 1.0]), np.array([0.0, Y1]),                         # at y = Y1, growing to
+            graded(H - Y1, h, g, h_far or 4 * h))                                          # h_far at the grip
+    near[cls.find((names.index("T1.top"), _direction(P, names.index("T1.top"), np.array([0.0, 1.0, 0.0]),
+                                                         np.array([0.0, Y1]))[0]))[0]] = None
+    if coarsen:
+        want = {r: _coarsen(v, near.get(r), coarsen) for r, v in want.items()}
     _class_insert(P, cls, want)
     info.update(coarsen=coarsen, h=h, n_arc=n_arc, h0=h0, g=g, nz=nz, hz0=hz0, patches=len(P),
                 ctrl=int(sum(Q.Pw.shape[0] * Q.Pw.shape[1] for Q in P)))

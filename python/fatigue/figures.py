@@ -150,11 +150,11 @@ def main(argv=None):
     ap.add_argument("--h", type=float, default=1.5)
     ap.add_argument("--out", default=OUT)
     ap.add_argument("--convergence", type=int, nargs="*", metavar="C",
-                    help="nested coarsening levels of the graded block mesh, coarse to fine (default 3 2 1 0; level 0, "
+                    help="nested coarsening levels of the graded block mesh, coarse to fine (default 4 3 2 1 0; level 0, "
                          "the default mesh, is the reference); line fields only")
     a = ap.parse_args(argv)
     if a.convergence is not None:
-        print(convergence(a.data, a.convergence or [3, 2, 1, 0], a.out, h=a.h)[0])
+        print(convergence(a.data, a.convergence or [4, 3, 2, 1, 0], a.out, h=a.h)[0])
         return
     data = json.load(open(a.data))
     specs = {k: Specimen.from_dict(v) for k, v in data["specimens"].items()}
@@ -207,8 +207,8 @@ def convergence(data_path, levels, out_dir=OUT, h=1.5):
         a1.loglog(n, [abs(x[2] / ref[2] - 1) for x in F[:-1]], "o-", color=colours.get(name), label=name, ms=4)
         a2.loglog(n, [abs(x[3] / ref[3] - 1) for x in F[:-1]], "o-", color=colours.get(name), label=name, ms=4)
         if name == "sharp":
-            for (c, nn, kt, sp, d, sl), ls in zip(F, (":", "-.", "--", "-", "-")):
-                a3.semilogx(np.maximum(d, 1e-3), sl, ls, color="k", lw=0.8,
+            for (c, nn, kt, sp, d, sl), ls, lc in zip(F, (":", "-.", "--", "-", "-"), ("0.55", "0.45", "0.35", "0.6", "k")):
+                a3.semilogx(np.maximum(d, 1e-3), sl, ls, color=lc, lw=0.8 if c else 1.3,
                             label=("graded default" if c == 0 else f"every {2 ** c}{'nd' if c == 1 else 'th'} knot") + f" ({nn / 1000:.1f}k)")
             a3.axvline(L / 2, color="0.5", lw=0.6)
             a3.text(L / 2, a3.get_ylim()[1] * 0.95, " L/2", color="0.4", va="top")
