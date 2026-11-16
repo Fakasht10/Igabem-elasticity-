@@ -125,6 +125,95 @@ def sed_split(notch, R0, alpha):
     return np.sqrt((wd + alpha * wv) / (2 * (1 + NU) / 3 + alpha * (1 - 2 * NU) / 3))
 
 
+def eta_line(notch, L):
+    """eta averaged over [0, 2L] on the bisector (mirrored past the centre line, as the line method)."""
+    d, e = eta_profile(notch)
+    lig = d[-1]
+    out = []
+    for l2 in np.atleast_1d(np.minimum(2 * np.asarray(L, float), 2 * lig)):
+        x = np.linspace(0, l2, 400)
+        out.append(np.mean(np.interp(np.where(x <= lig, x, 2 * lig - x), d, e)))
+    return np.array(out)
+
+
+def eta_weibull(notch, R, m=M.M_STRENGTH):
+    """eta weighted by sigma_vM^m over the stored crescent of radius R(N) at the root: eta = |tr|/(3 vM) (tension at
+    the root, so tr > 0 there; sign is lost in the stored tr^2). DEPARTURE: crescent area, not the whole volume,
+    because the whole-volume histogram holds sigma_1 only; vM^m stands in for sigma_1^m as the weight."""
+    r0, rc, dA, tr2, vm2 = _sed_grid(notch)
+    e = np.sqrt(tr2) / 3 / np.sqrt(vm2)
+    w = dA * vm2 ** (m / 2)
+    o = np.argsort(rc)
+    cw, cwe = np.cumsum(w[o]), np.cumsum((w * e)[o])
+    i = np.searchsorted(rc[o], np.atleast_1d(R) + r0, side="right") - 1
+    return cwe[i] / cw[i]
+
+
+def _with_eta(base, eta):
+    """K = base(L) * (3 eta(L))^beta, L = A N^B shared, beta = ln(p[2])."""
+    return lambda n, N, s, p, L=_len: base(n, L(p[:2], N)) * p[2] ** np.log(3 * eta(n, L(p[:2], N)))
+
+
+def weibull_mN(n, N, s, p, L=None):
+    """Weibull whole volume with life-dependent modulus m = A N^B (one extra parameter), V0 = p[2]."""
+    m = np.atleast_1d(p[0] * np.asarray(N, float) ** p[1])
+    v = M.fields()[n]["volume"]
+    w, s1 = np.asarray(v["w"]), np.asarray(v["s1"])
+    S = (w[None, :] * s1[None, :] ** m[:, None]).sum(1)
+    return (S / p[2]) ** (1 / m)
+
+
+# ---------------------------------------------------------------- local strain approach (Neuber + cyclic Ramberg-Osgood)
+E_PLA = 3479.0          # MPa, paper Sec. 2 (monotonic E; E' = E assumed)
+
+
+def ro_strain(sig, Kc, nc):
+    return sig / E_PLA + (np.maximum(sig, 0) / Kc) ** (1 / nc)
+
+
+def neuber_local(sig_el, Kc, nc):
+    """Local stress solving sigma * eps(sigma) = sigma_el^2 / E (Neuber), by bisection on [0, sigma_el]."""
+    sig_el = np.asarray(sig_el, float)
+    lo, hi = np.zeros_like(sig_el), sig_el.copy()
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        big = mid * ro_strain(mid, Kc, nc) > sig_el ** 2 / E_PLA
+        hi, lo = np.where(big, mid, hi), np.where(big, lo, mid)
+    return (lo + hi) / 2
+
+
+def plain_equiv(eps, Kc, nc):
+    """Nominal plain stress with the same strain (uniform gauge): inverse Ramberg-Osgood by bisection."""
+    eps = np.asarray(eps, float)
+    lo, hi = np.zeros_like(eps), eps * E_PLA
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        big = ro_strain(mid, Kc, nc) > eps
+        hi, lo = np.where(big, mid, hi), np.where(big, lo, mid)
+    return (lo + hi) / 2
+
+
+def local_strain(kel):
+    """K_eq = S_eq / sigma_n,max: Neuber at the root on the elastic field value kel(n, N) * sigma_n,max (sigma_max, the
+    paper's variable), then the plain stress giving the same local strain. Damage parameter = local strain, so the
+    plain band is used unchanged. K' and n' fitted on plain + sharp V (no PLA cyclic curve found: DEPARTURE)."""
+    def f(n, N, s, p, L=None):
+        sig_el = kel(n, N) * np.asarray(s, float)
+        loc = neuber_local(sig_el, p[0], p[1])
+        return plain_equiv(ro_strain(loc, p[0], p[1]), p[0], p[1]) / np.asarray(s, float)
+    return f
+
+
+K_LIFE_FIX = 1.111      # life-Weibull shape of the 2019 PLA series pooled (fatigue-data/hsv_fix.md): the mHSV fix
+
+
+def mhsv_fixed(n, N, s, p, L=None):
+    """Modified HSV (Zhang et al. 2023 Eq. 10) with the corrected life-scatter shape k_N 1.111 (was 0.675 from the
+    band, which over-penalised the U notches); L_CD = point L_M at 2e6 from the point calibration, C_S fitted."""
+    Lcd = M.l_cd()
+    return np.full(np.shape(N), M.k_point(n, Lcd) * (M.s90(n) * Lcd / p[0]) ** (1 / (K_LIFE_FIX * paper.PLAIN.k)))
+
+
 CLOSURES = {   # name: (f, p0, length map, label, kind) ; kind: 'free' fit, 'pred' no fit
     "net": (lambda n, N, s, p, L=None: np.ones(np.shape(N)), (), None, "C0 net stress, K_f = 1", "pred"),
     "kt": (lambda n, N, s, p, L=None: np.full(np.shape(N), kt(n)), (), None, "C1 K_f = K_t (elastic)", "pred"),
@@ -153,6 +242,21 @@ CLOSURES = {   # name: (f, p0, length map, label, kind) ; kind: 'free' fit, 'pre
                   "S2 W_dev + alpha W_vol, R0 = {:.3g} N^{:.3f} mm, alpha {:.3g}", "free"),
     "sed_split_const": (lambda n, N, s, p, L=None: sed_split(n, np.full(np.shape(N), p[0]), p[1]), (1.0, 1.0), None,
                         "S2c W_dev + alpha W_vol, constant R0 = {:.3g} mm, alpha {:.3g}", "free2"),
+    "point_eta": (_with_eta(M.k_point, eta_line), (16.4, -0.242, 2.0), _len,
+                  "F1 point x (3 eta_line[0,2L])^beta, L = {:.3g} N^{:.3f} mm, exp(beta) {:.3g}", "free"),
+    "line_eta": (_with_eta(M.k_line, eta_line), (5.0, -0.2, 2.0), _len,
+                 "F2 line x (3 eta_line[0,2L])^beta, L = {:.3g} N^{:.3f} mm, exp(beta) {:.3g}", "free"),
+    "point_etaw": (_with_eta(M.k_point, eta_weibull), (16.4, -0.242, 2.0), _len,
+                   "F3 point x (3 eta_Weibull(R=L))^beta, L = {:.3g} N^{:.3f} mm, exp(beta) {:.3g}", "free"),
+    "weibull_mN": (weibull_mN, (3.44, 0.0, 100.0), _len,
+                   "F4 Weibull, m = {:.3g} N^{:.3f} (one extra parameter), V0 {:.3g} mm^3", "free"),
+    "lsa_peak": (local_strain(lambda n, N: np.full(np.shape(N), kt(n))), (60.0, 0.1), None,
+                 "L1 local strain, Neuber on the field peak, K' {:.3g} MPa, n' {:.3g} (fitted)", "free2"),
+    "lsa_point": (local_strain(lambda n, N: M.k_point(n, paper.lm_paper(N) / 2)), (60.0, 0.1), None,
+                  "L2 local strain, Neuber on sigma_1 at paper L_M(N)/2, K' {:.3g} MPa, n' {:.3g} (fitted)", "free2"),
+    "grad_paperL": (lambda n, N, s, p, L=None: kt(n) / (1 + np.sqrt(p[0] * M.chi(n) * paper.lm_paper(N))), (1.0,), None,
+                    "G1 peak sigma_1 / (1 + sqrt(c chi L_M(N))), paper L_M, c {:.3g} (one material constant)", "free2"),
+    "mhsv_fix": (mhsv_fixed, (50.0,), None, "mHSV corrected (k_N 1.111, 2019 series), C_S {:.3g} mm^3", "free2"),
     "elhaddad_nsr": (constraint(elhaddad), (16.4, -0.242, 1.5), _len,
                      "C6' El Haddad x constraint, L = {:.3g} N^{:.3f} mm, NSR {:.3g}", "free"),
 }
@@ -247,6 +351,36 @@ def table(out):
                  f"{f(o['S']['blunt'])} | {o['H']['rms']:.3f} / {100*o['H']['band']:.0f}% | "
                  f"{o['byR'][0]:+.3f} / {o['byR'][1]:+.3f} |")
     return "\n".join(L)
+
+
+# ------------------------------------------------------------------------------------------------ field-only ranking
+FIELD_M = {"point": "TCD point (sigma_1 at L/2 on the steepest-descent path = bisector here)",
+           "line": "TCD line (mean sigma_1 over 2L on the steepest-descent path)", "area": "TCD area (point L_M)",
+           "gradient": "peak sigma_1 / (1 + sqrt(c chi L)) (FKM-type, peak and chi from field)",
+           "sed": "averaged SED, R0(N)", "weibull": "Weibull, whole volume, m 3.44 fixed", "mhsv": "modified HSV"}
+FIELD_C = ("grad_paperL", "mhsv_fix", "lsa_peak", "lsa_point", "sed_const", "sed_split", "sed_split_const", "point_eta", "line_eta", "point_etaw", "weibull_mN")
+
+
+def field_rank(out):
+    """Measures defined on any 3D field (no nominal stress, no K_t, no rho). Same protocol and scores."""
+    specs = paper.fig8_specimens()
+    rows = []
+    for name, lab in FIELD_M.items():
+        p, cal = M.calibrate(name)
+        R = M.residuals(name, p, specs)
+        rows.append((lab + ": " + M.METHODS[name][2].format(*p), cal, {k: M.stats(*R[k]) for k in paper.NOTCHES}, held(R)))
+    for name in FIELD_C:
+        o = out[name]
+        rows.append((o["label"], o["cal"], o["S"], o["H"]))
+    o = out["net"]
+    rows.append(("REFERENCE ONLY (coupon, not defined on a general part): net stress", o["cal"], o["S"], o["H"]))
+    f = lambda s: f"{s['bias']:+.3f} / {s['rms']:.3f} / {s['slope']:+.3f}"
+    L = ["| field measure | fit rms (curve) | fitted sharp V: bias / rms / slope | U r1 bias / rms / slope | "
+         "U r3 bias / rms / slope | held-out both: rms / in band / slope |", "|---|---|---|---|---|---|"]
+    for lab, cal, S, H in sorted(rows, key=lambda r: r[3]["rms"]):
+        L.append(f"| {lab} | {cal:.3f} | {f(S['sharp'])} | {f(S['intermediate'])} | {f(S['blunt'])} | "
+                 f"{H['rms']:.3f} / {100*H['band']:.0f}% / {H['slope']:+.3f} |")
+    return "\n".join(L), rows
 
 
 # ------------------------------------------------------------------------------------------------ figures
@@ -409,6 +543,44 @@ def plot_closures(out, path, show):
         fig.savefig(f"{path}.{e}", dpi=190)
 
 
+
+def plot_ranking(rows, path):
+    """Held-out rms (bars) and in-band share for the field-only measures; net stress drawn as a reference line."""
+    plt = _style()
+    rows = sorted(rows, key=lambda r: -r[3]["rms"])
+    ref = [r for r in rows if r[0].startswith("REFERENCE")][0][3]
+    rows = [r for r in rows if not r[0].startswith("REFERENCE")]
+    fig, ax = plt.subplots(figsize=(10, 0.42 * len(rows) + 1.6), layout="constrained")
+    y = np.arange(len(rows))
+    ax.barh(y, [r[3]["rms"] for r in rows], color="#4a6fa5")
+    for i, r in enumerate(rows):
+        ax.text(r[3]["rms"] + 0.004, i, f"{r[3]['rms']:.3f}  ({100*r[3]['band']:.0f}% in band, U r3 bias "
+                f"{r[2]['blunt']['bias']:+.2f})", va="center", fontsize=8)
+    ax.axvline(ref["rms"], color="k", ls="--", lw=1)
+    ax.text(ref["rms"], len(rows) - 0.4, " net stress (coupon reference only) 0.141", fontsize=8, va="bottom")
+    short = lambda t: (t.replace("peak sigma_1 / (1 + sqrt(c chi L)) (FKM-type, peak and chi from field)", "FKM support, c(N) (2 const)")
+                        .replace("G1 peak sigma_1 / (1 + sqrt(c chi L_M(N)))", "FKM support, paper L(N) (1 const)")
+                        .replace("L2 local strain", "Neuber at L/2 (n' 1.42, unphysical)")
+                        .replace("L1 local strain", "Neuber at root peak")
+                        .replace("F4 Weibull", "Weibull, m(N) (1 extra const)")
+                        .replace("F1 point x (3 eta_line[0", "point x triaxiality (line)")
+                        .replace("F2 line x (3 eta_line[0", "line x triaxiality (line)")
+                        .replace("F3 point x (3 eta_Weibull(R=L))^beta", "point x triaxiality (Weibull-wtd)")
+                        .replace("S2c W_dev + alpha W_vol", "SED split, const R0")
+                        .replace("S1c averaged SED", "averaged SED, const R0")
+                        .replace("S2 W_dev + alpha W_vol", "SED split, R0(N)")
+                        .replace("averaged SED", "averaged SED")
+                        .replace("TCD line (mean sigma_1 over 2L on the steepest-descent path)", "TCD line")
+                        .replace("TCD point (sigma_1 at L/2 on the steepest-descent path = bisector here)", "TCD point")
+                        .replace("mHSV corrected (k_N 1.111", "mHSV, corrected k_N")
+                        .replace("modified HSV", "mHSV, original k_N"))
+    ax.set_yticks(y, [short(r[0].split(":")[0].split(",")[0])[:40] for r in rows], fontsize=8.5)
+    ax.set(xlabel="held-out rms, log10 stress (U r1 + U r3, 102 failures)", xlim=(0, 0.48))
+    ax.set_title("Field-only measures, fitted on plain P50 + sharp V (Fig. 8 sigma_n,max, UTS 42.9, R pooled)", fontsize=10)
+    for e in ("png", "pdf"):
+        fig.savefig(f"{path}.{e}", dpi=190)
+
+
 if __name__ == "__main__":
     d = sys.argv[1] if len(sys.argv) > 1 else "."
     out = run()
@@ -419,6 +591,9 @@ if __name__ == "__main__":
         extra.append(f"- {key}: " + ", ".join(f"{v}: n {n}, {m:+.3f}" for v, n, m in by_group(specs, key)))
     extra.append(f"- K_t (net, IgBEM): " + ", ".join(f"{k} {kt(k):.2f}" for k in paper.NOTCHES)
                  + f"; DENT g = K/sigma_net = {dent_g():.3f} sqrt(mm)")
+    ft, frows = field_rank(out)
+    plot_ranking(frows, os.path.join(d, "fig_field_ranking"))
+    extra += ["", "Field-only ranking (any 3D part; net stress kept only as a coupon reference line):", ft]
     ct = collapse_table()
     extra += ["", "Model-free collapse (per-specimen K_f, all three notches):", ct]
     print(t + "\n".join(extra))
