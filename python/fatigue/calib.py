@@ -30,6 +30,7 @@ from .hsv import L_CD, W21, load as hsv_load
 from .transfer import HERE, OUT
 
 V_PLAIN = 6.0 * 3.0 * 30.0
+UTS_PAPER = 42.9   # MPa, Ezeh-Susmel 2020 Sec. 6 ("sigma_MAX,50% = 6.7 MPa" = 0.156 UTS); one value for all angles
 # Plain curve in the Walker effective stress S = sigma_max^(1-g) sigma_a^g / UTS (g = 0: sigma_max, the authors' choice).
 PLAIN = dict(gamma=0.0, S50=0.16, k=5.1, T=2.451, printed=True)
 
@@ -206,7 +207,7 @@ def main(argv=None):
     set_plain(a.gamma, not a.refit_plain)
     tag = "" if PLAIN["printed"] else f"_g{a.gamma:g}"
     g, plain, spec = hsv_load()
-    uts = {p: q["UTS"] for (p, _), q in plain.items()}
+    uts = {p: UTS_PAPER for (p, _), q in plain.items()}  # the paper normalises by one UTS (2020 Sec. 6)
     notches = {k: Notch(g[k]["f"], g[k]) for k in g}
     rows = [(k, p, R, s, N) for k, p, R, s, N, ro in spec if not ro]
     cal = [r for r in rows if r[0] == "sharp"]
