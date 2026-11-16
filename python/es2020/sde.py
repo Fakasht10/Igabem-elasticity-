@@ -29,8 +29,8 @@ GL_X, GL_W = np.polynomial.legendre.leggauss(32)
 # ----------------------------------------------------------------------------------------------- admissible set
 # theta = (ln E' [MPa], ln K' [MPa], n', ln sigma_D [MPa], s, ln sigma_Z, ln tau [cycles], ln L [mm])
 NAMES = ("E'", "K'", "n'", "sigma_D", "s", "sigma_Z", "tau", "L")
-LO = np.array([math.log(100.0), math.log(1.0), 0.01, math.log(1.0), 0.0, math.log(0.02), math.log(1.0), math.log(1e-3)])
-HI = np.array([math.log(1e5), math.log(1e4), 1.0, math.log(1e5), 20.0, math.log(2.5), math.log(1e9), math.log(10.0)])
+LO = np.array([math.log(100.0), math.log(1.0), 0.01, math.log(1e-4), 0.0, math.log(0.02), math.log(1.0), math.log(1e-3)])
+HI = np.array([math.log(1e5), math.log(1e7), 1.0, math.log(1e5), 20.0, math.log(2.5), math.log(1e9), math.log(10.0)])
 
 
 def admissible(th):
@@ -112,6 +112,17 @@ def ein(x):
     return float(np.trapezoid(np.concatenate([[1.0], v]), np.linspace(0, x, 2001)))
 
 
+@lru_cache(maxsize=1)
+def _ein_grid():
+    x = np.linspace(0.0, 7.0, 701)
+    return x, np.array([ein(v) if v > 0 else 0.0 for v in x])
+
+
+def _ein_fast(x):
+    g, v = _ein_grid()
+    return np.interp(x, g, v)
+
+
 def _simulate(sig, lv, paths=2000, dt=0.05, umax=2000.0, seed=0):
     """Samples of ln(N_f / c) for levels l = c / tau (array lv), one sigma_Z. Exact AR(1) step of the unit OU process,
     trapezoid integral of exp(-Z - sig^2/2) in u = N / tau. Returns array (len(lv), paths)."""
@@ -191,7 +202,7 @@ def quantiles(sZ, l):
     if lo.any():
         Qr[lo] = sZ[lo, None] ** 2 / 2 + sZ[lo, None] * z
     if hi.any():
-        sd = np.sqrt(2 * np.array([ein(v) for v in sZ[hi] ** 2]) / l[hi])
+        sd = np.sqrt(2 * _ein_fast(sZ[hi] ** 2) / l[hi])
         Qr[hi] = 0.5 * sd[:, None] ** 2 + sd[:, None] * z
     return Qr
 
@@ -344,3 +355,129 @@ def score(r, mask, logN):
                 slope=float(sl), tilted=bool(abs(drift) > 0.05), inband=float(np.mean(np.abs(d) <= HALF_BAND)),
                 rms_log10N=float(np.sqrt(np.mean((r["dlnN"][mask] / math.log(10)) ** 2))),
                 coverage=float(np.mean(r["inside"][mask])))
+
+
+# ----------------------------------------------------------------------------------------------- weakest link
+def surface_bins(notch, nb=40, cut=0.3):
+    """Root-surface elastic sigma_1 per unit net stress as (k, area mm^2) bins above cut x peak (full specimen,
+    multiplicities in the stored dA). Below the cut the cells add nothing (checked by test_wl_cut)."""
+    f = M.fields()[notch]["surface"]
+    k = np.concatenate([np.ravel(f["s1_arc"]), np.ravel(f["s1_side"])])
+    a = np.concatenate([np.ravel(f["dA_arc"]), np.ravel(f["dA_side"])])
+    m = k >= cut * k.max()
+    k, a = k[m], a[m]
+    edges = np.linspace(k.min(), k.max() + 1e-12, nb + 1)
+    idx = np.digitize(k, edges) - 1
+    A = np.bincount(idx, a, nb)
+    K = np.bincount(idx, a * k, nb) / np.maximum(A, 1e-300)
+    keep = A > 0
+    return K[keep], A[keep]
+
+
+class WLModel(Model):
+    """Weakest link over surface cells of size l_c (the 8th parameter, read as l_c in mm instead of L):
+    ln P(N_f > n) = sum_j (A_j / l_c^2) ln S_j(n). Plain gauge: one cell group, k = 1, area a_plain (mm^2)."""
+
+    def __init__(self, rows, a_plain, nb=40, cut=0.3, support=None, L=None):
+        """support='point' scales every root cell by the hot-spot factor 1/(1 + chi L/2), L fixed (from the
+        pointwise fit): an approximation, since only the hot-spot gradient is stored, not one per cell."""
+        super().__init__(rows, "peak")
+        self.support, self.L = support, L
+        self.a_plain = a_plain
+        self.bins = {n: surface_bins(n, nb, cut) for n in self.kinds if n != "plain"}
+        if support == "point":
+            self.bins = {n: (K / (1 + M.chi(n) * L / 2), A) for n, (K, A) in self.bins.items()}
+        self.bins["plain"] = (np.array([1.0]), np.array([a_plain]))
+
+    def _cells(self, idx=None):
+        rows = np.arange(len(self.s)) if idx is None else np.asarray(idx)
+        r_of, k, a = [], [], []
+        for i in rows:
+            K, A = self.bins[self.notch[i]]
+            r_of.append(np.full(len(K), i)); k.append(K); a.append(A)
+        return np.concatenate(r_of), np.concatenate(k), np.concatenate(a)
+
+    def loglike_rows(self, th, lnN=None, s=None):
+        E, K, n, sD, sp, sZ, tau, lc_mm = unpack(th)
+        r, k, a = self._cells()
+        S = self.s if s is None else s
+        se = S[r] * k
+        c = life_det(se, self.R[r], th, self.notch[r] == "plain")
+        Q = quantiles(sZ, c / tau)
+        y = (self.lnN if lnN is None else lnN)[r] - np.log(c)
+        lp, ls = logpdf_cdf(y, Q)
+        w = a / lc_mm ** 2
+        nrow = len(self.s)
+        lnS = np.bincount(r, w * ls, nrow)
+        haz = np.bincount(r, w * np.exp(lp - ls), nrow)          # hazard in ln N
+        return lnS, np.log(np.maximum(haz, 1e-300)) + lnS
+
+    def loglike(self, th):
+        if not admissible(th):
+            return -np.inf
+        lnS, lpdf = self.loglike_rows(th)
+        if not np.all(np.isfinite(lpdf)):
+            return -np.inf
+        return float(np.sum(np.where(self.ro, lnS, lpdf)))
+
+    def median_lnN(self, th, s=None):
+        """Specimen median life: solve ln S(n) = ln 0.5 by bisection in ln n."""
+        lo = np.full(len(self.s), math.log(1.0))
+        hi = np.full(len(self.s), math.log(1e12))
+        for _ in range(50):
+            mid = 0.5 * (lo + hi)
+            lnS, _ = self.loglike_rows(th, lnN=mid, s=s)
+            alive = lnS > math.log(0.5)
+            lo = np.where(alive, mid, lo)
+            hi = np.where(alive, hi, mid)
+        return 0.5 * (lo + hi)
+
+    def band(self, th, p):
+        lo = np.full(len(self.s), 0.0)
+        hi = np.full(len(self.s), math.log(1e12))
+        for _ in range(50):
+            mid = 0.5 * (lo + hi)
+            lnS, _ = self.loglike_rows(th, lnN=mid)
+            alive = lnS > math.log(1 - p)
+            lo = np.where(alive, mid, lo)
+            hi = np.where(alive, hi, mid)
+        return 0.5 * (lo + hi)
+
+
+def wl_residual(model, th, iters=40):
+    lo = np.log(model.s) - 4.0
+    hi = np.log(model.s) + 4.0
+    for _ in range(iters):
+        mid = 0.5 * (lo + hi)
+        longer = model.median_lnN(th, s=np.exp(mid)) > model.lnN
+        lo = np.where(longer, mid, lo)
+        hi = np.where(longer, hi, mid)
+    p10, p90, med = model.band(th, 0.1), model.band(th, 0.9), model.median_lnN(th)
+    return dict(dlogS=np.log10(np.exp(0.5 * (lo + hi)) / model.s), dlnN=model.lnN - med,
+                inside=(model.lnN >= p10) & (model.lnN <= p90), width10=(p90 - p10) / math.log(10))
+
+
+# ----------------------------------------------------------------------------------------------- posterior predictive
+def mix_cdf(model, draws, s=None):
+    """Posterior-predictive P(N_f <= N_obs) per row at stress s (default: observed), averaged over draws."""
+    acc = np.zeros(len(model.s))
+    for th in draws:
+        lc, Q = model.predict(th, s=s)
+        _, ls = logpdf_cdf(model.lnN - lc, Q)
+        acc += -np.expm1(ls)
+    return acc / len(draws)
+
+
+def predictive_residual(model, draws, iters=40):
+    """log10(S*/S_obs) with S* the stress at which the predictive median life equals N_obs, i.e. the predictive
+    CDF at N_obs is 0.5 (CDF at fixed N rises with S). Coverage: predictive CDF at the observation in [0.1, 0.9]."""
+    lo = np.log(model.s) - 3.0
+    hi = np.log(model.s) + 3.0
+    for _ in range(iters):
+        mid = 0.5 * (lo + hi)
+        below = mix_cdf(model, draws, s=np.exp(mid)) < 0.5        # predicted life still longer than observed
+        lo = np.where(below, mid, lo)
+        hi = np.where(below, hi, mid)
+    F = mix_cdf(model, draws)
+    return dict(dlogS=np.log10(np.exp(0.5 * (lo + hi)) / model.s), F=F, inside=(F >= 0.1) & (F <= 0.9),
+                dlnN=np.zeros(len(F)) * np.nan)
