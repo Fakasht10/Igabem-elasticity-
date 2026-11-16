@@ -32,9 +32,13 @@ from .transfer import HERE, OUT
 V_PLAIN = 6.0 * 3.0 * 30.0
 NAMES = {"blunt": "U r3", "intermediate": "U r1", "sharp": "V r0.15"}
 CRIT = {"net": ([], []), "kt": ([], []), "tcd_ln_paper": ([], []), "tcd_ln": (["A", "B"], [16.4, -0.242]),
-        "tcd_const": (["L"], [0.5]), "weibull": (["m"], [10.0]), "hotspot": (["l"], [1.0]), "mhsv": (["L_FCI"], [0.4])}
+        "tcd_const": (["L"], [0.5]), "tcd_line": (["L"], [0.5]),
+        "tcd_line_ln": (["A", "B"], [16.4, -0.242]), "sup_tcd": (["L", "l"], [0.5, 1.0]), "sup_tcd_line": (["L", "l"], [0.5, 1.0]),
+        "weibull": (["m"], [10.0]), "hotspot": (["l"], [1.0]), "mhsv": (["L_FCI"], [0.4])}
 TITLE = {"net": "net stress (no notch factor)", "kt": "elastic peak Kt x net", "tcd_ln_paper": "TCD point, authors' L(N)",
-         "tcd_ln": "TCD point, L(N) = A N^B", "tcd_const": "TCD point, constant L", "weibull": "Weibull, m",
+         "tcd_ln": "TCD point, L(N) = A N^B", "tcd_const": "TCD point, constant L", "tcd_line": "TCD line, constant L",
+         "tcd_line_ln": "TCD line, L(N) = A N^B", "sup_tcd": "supported TCD point, L and l",
+         "sup_tcd_line": "supported TCD line, L and l", "weibull": "Weibull, m",
          "hotspot": "supported hot spot, l", "mhsv": "modified HSV, L_FCI"}
 
 
@@ -49,6 +53,11 @@ class Notch:
 
     def pm(self, L):
         return float(np.interp(np.clip(L / 2, 0, self.lig), self.d, self.s))
+
+    def lm(self, L):
+        """Line method: mean over [0, 2L], mirrored past the ligament (criteria.tcd_line)."""
+        L = min(L, 0.99 * self.lig)
+        return 1.0 / C.tcd_line(self.f, 1.0, L)
 
     def weib(self, m):
         k = round(m, 4)
@@ -68,6 +77,14 @@ def feff(name, n, N, th):
         return n.pm(th[0] * N ** th[1])
     if name == "tcd_const":
         return n.pm(th[0])
+    if name == "tcd_line":
+        return n.lm(th[0])
+    if name == "tcd_line_ln":
+        return n.lm(th[0] * N ** th[1])
+    if name == "sup_tcd":                             # supported TCD: sigma(L/2) / (1 + sqrt(l chi0)), f >= 1
+        return max(1.0, n.pm(th[0]) / (1 + math.sqrt(th[1] * n.chi)))
+    if name == "sup_tcd_line":
+        return max(1.0, n.lm(th[0]) / (1 + math.sqrt(th[1] * n.chi)))
     if name == "weibull":
         return n.weib(th[0])
     if name == "hotspot":
@@ -152,7 +169,7 @@ def figure(res, notches, rows, uts, path):
     from matplotlib.lines import Line2D
     plt.rcParams.update({"font.size": 10, "font.family": "serif", "mathtext.fontset": "cm"})
     plain = json.load(open(os.path.join(HERE, "data", "ezeh_susmel_2020_fig1_plain.json")))
-    fig, axs = plt.subplots(2, 4, figsize=(20, 10.5), sharex=True, sharey=True, layout="constrained")
+    fig, axs = plt.subplots(3, 4, figsize=(20, 15), sharex=True, sharey=True, layout="constrained")
     Ns = np.geomspace(10, 1e7, 200)
     sty = {"sharp": dict(marker="v", s=26, facecolor="none", edgecolors="#9467bd", linewidths=1.1),
            "intermediate": dict(marker="s", s=22, color="#1f77b4"), "blunt": dict(marker="P", s=30, color="#d62728")}
@@ -174,7 +191,9 @@ def figure(res, notches, rows, uts, path):
                      fontsize=9.5)
         ax.set(xscale="log", yscale="log", xlim=(10, 1e7), ylim=(0.03, 10))
         ax.grid(alpha=0.3, which="both")
-    for ax in axs[1]:
+    for ax in axs.flat[len(res):]:
+        ax.set_visible(False)
+    for ax in axs[-1]:
         ax.set_xlabel("cycles to failure $N_f$ (specimen)")
     for ax in axs[:, 0]:
         ax.set_ylabel(r"$\sigma_{eff,max}/\sigma_{UTS}$")
