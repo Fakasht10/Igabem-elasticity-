@@ -156,80 +156,93 @@ def plain_floor(rows, F, gamma):
 
 
 def figure(res, rows, path, best, ref="net"):
+    """(a) the master curve with both data sets; (b) Seifollahi alone with its own fit; (c) residual vs Kt.
+    Ezeh-Susmel are SERIES FITS (Table 1: sigma_A50 at 2e6, k, T): each is drawn as its published Basquin segment over
+    2e4..2e6 (the range used in the fit; the per-series tested range is not tabulated), marker at 2e6, bar = T.
+    Seifollahi are individual specimens. No jitter anywhere."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
+    from matplotlib.ticker import FixedLocator, ScalarFormatter, NullFormatter
     plt.rcParams.update({"font.size": 10, "font.family": "serif", "mathtext.fontset": "cm"})
-    fig = plt.figure(figsize=(13.5, 6.0), layout="constrained")
-    gs = fig.add_gridspec(1, 2, width_ratios=[2.0, 1.0])
-    ax, axr = fig.add_subplot(gs[0]), fig.add_subplot(gs[1])
+    fig = plt.figure(figsize=(17, 6.6), layout="constrained")
+    gs = fig.add_gridspec(1, 3, width_ratios=[1.6, 1.0, 0.9])
+    ax, axs, axr = (fig.add_subplot(gs[i]) for i in range(3))
     th, g, J, per, coef, r, y = res[best]
     b, cS, cE = coef
     lev = {"Seifollahi": cS, "Ezeh-Susmel": cE}
-    sd = math.sqrt(np.mean([v ** 2 for v in per.values()]))
-    Ns = np.geomspace(3e3, 3e6, 40)
-    line = 10 ** (b * (np.log10(Ns) - math.log10(N_REF)))
-    ax.fill_between(Ns, line * 10 ** (-2 * sd), line * 10 ** (2 * sd), color="0.9", lw=0)
-    ax.plot(Ns, line, "k-", lw=1.6)
     col = {"Seifollahi": "#d62728", "Ezeh-Susmel": "#1f77b4"}
     mk = {"smooth": "o", "plain": "o", "edge": "^", "hole": "D", "intermediate": "s", "sharp": "v", "blunt": "P"}
-    for i, row in enumerate(rows):
-        d, gname, key, s, R, n, wt, Vp, out, sid = row
-        yy = 10 ** (y[i] - lev[d])
-        if d == "Seifollahi":
-            ax.scatter(n, yy, marker=mk[gname], s=34, facecolor="none" if key is None else col[d], edgecolors=col[d],
+    Ns = np.geomspace(3e3, 3e6, 40)
+    line = 10 ** (b * (np.log10(Ns) - math.log10(N_REF)))
+    sd = math.sqrt(np.mean([v ** 2 for v in per.values()]))
+    for a_ in (ax, axs):
+        a_.plot(Ns, line, "k-", lw=1.6, zorder=2)
+    ax.fill_between(Ns, line * 10 ** (-2 * sd), line * 10 ** (2 * sd), color="0.92", lw=0)
+    seif = [(i, row) for i, row in enumerate(rows) if row[0] == "Seifollahi"]
+    for a_ in (ax, axs):
+        for i, row in seif:
+            a_.scatter(row[5], 10 ** (y[i] - lev["Seifollahi"]), marker=mk[row[1]], s=36,
+                       facecolor="none" if row[2] is None else col["Seifollahi"], edgecolors=col["Seifollahi"],
                        linewidths=1.1, zorder=5)
     series = {}
     for i, row in enumerate(rows):
         if row[0] == "Ezeh-Susmel":
             series.setdefault(row[9][0], []).append(i)
     for idx in series.values():
-        row = rows[idx[0]]
-        d, gname, key, *_ , out, sid = row
-        Nn = [rows[i][5] for i in idx]
-        yy = [10 ** (y[i] - lev[d]) for i in idx]
-        c = "0.55" if out else col[d]
+        d, gname, key, *_, out, sid = rows[idx[0]]
+        Nn = np.array([rows[i][5] for i in idx])
+        yy = np.array([10 ** (y[i] - lev[d]) for i in idx])
+        c = "0.6" if out else col[d]
+        ax.plot(Nn, yy, color=c, lw=0.9, ls="--" if out else "-", alpha=0.75, zorder=3)
         T = sid[1]
-        xj = Nn[-1] * math.exp(0.25 * (((sid[0] * 7) % 11) / 10 - 0.5))      # spread the 2e6 column
-        ax.errorbar(xj, yy[-1], yerr=[[yy[-1] * (1 - T ** -0.5)], [yy[-1] * (T ** 0.5 - 1)]], fmt=mk[gname],
-                    ms=5, mfc="none" if key is None else c, mec=c, ecolor=c, elinewidth=0.6, capsize=0, zorder=4)
-    ax.set(xscale="log", yscale="log", xlim=(3e3, 3e6), ylim=(0.25, 4),
-           xlabel="cycles to failure $N_f$", ylabel=r"$S^* = f_{eff}\,\sigma_{a,n}(2/(1-R))^{1-\gamma}\,/\,\sigma_{plain}(10^5)$",
-           title=f"one master curve: {TITLE[best]}, $\\gamma$ {g:.2f}, slope {b:.3f} (k {-1 / b:.1f})")
-    from matplotlib.ticker import FixedLocator, ScalarFormatter, NullFormatter
-    ax.yaxis.set_major_locator(FixedLocator([0.3, 0.5, 0.7, 1, 1.5, 2, 3]))
-    ax.yaxis.set_major_formatter(ScalarFormatter()); ax.yaxis.set_minor_formatter(NullFormatter())
-    ax.grid(alpha=0.3, which="both")
-    h = [Line2D([], [], color="k", lw=1.6), Line2D([], [], color="0.9", lw=8),
+        ax.errorbar(Nn[-1], yy[-1], yerr=[[yy[-1] * (1 - T ** -0.5)], [yy[-1] * (T ** 0.5 - 1)]], fmt=mk[gname],
+                    ms=5, mfc="none" if key is None else c, mec=c, ecolor=c, elinewidth=0.5, capsize=0, zorder=4,
+                    alpha=0.85)
+    # (b) Seifollahi alone: its own least-squares line in the same coordinates
+    ks = np.array([rows[i][5] for i, _ in seif]); ys = np.array([y[i] - lev["Seifollahi"] for i, _ in seif])
+    bs, cs = np.polyfit(np.log10(ks) - math.log10(N_REF), ys, 1)
+    axs.plot(Ns, 10 ** (cs + bs * (np.log10(Ns) - math.log10(N_REF))), color=col["Seifollahi"], ls="--", lw=1.4)
+    for a_ in (ax, axs):
+        a_.set(xscale="log", yscale="log", xlim=(3e3, 3e6), ylim=(0.3, 3.5), xlabel="cycles to failure $N_f$")
+        a_.yaxis.set_major_locator(FixedLocator([0.3, 0.5, 0.7, 1, 1.5, 2, 3]))
+        a_.yaxis.set_major_formatter(ScalarFormatter()); a_.yaxis.set_minor_formatter(NullFormatter())
+        a_.grid(alpha=0.3, which="both")
+    ax.set(ylabel=r"$S^* = f_{eff}\,\sigma_{a,n}(2/(1-R))^{1-\gamma}\,/\,\sigma_{plain}(10^5)$",
+           title=f"(a) one master curve, {TITLE[best]}: slope {b:.3f}, $\\gamma$ {g:.2f}")
+    ax.text(0.98, 0.98, "Ezeh-Susmel: 30 SERIES FITS from their Table 1\n(sigma_A50 at 2e6, slope k, scatter T); each drawn as\n"
+            "its published curve over 2e4-2e6, marker at 2e6, bar = T.\nNo individual specimens are tabulated.\n"
+            "Seifollahi: 22 INDIVIDUAL SPECIMENS (Table 6).", transform=ax.transAxes, ha="right", va="top", fontsize=8,
+            bbox=dict(fc="white", ec="0.7"))
+    axs.set(title=f"(b) Seifollahi alone: own fit slope {bs:.3f} (dashed)\nvs master {b:.3f} (solid)")
+    axs.title.set_fontsize(9.5)
+    h = [Line2D([], [], color="k", lw=1.6), Line2D([], [], color="0.92", lw=8),
          Line2D([], [], color=col["Seifollahi"], marker="o", mfc="none", ls=""),
          Line2D([], [], color=col["Seifollahi"], marker="^", ls=""), Line2D([], [], color=col["Seifollahi"], marker="D", ls=""),
-         Line2D([], [], color=col["Ezeh-Susmel"], marker="o", mfc="none"),
-         Line2D([], [], color=col["Ezeh-Susmel"], marker="s"), Line2D([], [], color=col["Ezeh-Susmel"], marker="v"),
-         Line2D([], [], color="0.55", ls="", marker="P")]
-    lb = ["master curve", "±2 SD", "Seifollahi smooth", "Seifollahi edge R2", "Seifollahi hole R2",
-          "Ezeh-Susmel plain: one point per series (reported 2e6 value, 10-90 % bar)", "Ezeh-Susmel U r1", "Ezeh-Susmel V r0.15",
-          "flagged outliers: Ezeh blunt U r3, plain p30 R-1"]
-    ax.legend(h, lb, fontsize=8, loc="lower left", ncol=2, framealpha=0.95)
-    # residual strip: mean residual per notch geometry against Kt, best criterion vs no notch factor
-    for name, mstyle in ((ref, "o"), (best, "s")):
+         Line2D([], [], color=col["Ezeh-Susmel"], marker="o", mfc="none"), Line2D([], [], color=col["Ezeh-Susmel"], marker="s"),
+         Line2D([], [], color=col["Ezeh-Susmel"], marker="v"), Line2D([], [], color="0.6", ls="--", marker="P")]
+    lb = ["master curve", "±2 SD", "Seifollahi smooth (specimen)", "Seifollahi edge R2 (specimen)",
+          "Seifollahi hole R2 (specimen)", "Ezeh-Susmel plain (series fit)", "Ezeh-Susmel U r1 (series fit)",
+          "Ezeh-Susmel V r0.15 (series fit)", "flagged: Ezeh blunt U r3, plain p30 R-1"]
+    fig.legend(h, lb, loc="outside lower center", ncol=5, fontsize=8.5, frameon=False)
+    for name, filled in ((ref, False), (best, True)):
         _, _, _, _, _, rr, _ = res[name]
         pts = {}
         for i, row in enumerate(rows):
             if row[2] is not None:
                 pts.setdefault((row[0], row[1], row[8]), []).append(rr[i])
         for (d, gname, out), v in pts.items():
-            kt = KT[(d, gname)]
-            axr.scatter(kt, np.mean(v), marker=mstyle, s=40, color=col[d] if not out else "0.55",
-                        facecolor="none" if name == ref else (col[d] if not out else "0.55"), zorder=3)
-            axr.annotate(gname, (kt, np.mean(v)), fontsize=7, xytext=(4, 2), textcoords="offset points")
+            kt, c = KT[(d, gname)], ("0.6" if out else col[d])
+            axr.scatter(kt, np.mean(v), marker=mk[gname], s=40, edgecolors=c, facecolor=c if filled else "none", zorder=3)
+            if filled:
+                axr.annotate(gname, (kt, np.mean(v)), fontsize=7, xytext=(4, 2), textcoords="offset points")
     axr.axhline(0, color="k", lw=0.8)
     axr.set(xscale="log", xlabel="$K_t$", ylabel="mean residual, log10 S*",
-            title=f"residual vs Kt: hollow = net stress, filled = {TITLE[best]}")
-    axr.title.set_fontsize(9)
-    from matplotlib.ticker import FixedLocator as FL, ScalarFormatter as SF, NullFormatter as NF
-    axr.xaxis.set_major_locator(FL([1.5, 2, 3, 4, 6])); axr.xaxis.set_major_formatter(SF())
-    axr.xaxis.set_minor_formatter(NF())
+            title=f"(c) residual vs Kt\nhollow = net stress, filled = {TITLE[best]}")
+    axr.title.set_fontsize(9.5)
+    axr.xaxis.set_major_locator(FixedLocator([1.5, 2, 3, 4, 6])); axr.xaxis.set_major_formatter(ScalarFormatter())
+    axr.xaxis.set_minor_formatter(NullFormatter())
     axr.grid(alpha=0.3, which="both")
     for ext in ("png", "pdf"):
         fig.savefig(f"{path}.{ext}", dpi=200)
