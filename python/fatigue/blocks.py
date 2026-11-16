@@ -80,7 +80,8 @@ def layout(s, R=None, Y1=None):
     if Y1 is None:
         Y1 = max(dp[1], Cp[1]) + s.WN / 2
     H = s.L / 2
-    if not (0 < Kx < Cp[0] < s.WG / 2 and Y1 < H):
+    edge = abs(c[0] - s.WG / 2) < 1e-9 and abs(Cp[0] - s.WG / 2) < 1e-9   # the arc ends on the side edge (semicircle)
+    if not (0 < Kx < Cp[0] and (edge or Cp[0] < s.WG / 2) and Y1 < H):
         raise ValueError(f"layout does not fit: K_x {Kx:.3g}, C'_x {Cp[0]:.3g}, Y1 {Y1:.3g}")
     a1, w1 = _arc(C, rho, t0, tm)
     a2, w2 = _arc(C, rho, tm, t1)
@@ -101,10 +102,13 @@ def layout(s, R=None, Y1=None):
         "T2": _quad((Kx, Y1), (Cp[0], Y1), (Cp[0], H), (Kx, H), p2),
         "T3": _quad((Cp[0], Y1), (s.WG / 2, Y1), (s.WG / 2, H), (Cp[0], H)),
     }
+    if edge:                                                   # no shoulder column: F2, M2, T2 reach the side edge
+        for n in ("S1", "S2", "T3"):
+            del B[n]
     return B, dict(R=R, K=K, Cp=Cp, c=c, d=d, dp=dp, Y1=Y1, C=C, b=(s.WN / 2, 0.0), sweep=t0 - t1,
                    radial=("F2.top", np.subtract(Cp, c)),
                    lig=("L1.top", (-1.0, 0.0), (Kx, 0.0), Kx),
-                   flank=("S1.top", np.subtract(d, c), c, float(np.hypot(d[0] - c[0], d[1] - c[1]))))
+                   flank=None if edge else ("S1.top", np.subtract(d, c), c, float(np.hypot(d[0] - c[0], d[1] - c[1]))))
 
 
 def layout_hole(s, R=None, Y1=None):

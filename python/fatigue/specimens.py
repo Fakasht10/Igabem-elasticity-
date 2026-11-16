@@ -66,8 +66,9 @@ def outline(s):
         d, e, f = (s.WG / 2, ye + (s.WG / 2 - xe) * math.tan(al / 2)), (s.WG / 2, s.L / 2), (0.0, s.L / 2)
         if d[1] >= e[1]:
             raise ValueError("notch flank leaves the specimen: increase L")
-        return [("line", a, b), ("arc", b, (s.WN / 2 + s.rho, 0.0), c), ("line", c, d), ("line", d, e),
+        segs = [("line", a, b), ("arc", b, (s.WN / 2 + s.rho, 0.0), c), ("line", c, d), ("line", d, e),
                 ("line", e, f), ("line", f, a)]
+        return [g for g in segs if g[0] == "arc" or math.dist(g[1], g[-1]) > 1e-12]   # a semicircle has no flank
     if s.shape == "hole":
         a, b, c, d, e = (s.rho, 0.0), (s.W / 2, 0.0), (s.W / 2, s.L / 2), (0.0, s.L / 2), (0.0, s.rho)
         return [("line", a, b), ("line", b, c), ("line", c, d), ("line", d, e), ("arc", e, (0.0, 0.0), a)]

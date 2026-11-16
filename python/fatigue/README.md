@@ -56582,3 +56582,19 @@ The result is negative and stable for t_c from 0.2 to 0.8 mm:
 - The fitted S_F/S_T of about 1.2 tends toward isotropic.
 
 Bead-level localisation tensors would only rescale S0 per mode, so they were not built. The field cache now stores the full stress tensor (`sig`) at the TET10 points.
+
+## Seifollahi & Kabir 2026 (`data/seifollahi_kabir.json`, `study_seifollahi.py`)
+
+The specimens are YZ (on-edge) PLA cut from concentric-infill plates, with the filament along the load. The double edge notches R2 and the central hole R2 are laser-cut, so no perimeter wraps them. Both leave a 9 mm net section of the 13 × 3.2 D638-I. Loading is R 0.05, at 60–85 % of UTS, with lives of 6·10³ to 1.1·10⁵. Strengths are taken at N = 2·10⁴ from a Basquin refit of Table 6, which matches the paper's Table 7. Kt (thickness mean) is 2.15 for the edge notch and 2.39 for the hole, while the measured Kf is only 1.12 and 1.15.
+
+| criterion | edge notch | hole |
+|---|---|---|
+| Kf = Kt | −48 % | −52 % |
+| Weibull, m 119 from the reported scatter (2 "representative" lives per level) | −42 % | −46 % |
+| Weibull, m 7.5 (Ezeh–Susmel PLA pooled) | +33 % | +29 % |
+| m that reproduces the notch | 13.0 | 11.6 |
+| cross-calibrated Weibull (m from the other notch) | +6 % | −6 % |
+| cross-calibrated TCD PM (L from the other notch, 1.9–2.0 mm) | +1 % | −1 % |
+| **TCD with the Ezeh–Susmel L(N) = 16.4 N^−0.242 = 1.49 mm, blind across data sets**, PM / LM | −8 % / +2 % | −11 % / +1 % |
+
+The two notches have nearly the same field (same net section, Kt 2.15 and 2.39), so the cross-calibration is a weak test. The cross-dataset TCD result is a real test: L comes from a different printer, PLA and lab.

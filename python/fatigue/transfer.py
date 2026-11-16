@@ -107,7 +107,7 @@ def figure(rows, keys, labels, path):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     plt.rcParams.update({"font.size": 9, "font.family": "serif", "mathtext.fontset": "cm"})
-    marker = {"blunt": "o", "intermediate": "s", "sharp": "^"}
+    marker = {"blunt": "o", "intermediate": "s", "sharp": "^", "edge": "D", "hole": "o"}
     colour = {0: "#1f77b4", 30: "#d62728", 45: "#2ca02c"}
     fig, axs = plt.subplots(1, len(keys), figsize=(2.6 * len(keys), 3.0), sharey=True)
     from matplotlib.ticker import FixedLocator, FormatStrFormatter, NullFormatter
@@ -117,8 +117,8 @@ def figure(rows, keys, labels, path):
         ax.fill_between(x, x / 1.2, x * 1.2, color="0.9", lw=0, label=r"$\pm 20\%$")
         ax.plot(x, x, "k-", lw=0.8)
         for r in rows:
-            ax.scatter(r["sigma_nA50"], r[k], marker=marker[r["notch"]], s=26, edgecolor=colour[r["p"]],
-                       facecolor=colour[r["p"]] if r["R"] == -1 else "white", lw=1.0, zorder=3)
+            ax.scatter(r["sigma_nA50"], r[k], marker=marker.get(r["notch"], "o"), s=26, edgecolor=colour.get(r["p"], "k"),
+                       facecolor=colour.get(r["p"], "k") if r["R"] == -1 else "white", lw=1.0, zorder=3)
         ax.set_xscale("log"); ax.set_yscale("log")
         ax.set_xlim(lo, hi); ax.set_ylim(lo, hi); ax.set_aspect("equal")
         for axis in (ax.xaxis, ax.yaxis):
