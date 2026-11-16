@@ -6,7 +6,10 @@ N in [1e3, 2e6] (least squares in log stress). U r1 and U r3 are never used in a
 
     point   Eq. 2   sigma_1 at L/2 on the bisector,                  L = A N^B
     line    Eq. 3   mean of sigma_1 on [0, 2L] (mirrored past the centre line; NOT used in the paper), L = A N^B
-    area    Eq. 4   mean of sigma_1 over the semicircle of radius L at the root,  L = A N^B
+    area    Eq. 4   mean of sigma_1 over the semicircle of radius L at the root. As in the paper (Sec. 6) it is NOT
+            refitted: it uses the point-method L_M(N). L exceeds half the net width (3 mm) below ~1e3 cycles; there the
+            semicircle crosses the centre line (field mirrored) and is clipped at 5.9 mm (one specimen).
+    netfit  sigma_n,max times one constant fitted on the sharp curve: the fair no-method baseline
     weibull         (sum sigma_1^m dV / V0)^(1/m), weakest link over the whole specimen. K_eq does not depend on N,
             so one notch fixes one constant: V0 is fitted, m = 3.44 is the strength Weibull modulus of the plain
             band (T_sigma 2.451 = P10/P90 ratio: m = ln(ln 0.1 / ln 0.9) / ln T_sigma).
@@ -104,9 +107,10 @@ def _ab(f):
 METHODS = {
     "point": (_ab(k_point), (16.4, -0.242), "L_M = {:.3g} N^{:.3f} mm"),
     "line": (_ab(k_line), (5.0, -0.2), "L = {:.3g} N^{:.3f} mm"),
-    "area": (_ab(k_area), (16.4, -0.242), "L = {:.3g} N^{:.3f} mm"),
-    "weibull": (lambda n, N, p: np.full(np.shape(N), k_weibull(n, M_STRENGTH, p[0])), (100.0,), "m 3.44 (plain band), V0 {:.3g} mm^3"),
-    "mhsv": (lambda n, N, p: np.full(np.shape(N), k_mhsv(n, p[1], p[0])), (50.0,), "C_S {:.3g} mm^3, L_CD {:.3g} mm"),
+    "area": (_ab(k_area), (16.4, -0.242), "L = point L_M = {:.3g} N^{:.3f} mm (not refitted, as the paper)"),
+    "netfit": (lambda n, N, p: np.full(np.shape(N), p[0]), (1.0,), "sigma_n,max x {:.3g}"),
+    "weibull": (lambda n, N, p: np.full(np.shape(N), k_weibull(n, M_STRENGTH, p[0])), (100.0,), "whole volume; m 3.44 FIXED (plain band), V0 {:.3g} mm^3"),
+    "mhsv": (lambda n, N, p: np.full(np.shape(N), k_mhsv(n, p[1], p[0])), (50.0,), "C_S {:.3g} mm^3; FIXED: L_CD {:.3g} mm (point L_M at 2e6), k_N 0.675 (plain band)"),
 }
 
 
@@ -119,6 +123,9 @@ def l_cd():
 def calibrate(name, notch="sharp", curve=paper.SHARP_FIG8A):
     f, p0, _ = METHODS[name]
     target = np.log10(paper.PLAIN(N_CAL) / curve(N_CAL))
+    if name == "area":                                     # the paper's way: area uses the point-method L_M(N)
+        p, _ = calibrate("point", notch, curve)
+        return p, math.sqrt(np.mean((np.log10(f(notch, N_CAL, p)) - target) ** 2))
     pos = len(p0) == 1                                     # single positive constant: fit in log
     extra = (l_cd(),) if name == "mhsv" else ()
 

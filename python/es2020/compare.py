@@ -15,7 +15,8 @@ from . import paper
 
 SHOW = ("point", "area", "weibull", "mhsv")            # figure panels: the paper's two TCD forms + the two size methods
 TITLE = {"point": "TCD Point Method (Eq. 2)", "area": "TCD Area Method (Eq. 4)", "line": "TCD Line Method (Eq. 3)",
-         "weibull": "Weibull weakest link (volume)", "mhsv": "Modified HSV (Zhang et al. 2023)", "net": "Net stress (no method)"}
+         "weibull": "Weibull weakest link (whole specimen volume)", "mhsv": "Modified HSV (Zhang et al. 2023)",
+         "net": "Net stress, no method", "netfit": "Net stress x one constant fitted on sharp V"}
 
 
 def run():
@@ -72,7 +73,9 @@ def plot(out, path):
             ax.scatter(n, 10 ** r * paper.PLAIN(n) / paper.UTS, marker=m, s=26, facecolor=fc, edgecolor=ec, lw=0.9, zorder=3)
         h = held(o)
         s = o["S"]["sharp"]
-        ax.text(0.02, 0.02, f"{TITLE[name]}\n{o['const']}\n"
+        note = {"area": "\nL > half net width (3 mm) below ~1e3 cycles: semicircle mirrored past the centre line",
+                "weibull": "\nnotch factor vs sharp V: U r1 0.996, U r3 1.020 (acts like net stress)"}.get(name, "")
+        ax.text(0.02, 0.02, f"{TITLE[name]}\n{o['const']}{note}\n"
                 f"fitted (sharp V): bias {s['bias']:+.3f}, rms {s['rms']:.3f}, slope {s['slope']:+.3f}\n"
                 f"held-out (U r1 + U r3, n {h['n']}): bias {h['bias']:+.3f}, rms {h['rms']:.3f},\n"
                 f"   slope {h['slope']:+.3f}, in P10-P90 band {100*h['band']:.0f}%   (log10 stress)",
@@ -90,7 +93,7 @@ def plot(out, path):
           "Plain P50 6.7 MPa at 2e6, k 5.1", "Plain P10 / P90, $T_\\sigma$ 2.451", "Design 0.1 UTS, k 5.5"]
     fig.legend(h, lb, loc="outside lower center", ncol=3, fontsize=9)
     fig.suptitle("Ezeh & Susmel 2020 data (Fig. 8 $\\sigma_{n,max}$, UTS 42.9 MPa, R = -1 and 0 pooled, failures only): "
-                 "each method fitted on plain P50 + sharp V (Fig. 9e), U notches predicted", fontsize=10.5)
+                 "free constants fitted on plain P50 + sharp V (Fig. 9e), U notches predicted", fontsize=10.5)
     for e in ("png", "pdf"):
         fig.savefig(f"{path}.{e}", dpi=190)
 
