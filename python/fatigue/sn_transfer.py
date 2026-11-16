@@ -45,6 +45,9 @@ def main(argv=None):
     ap.add_argument("--m-fit", type=float, nargs="*", default=[12.0], help="Weibull moduli fitted on these notches")
     ap.add_argument("--L", type=float, nargs=2, default=[16.4, -0.242], metavar=("A_L", "b_L"),
                     help="TCD L(N) = A_L N^b_L mm fitted on another data set (default Ezeh & Susmel 2020 PLA)")
+    ap.add_argument("--support", type=float, nargs=2, default=[0.713, 119.0], metavar=("l_mm", "m"),
+                    help="gradient-supported Weibull (Maede et al.: n = 1 + sqrt(l chi)); default l fitted on Ezeh-Susmel "
+                         "at m 119 (this data set's own plain scatter)")
     ap.add_argument("--out", default=OUT)
     a = ap.parse_args(argv)
     d = json.load(open(a.data))
@@ -57,6 +60,9 @@ def main(argv=None):
     crit = {"Kt (blind)": lambda f: (lambda N: float(f["Kt_mean"]))}
     for m, tag in [(m, "fitted on Ezeh-Susmel") for m in a.m] + [(m, "fitted here") for m in a.m_fit]:
         crit[f"Weibull m {m:g} ({tag})"] = lambda f, m=m: (lambda N, w=1.0 / C.weibull(f, 1.0, m, V): w)
+    l_s, m_s = a.support
+    crit[f"Weibull + support l {l_s:g} fitted on Ezeh-Susmel, m {m_s:g}"] = (
+        lambda f: (lambda N, w=1.0 / C.weibull_support(f, 1.0, m_s, V, l_s): w))
     crit["TCD point, L(N) fitted on Ezeh-Susmel"] = lambda f: (lambda N: 1.0 / C.tcd_point(f, 1.0, LN(N)))
     crit["TCD line, L(N) fitted on Ezeh-Susmel"] = lambda f: (lambda N: 1.0 / C.tcd_line(f, 1.0, LN(N)))
     rows = []
@@ -125,7 +131,7 @@ def main(argv=None):
     print("\n".join(lines))
 
 
-def figure_overview(raw, A, B, F, crit, rows, path, show=("TCD line, L(N) fitted on Ezeh-Susmel", "TCD point, L(N) fitted on Ezeh-Susmel")):
+def figure_overview(raw, A, B, F, crit, rows, path, show=None):
     """(a) all data sets on one S-N plot with the predicted notch curves; (b) predicted vs measured life, every
     notched specimen, every criterion."""
     import matplotlib
@@ -142,7 +148,8 @@ def figure_overview(raw, A, B, F, crit, rows, path, show=("TCD line, L(N) fitted
         a.scatter([n for s, *ns in pts for n in ns], [s for s, *ns in pts for _ in ns], marker=mk[k], s=34,
                   color=col[k], zorder=4, label=f"{lab}: test")
     a.plot(Ns, A * Ns ** B, color="k", lw=1.2, label="smooth: Basquin fit (input)")
-    ls = {show[0]: "-", show[1]: "--"}
+    show = show or [c for c in crit if c.startswith(("TCD line", "Weibull + support"))]
+    ls = dict(zip(show, ["-", "--", ":"]))
     for k in raw:
         if k == "smooth":
             continue
@@ -153,9 +160,9 @@ def figure_overview(raw, A, B, F, crit, rows, path, show=("TCD line, L(N) fitted
     a.set(xscale="log", xlim=(3e3, 2e5), ylim=(8, 17), xlabel="cycles to failure $N_f$",
           ylabel=r"net stress amplitude $\sigma_a$ (MPa)", title="(a) Seifollahi & Kabir 2026, YZ PLA, R = 0.05")
     a.grid(alpha=0.3, which="both")
-    a.legend(fontsize=7.5, loc="upper right", ncol=1)
+    a.legend(fontsize=7.5, loc="lower left", ncol=1, framealpha=0.95)
     cc = {"Kt (blind)": "0.55", "TCD point, L(N) fitted on Ezeh-Susmel": "#d62728", "TCD line, L(N) fitted on Ezeh-Susmel": "#ff7f0e"}
-    wc = iter(["#1f77b4", "#17becf"])
+    wc = iter(["#1f77b4", "#17becf", "#2ca02c"])
     cc.update({c: next(wc) for c in crit if c not in cc})
     lo, hi = 50, 5e5
     x = np.geomspace(lo, hi, 2)
@@ -185,7 +192,7 @@ def figure(d, raw, A, B, F, crit, path):
     fig, axs = plt.subplots(1, len(notches), figsize=(5.2 * len(notches), 4.0), sharey=True)
     Ns = np.geomspace(2e3, 3e5, 60)
     sty = {"Kt (blind)": ("0.5", ":"), "TCD point, L(N) fitted on Ezeh-Susmel": ("#d62728", "-"), "TCD line, L(N) fitted on Ezeh-Susmel": ("#ff7f0e", "--")}
-    wc = iter(["#1f77b4", "#17becf", "#9467bd", "#2ca02c"])
+    wc = iter(["#1f77b4", "#17becf", "#2ca02c", "#9467bd"])
     sty.update({c: (next(wc), "-.") for c in crit if c not in sty})
     for ax, k in zip(np.atleast_1d(axs), notches):
         S = [s for s, *_ in raw["smooth"]]
