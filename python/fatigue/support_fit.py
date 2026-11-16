@@ -51,6 +51,14 @@ def fit_l(E, V, F, s0, m):
     return math.exp(o.x), o.fun
 
 
+def fit_l_kt(E, F, s0):
+    """Support length of the supported hot spot (criteria.supported_kt) on every Ezeh-Susmel series: no m, no volume."""
+    err = lambda l: np.array([math.log(C.supported_kt(F[r["notch"]], s0[r["R"]], l) / r["sigma_nA50"]) for r in E["notched"]])
+    o = minimize_scalar(lambda ll: float(np.sqrt(np.mean(err(math.exp(ll)) ** 2))),
+                        bounds=(math.log(1e-3), math.log(50.0)), method="bounded")
+    return math.exp(o.x), o.fun, err(math.exp(o.x))
+
+
 def seifollahi_errors(m, l, gauge=50.0):
     """log10(predicted / measured) life of every Seifollahi notched specimen."""
     S = json.load(open(os.path.join(HERE, "data", "seifollahi_kabir.json")))
@@ -83,6 +91,11 @@ def main(argv=None):
                "Seifollahi smooth scatter (T 1.028)" if abs(m - 119) < 1 else "chosen")
         lines.append(f"| {m:g} | {src} | {l:.3f} | {rms:.3f} | {e.mean():+.2f} / {np.sqrt(np.mean(e ** 2)):.2f} | "
                      f"{int((abs(e) < math.log10(2)).sum())}/{len(e)} |")
+    l, rms, e = fit_l_kt(E, F, s0)
+    per = {k: 100 * math.expm1(np.mean([x for x, r in zip(e, E["notched"]) if r["notch"] == k])) for k in F}
+    lines += ["", f"Supported hot spot (criteria.supported_kt, no m, no gauge volume): l {l:.3f} mm fitted on Ezeh-Susmel, "
+              f"rms ln {rms:.3f}, {int((abs(np.expm1(e)) < 0.2).sum())}/{len(e)} within 20 %; per notch "
+              + ", ".join(f"{k} {v:+.0f} %" for k, v in per.items())]
     os.makedirs(a.out, exist_ok=True)
     open(os.path.join(a.out, "support_fit.md"), "w").write("\n".join(lines) + "\n")
     print("\n".join(lines))

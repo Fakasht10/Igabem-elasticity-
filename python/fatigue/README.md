@@ -98,6 +98,7 @@ Full S–N transfer (`python3 -m fatigue.sn_transfer`): each of the 14 notched s
 | Kt (blind) | −1.83 | 1.83 | 0/14 | 0/14 |
 | Weibull, m 7.5 fitted on Ezeh–Susmel | +0.74 | 0.75 | 0/14 | 0/14 |
 | supported Weibull, l 0.713 fitted on Ezeh–Susmel, **m 119 from Seifollahi's own smooth scatter** | +0.16 | 0.18 | 14/14 | 14/14 |
+| supported hot spot Kt/(1+√(l χ₀)), **l 0.986 mm fitted on Ezeh–Susmel, nothing from Seifollahi** | +0.12 | 0.14 | 14/14 | 14/14 |
 | TCD point, L(N) fitted on Ezeh–Susmel | −0.10 | 0.15 | 12/14 | 14/14 |
 | TCD line, L(N) fitted on Ezeh–Susmel | +0.08 | 0.13 | 14/14 | 14/14 |
 | *in-sample references, fitted on these notches (not predictions)* | | | | |
@@ -118,5 +119,7 @@ How to read it (independent review, 2026-11-16):
   At m 119, about 10 Gauss points carry 90 % of the integral. The criterion then acts as a gradient-reduced hot-spot factor, so it depends on how well the volume cloud resolves the peak. The Gauss-point maximum is 2.12, against a surface Kt of 2.15.
 - **TCD carries a caveat too.** Ezeh–Susmel's L(N) is a point-method calibration on R = −1 and R = 0 data reaching 2·10⁶ cycles. Here it is applied at R = 0.05 and 10⁴ cycles. The line method, which Ezeh–Susmel did not use, scores best.
 - **Cross-calibration is weak here.** Fitting on one notch and predicting the other gives rms 0.07–0.08, but the fitted (A_L, b_L) pairs differ widely. The two notches share a 9 mm net section and nearly the same field, so this test cannot identify L(N).
+
+S–N slope (`## Slope` in the results md): the tests' notch curves are slightly SHALLOWER than the smooth one (edge −0.155, hole −0.141 against −0.161), so Kf falls a little with life (hole 1.17 at 10⁴, 1.12 at 10⁵). Every criterion with a life-independent factor (Weibull, supported Weibull, supported hot spot, constant-L TCD) reproduces the smooth slope −0.161. TCD with Susmel's L(N) = 16.4 N^−0.242 is STEEPER (point −0.25, line −0.23) because L shrinks with N, so the effective stress grows with N, the opposite of these data. With a constant L fitted on Ezeh–Susmel, TCD gets the right slope but the wrong level: point L 1.12 mm 0/14, line L 0.93 mm 8/14. A supported TCD (σ(L/2)/(1+√(l χ)), L and l fitted jointly on Ezeh–Susmel) drives L → 0. It becomes the supported hot spot: FKM / Siebel–Stieler gradient support with χ₀ from a quadratic fit of the bisector (`criteria.root_chi`, stable to 2–3 % between h 1.5 and 1.06). On Ezeh–Susmel its rms ln is 0.175 (11/18 within 20 %). Per notch: blunt −15 %, intermediate +17 %, sharp −3 %.
 
 Figures: `fig_sn_transfer_*_overview` and `fig_sn_transfer_*`. Solid lines are the Basquin fits of the tests (equal to the paper's Table 7 to 0.04 %). Broken lines are transferred predictions. Kt, failed criteria and in-sample references appear only in the table.

@@ -49,6 +49,8 @@ def main(argv=None):
                     help="gradient-supported Weibull (Maede et al.: n = 1 + sqrt(l chi)); default l fitted on Ezeh-Susmel "
                          "(fatigue.support_fit) at m 119, which is THIS data set's own smooth scatter (T 1.028): one "
                          "number taken from the target. With Ezeh-Susmel's own m 7.5 the fitted l is ~0 and it fails.")
+    ap.add_argument("--support-kt", type=float, default=0.986, metavar="l_mm",
+                    help="supported hot spot Kt/(1 + sqrt(l chi_0)); l fitted on Ezeh-Susmel (fatigue.support_fit), no m")
     ap.add_argument("--out", default=OUT)
     a = ap.parse_args(argv)
     d = json.load(open(a.data))
@@ -64,6 +66,7 @@ def main(argv=None):
     l_s, m_s = a.support
     crit[SUP] = (
         lambda f: (lambda N, w=1.0 / C.weibull_support(f, 1.0, m_s, V, l_s): w))
+    crit[SKT] = lambda f: (lambda N, w=1.0 / C.supported_kt(f, 1.0, a.support_kt): w)
     crit["TCD point, L(N) fitted on Ezeh-Susmel"] = lambda f: (lambda N: 1.0 / C.tcd_point(f, 1.0, LN(N)))
     crit["TCD line, L(N) fitted on Ezeh-Susmel"] = lambda f: (lambda N: 1.0 / C.tcd_line(f, 1.0, LN(N)))
     # in-sample reference: the measured fatigue notch factor of each notch at N_ref (plain / notched strength), constant in
@@ -131,6 +134,14 @@ def main(argv=None):
     lines += ["", "| notch | s_a (MPa) | N test | " + " | ".join(crit) + " |", "|---" * (3 + len(crit)) + "|"]
     for r in rows:
         lines.append(f"| {r['notch']} | {r['s_a']:.2f} | {r['N']:,.0f} | " + " | ".join(f"{r[c]:,.0f}" for c in crit) + " |")
+    lines += ["", "## Slope of the predicted S-N curve (Basquin exponent through the predicted lives) against the tests' own fit",
+              "", "| criterion | " + " | ".join(notches) + " |", "|---" * (1 + len(notches)) + "|",
+              "| tests (paper fit) | " + " | ".join(f"{basquin(raw[k])[1]:.3f}" for k in notches) + " |",
+              f"| smooth (input) | " + " | ".join(f"{B:.3f}" for _ in notches) + " |"]
+    for c in crit:
+        sl = [np.polyfit(np.log([r[c] for r in rows if r["notch"] == k]), np.log([r["s_a"] for r in rows if r["notch"] == k]), 1)[0]
+              for k in notches]
+        lines.append(f"| {c} | " + " | ".join(f"{x:.3f}" for x in sl) + " |")
     lines += xlines
     os.makedirs(a.out, exist_ok=True)
     tag = f"sn_transfer_{d['id']}_h{a.h:g}"
@@ -143,6 +154,7 @@ def main(argv=None):
 
 SUP = "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter"
 KF = "measured Kf per notch (in-sample)"
+SKT = "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel"
 
 
 def insample(c):
@@ -163,7 +175,7 @@ def passing(sc):
     return [c for c, v in sc.items() if not c.startswith("Kt") and not insample(c) and v["x2"] >= v["n"] / 2]
 
 
-STY = {"Weibull + support": ("--", "#2ca02c"), "TCD line": (":", "#ff7f0e"), "TCD point": ("-.", "#9467bd"),
+STY = {"supported hot spot": ((0, (8, 2, 2, 2)), "#8c564b"), "Weibull + support": ("--", "#2ca02c"), "TCD line": (":", "#ff7f0e"), "TCD point": ("-.", "#9467bd"),
        "Weibull m": ((0, (5, 1, 1, 1, 1, 1)), "#17becf")}
 
 
@@ -177,12 +189,12 @@ def short(c):
 
 def tiny(c):
     """Legend name; provenance goes in the caption (README)."""
-    return ("supported Weibull" if c == SUP else c.split(",")[0]) + " (predicted)"
+    return {SUP: "supported Weibull", SKT: "supported hot spot (FKM)"}.get(c, c.split(",")[0]) + " (predicted)"
 
 
 def figure_overview(d, raw, F, crit, rows, sc, path):
-    """(a) the three data sets with the paper's own fits (solid) and the transferred predictions (broken);
-    (b) predicted vs measured life of every notched specimen for every criterion that did not fail outright."""
+    """(a, b) each notch with the smooth tests, the tests' own fits (solid) and the transferred predictions (broken);
+    (c) predicted vs measured life of every notched specimen for every criterion that did not fail outright."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -192,31 +204,29 @@ def figure_overview(d, raw, F, crit, rows, sc, path):
     name = {"smooth": "smooth", "edge": "edge notch R2, Kt %.2f", "hole": "central hole R2, Kt %.2f"}
     PF = paper_fits(d)
     A, B = PF["smooth"]
-    fig, (a, b) = plt.subplots(1, 2, figsize=(12.5, 6.6), gridspec_kw={"width_ratios": [1.25, 1]})
-    for k, pts in raw.items():
-        lab = name[k] % float(F[k]["Kt_mean"]) if k != "smooth" else name[k]
-        n = [n for s, *ns in pts for n in ns]
-        Ns = np.geomspace(min(n) / 1.5, max(n) * 1.5, 60)
-        a.scatter(n, [s for s, *ns in pts for _ in ns], marker=mk[k], s=36, color=col[k], zorder=4,
-                  label=f"{lab}")
-        Ak, Bk = PF[k]
-        a.plot(Ns, Ak * Ns ** Bk, color=col[k], lw=1.8)
     show = passing(sc)
+    from matplotlib.lines import Line2D
+    fig, (a1, a2, b) = plt.subplots(1, 3, figsize=(16, 6.3), layout="constrained")
     Ns = np.geomspace(3e3, 2e5, 80)
-    for k in raw:
-        if k == "smooth":
-            continue
+    for a, k, tl in ((a1, "edge", "(a)"), (a2, "hole", "(b)")):
+        for g in ("smooth", k):
+            n = [n for s, *ns in raw[g] for n in ns]
+            a.scatter(n, [s for s, *ns in raw[g] for _ in ns], marker=mk[g], s=36, color=col[g], zorder=4)
+            Ag, Bg = PF[g]
+            Ng = np.geomspace(min(n) / 1.5, max(n) * 1.5, 60)
+            a.plot(Ng, Ag * Ng ** Bg, color=col[g], lw=1.8)
         for c in show:
             eff = crit[c](F[k])
-            a.plot(Ns, [A * N ** B / eff(N) for N in Ns], color=col[k], ls=sty(c)[0], lw=1.3)
-    a.set(xscale="log", xlim=(3e3, 2e5), ylim=(8, 17), xlabel="cycles to failure $N_f$",
-          ylabel=r"net stress amplitude $\sigma_a$ (MPa)", title="(a) Seifollahi & Kabir 2026, YZ PLA, R = 0.05")
-    a.grid(alpha=0.3, which="both")
-    from matplotlib.lines import Line2D
-    h, lb = a.get_legend_handles_labels()
-    h += [Line2D([], [], color="k", lw=1.8)] + [Line2D([], [], color="k", ls=sty(c)[0], lw=1.3) for c in show]
-    lb += ["Basquin fit of the tests (paper Table 7 to 0.04 %)"] + [tiny(c) for c in show]
-    a.legend(h, lb, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.13), ncol=2, frameon=False)
+            a.plot(Ns, [A * N ** B / eff(N) for N in Ns], color=sty(c)[1], ls=sty(c)[0], lw=1.5)
+        a.set(xscale="log", xlim=(3e3, 2e5), ylim=(8, 17), xlabel="cycles to failure $N_f$",
+              title=f"{tl} {name[k] % float(F[k]['Kt_mean'])}")
+        a.grid(alpha=0.3, which="both")
+    a1.set_ylabel(r"net stress amplitude $\sigma_a$ (MPa)")
+    h = [Line2D([], [], color=col[g], marker=mk[g], ls="-", lw=1.8) for g in ("smooth", "edge", "hole")]
+    lb = [f"{g}: tests + Basquin fit (paper)" for g in ("smooth", "edge notch", "hole")]
+    h += [Line2D([], [], color=sty(c)[1], ls=sty(c)[0], lw=1.5) for c in show]
+    lb += [tiny(c) for c in show]
+    fig.legend(h, lb, fontsize=9, loc="outside lower center", ncol=4, frameon=False)
     lo, hi = 3e3, 2e5
     x = np.geomspace(lo, hi, 2)
     b.fill_between(x, x / 2, x * 2, color="0.9", lw=0, label="factor 2")
@@ -226,13 +236,12 @@ def figure_overview(d, raw, F, crit, rows, sc, path):
             rr = [r for r in rows if r["notch"] == k]
             b.scatter([r["N"] for r in rr], [r[c] for r in rr], marker=mk[k], s=28, color=sty(c)[1],
                       edgecolors="k", linewidths=0.3, zorder=3,
-                      label=f"{tiny(c)}: {sc[c]['x2']}/{sc[c]['n']} within x2, rms {sc[c]['rms']:.2f}"
+                      label=f"{tiny(c).replace(' (predicted)', '')}: {sc[c]['x2']}/{sc[c]['n']}, rms {sc[c]['rms']:.2f}"
                       if k == "edge" else None)
     b.set(xscale="log", yscale="log", xlim=(lo, hi), ylim=(lo, hi), aspect="equal", xlabel="measured life",
-          ylabel="predicted life", title="(b) every notched specimen (\u25b2 edge, \u25c6 hole)")
+          ylabel="predicted life", title="(c) every specimen (\u25b2 edge, \u25c6 hole)")
     b.grid(alpha=0.3, which="both")
-    b.legend(fontsize=7, loc="upper center", bbox_to_anchor=(0.5, -0.13), ncol=1, frameon=False)
-    fig.tight_layout()
+    b.legend(fontsize=8, loc="upper left", title="within x2, rms log10", title_fontsize=8)
     for ext in ("png", "pdf"):
         fig.savefig(f"{path}.{ext}", dpi=200)
     plt.close(fig)

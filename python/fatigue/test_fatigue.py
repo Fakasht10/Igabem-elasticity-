@@ -163,3 +163,14 @@ def test_sn_life_and_supported_weibull_limits():
         w0, ws = C.weibull(f, 1.0, m, V), C.weibull_support(f, 1.0, m, V, 1e-9)
         assert abs(ws / w0 - 1) < 1e-4
         assert C.weibull_support(f, 1.0, m, V, 0.7) > w0
+
+
+def test_root_chi_near_siebel_and_supported_kt_limit():
+    """chi_0 of a semicircular hole is near Siebel's 2/rho and stable between meshes; supported_kt(l=0) is Kt."""
+    from . import criteria as C
+    from .fields import field
+    from .specimens import Specimen
+    f = field(Specimen.from_dict(dict(shape="hole", W=13.0, T=3.2, rho=2.0, L=60.0)), h=1.5, log=lambda *_: None)
+    chi = C.root_chi(f)
+    assert 0.5 < chi < 1.3                                        # 2/rho = 1.0; finite width raises it
+    assert abs(C.supported_kt(f, 1.0, 0.0) * float(C.line_profile(f)[1][0]) - 1) < 1e-12

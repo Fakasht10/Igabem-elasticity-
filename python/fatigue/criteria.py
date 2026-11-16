@@ -9,6 +9,9 @@ net strength in the units of s0.
                                                           weakest link, m from the replicate scatter: no length
     weibull_support  as weibull with sigma_1 / n, n = 1 + sqrt(l |grad sigma_1| / sigma_1)
                                                           (Maede et al. 2017, as failure.aniso.support_factor; l fitted)
+    supported_kt     s0 n0 / Kt, n0 = 1 + sqrt(l chi_0), chi_0 = -(d sigma_1/dx)/sigma_1 at the root
+                                                          (FKM / Siebel-Stieler gradient support of the hot spot; l
+                                                          fitted). The limit L -> 0 of a supported point method.
 
 The bisector quantities are averaged over the thickness stations, as a 2D plane model would give them.
 """
@@ -74,6 +77,22 @@ def tcd_line(f, s0, L, mirror=True):
             raise ValueError("2L longer than the whole net section")
     x = np.linspace(0.0, 2 * L, 801)
     return s0 / float(np.trapezoid(np.interp(x, d, s), x) / (2 * L))
+
+
+def root_chi(f, drop=0.03):
+    """Relative stress gradient at the root, chi_0 = -sigma_1'(0)/sigma_1(0) (1/mm), from a quadratic fit of the bisector
+    over the points within `drop` of the peak: stable to the mesh where a one-sided difference is not (Seifollahi hole:
+    one-sided 1.20 / 1.38 at h 1.5 / 1.06, fitted 1.20 / 1.21). Close to Siebel's 2/rho for an edge notch."""
+    d, s = map(np.asarray, line_profile(f))
+    k = s >= (1 - drop) * s[0]
+    k[:3] = True
+    p = np.polyfit(d[k], s[k], 2)
+    return float(-p[1] / p[2])
+
+
+def supported_kt(f, s0, l):
+    d, s = line_profile(f)
+    return s0 * (1.0 + math.sqrt(l * root_chi(f))) / float(s[0])
 
 
 def log_J(f, m, quarters=4):
