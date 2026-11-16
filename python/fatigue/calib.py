@@ -162,51 +162,100 @@ def main(argv=None):
     figure(res, notches, rows, uts, os.path.join(a.out, "fig_calib_sharp_holdout"))
 
 
-def figure(res, notches, rows, uts, path):
+GROUPS = [("baselines", "Baselines (no free parameter)", ["net", "kt"]),
+          ("tcd_point", "TCD point family", ["tcd_ln_paper", "tcd_ln", "tcd_const", "sup_tcd"]),
+          ("tcd_line", "TCD line family", ["tcd_line", "tcd_line_ln", "sup_tcd_line"]),
+          ("volume", "Volume and gradient methods", ["weibull", "hotspot", "mhsv"])]
+
+
+def _style():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    plt.rcParams.update({"font.size": 11, "font.family": "serif", "mathtext.fontset": "cm"})
+    return plt
+
+
+def figure(res, notches, rows, uts, path):
+    """One ranking chart plus one S-N figure per method family (at most 2 x 2 panels each)."""
+    plt = _style()
     from matplotlib.lines import Line2D
-    plt.rcParams.update({"font.size": 10, "font.family": "serif", "mathtext.fontset": "cm"})
     plain = json.load(open(os.path.join(HERE, "data", "ezeh_susmel_2020_fig1_plain.json")))
-    fig, axs = plt.subplots(3, 4, figsize=(20, 15), sharex=True, sharey=True, layout="constrained")
     Ns = np.geomspace(10, 1e7, 200)
-    sty = {"sharp": dict(marker="v", s=26, facecolor="none", edgecolors="#9467bd", linewidths=1.1),
-           "intermediate": dict(marker="s", s=22, color="#1f77b4"), "blunt": dict(marker="P", s=30, color="#d62728")}
-    for ax, name in zip(axs.flat, res):
-        th, r = res[name]
-        ax.plot(Ns, P50(Ns), "k-", lw=1.6)
-        ax.plot(Ns, P50(Ns) * math.sqrt(T_BAND), "k--", lw=1)
-        ax.plot(Ns, P50(Ns) / math.sqrt(T_BAND), "k--", lw=1)
-        ax.scatter([q["N"] for q in plain], [q["smax_uts"] for q in plain], s=9, facecolor="none", edgecolors="0.7",
-                   linewidths=0.5, zorder=1)
-        for k in ("sharp", "intermediate", "blunt"):
-            sel = [x for x in rows if x[0] == k]
-            N = np.array([x[4] for x in sel])
-            ax.scatter(N, P50(N) * 10 ** r[k], zorder=3 if k == "sharp" else 4, **sty[k])
-        h = stats(np.concatenate([r["intermediate"], r["blunt"]]))
-        par = ", ".join(f"{n} {v:.3g}" for n, v in zip(CRIT[name][0], th)) or (
-            "published by the authors" if name == "tcd_ln_paper" else "no free parameter")
-        ax.set_title(f"{TITLE[name]}  ({par})\nHELD OUT U notches: rms {h['rms']:.3f} log10 S, {100 * h['band']:.0f} % in band",
-                     fontsize=9.5)
-        ax.set(xscale="log", yscale="log", xlim=(10, 1e7), ylim=(0.03, 10))
-        ax.grid(alpha=0.3, which="both")
-    for ax in axs.flat[len(res):]:
-        ax.set_visible(False)
-    for ax in axs[-1]:
-        ax.set_xlabel("cycles to failure $N_f$ (specimen)")
-    for ax in axs[:, 0]:
-        ax.set_ylabel(r"$\sigma_{eff,max}/\sigma_{UTS}$")
+    sty = {"sharp": dict(marker="v", s=30, facecolor="none", edgecolors="#9467bd", linewidths=1.1),
+           "intermediate": dict(marker="s", s=24, color="#1f77b4"), "blunt": dict(marker="P", s=34, color="#d62728")}
     hd = [Line2D([], [], color="k", lw=1.6), Line2D([], [], color="k", ls="--"),
           Line2D([], [], marker="o", mfc="none", mec="0.7", ls=""),
           Line2D([], [], marker="v", mfc="none", mec="#9467bd", ls="", ms=8),
           Line2D([], [], marker="s", color="#1f77b4", ls=""), Line2D([], [], marker="P", color="#d62728", ls="", ms=8)]
-    lb = ["plain P50, Fig. 1 (CALIBRATION)", "plain P10 / P90 band (paper)", "plain points, Fig. 1 (extracted, CALIBRATION)",
-          "V r0.15 specimens: FITTED (calibration)", "U r1 specimens: HELD OUT (prediction)",
-          "U r3 specimens: HELD OUT (prediction)"]
-    fig.legend(hd, lb, loc="outside lower center", ncol=6, fontsize=9, frameon=False)
+    lb = ["plain P50, Fig. 1 (calibration)", "plain P10 / P90 (paper)", "plain points, Fig. 1 (extracted, calibration)",
+          "V r0.15: FITTED", "U r1: HELD OUT", "U r3: HELD OUT"]
+    for tag, gtitle, names in GROUPS:
+        nc = len(names) if len(names) <= 3 else 2
+        nr = -(-len(names) // nc)
+        fig, axs = plt.subplots(nr, nc, figsize=(5.6 * nc + 0.6, 5.0 * nr + 1.0), sharex=True, sharey=True, layout="constrained",
+                                squeeze=False)
+        for ax, name in zip(axs.flat, names):
+            th, r = res[name]
+            ax.plot(Ns, P50(Ns), "k-", lw=1.6)
+            ax.plot(Ns, P50(Ns) * math.sqrt(T_BAND), "k--", lw=1)
+            ax.plot(Ns, P50(Ns) / math.sqrt(T_BAND), "k--", lw=1)
+            ax.scatter([q["N"] for q in plain], [q["smax_uts"] for q in plain], s=9, facecolor="none", edgecolors="0.7",
+                       linewidths=0.5, zorder=1)
+            for k in ("sharp", "intermediate", "blunt"):
+                N = np.array([x[4] for x in rows if x[0] == k])
+                ax.scatter(N, P50(N) * 10 ** r[k], zorder=3 if k == "sharp" else 4, **sty[k])
+            h = stats(np.concatenate([r["intermediate"], r["blunt"]]))
+            par = ", ".join(f"{n} {v:.3g}" for n, v in zip(CRIT[name][0], th)) or (
+                "published by the authors" if name == "tcd_ln_paper" else "no free parameter")
+            ax.set_title(f"{TITLE[name]} ({par})\nheld out: rms {h['rms']:.3f} log10 S, {100 * h['band']:.0f} % in band",
+                         fontsize=10.5)
+            ax.set(xscale="log", yscale="log", xlim=(10, 1e7), ylim=(0.05, 10) if tag == "baselines" else (0.08, 2.5))
+            ax.grid(alpha=0.3, which="both")
+        for ax in axs.flat[len(names):]:
+            ax.set_visible(False)
+        for ax in axs[-1]:
+            ax.set_xlabel("cycles to failure $N_f$ (specimen)")
+        for ax in axs[:, 0]:
+            ax.set_ylabel(r"$\sigma_{eff,max}/\sigma_{UTS}$")
+        fig.suptitle(f"{gtitle}: Ezeh-Susmel PLA, fitted on plain + sharp V, U notches held out", fontsize=12)
+        fig.legend(hd, lb, loc="outside lower center", ncol=3, fontsize=9.5, frameon=False)
+        for ext in ("png", "pdf"):
+            fig.savefig(f"{path}_{tag}.{ext}", dpi=170)
+        plt.close(fig)
+    ranking(res, path + "_ranking")
+
+
+def ranking(res, path):
+    plt = _style()
+    rows = []
+    for name, (th, r) in res.items():
+        h = np.concatenate([r["intermediate"], r["blunt"]])
+        rows.append((float(np.sqrt(np.mean(h ** 2))), name, float(np.sqrt(np.mean(r["sharp"] ** 2))),
+                     float(np.sqrt(np.mean(r["intermediate"] ** 2))), float(np.sqrt(np.mean(r["blunt"] ** 2)))))
+    rows.sort()
+    fig, ax = plt.subplots(figsize=(10, 6.2), layout="constrained")
+    y = np.arange(len(rows))
+    fam = {n: g for g, _, ns in GROUPS for n in ns}
+    col = {"baselines": "0.55", "tcd_point": "#1f77b4", "tcd_line": "#2ca02c", "volume": "#d62728"}
+    ax.barh(y, [r[0] for r in rows], color=[col[fam[r[1]]] for r in rows], height=0.6)
+    ax.scatter([r[3] for r in rows], y, marker="s", color="k", s=18, zorder=3, label="U r1 alone (held out)")
+    ax.scatter([r[4] for r in rows], y, marker="P", color="k", s=26, zorder=3, label="U r3 alone (held out)")
+    ax.scatter([r[2] for r in rows], y, marker="v", facecolor="none", edgecolors="k", s=26, zorder=3,
+               label="V r0.15 (fitted)")
+    net = next(r[0] for r in rows if r[1] == "net")
+    ax.axvline(net, color="0.4", ls=":", lw=1.2)
+    ax.text(net, len(rows) - 0.4, " net stress, no fit", fontsize=9, color="0.3", va="top")
+    ax.set_yticks(y, [TITLE[r[1]] for r in rows])
+    ax.invert_yaxis()
+    ax.set_xlabel("rms log10(S_eff / P50), bar = both held-out U notches")
+    ax.set_title("Held-out error by method: Ezeh-Susmel PLA, fitted on plain + sharp V\n"
+                 "colour: grey baselines, blue TCD point, green TCD line, red volume / gradient", fontsize=11)
+    ax.grid(alpha=0.3, axis="x")
+    ax.set_xlim(0, 0.9)
+    ax.legend(fontsize=9, loc="center right")
     for ext in ("png", "pdf"):
-        fig.savefig(f"{path}.{ext}", dpi=200)
+        fig.savefig(f"{path}.{ext}", dpi=170)
     plt.close(fig)
 
 
