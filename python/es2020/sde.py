@@ -579,3 +579,50 @@ class WalkerTCD(Model):
         lc, Q = self.predict(th)
         lp, ls = logpdf_cdf(self.lnN - lc, Q)
         return float(np.sum(np.where(self.ro, ls, lp)))
+
+
+# ----------------------------------------------------------------------------------------------- intrinsic crack
+GL_T, GL_TW = np.polynomial.legendre.leggauss(24)
+
+
+def crack_stress(profile, a):
+    """Equivalent stress felt by an intrinsic edge crack of depth a (mm) in a field sigma(x), x = depth along the
+    steepest-descent direction: sigma_K = K_I / (1.12 sqrt(pi a)) with the edge-crack weight function
+    m = (2 * 1.12 / sqrt(pi a)) / sqrt(1 - (x/a)^2), i.e. sigma_K = (2/pi) int_0^{pi/2} sigma(a sin t) dt.
+    Uniform field: sigma_K = sigma (plain gauge needs no special case). Geometry-free: only the field profile."""
+    t = 0.25 * math.pi * (GL_T + 1)                   # [0, pi/2]
+    return 0.5 * float(np.sum(GL_TW * profile(a * np.sin(t))))
+
+
+class CrackWalker(WalkerTCD):
+    """One rule for every specimen: sigma_eff = sigma_K(a_eq) of the local elastic field, Walker damage, OU latent.
+    Plain gauge: uniform field, sigma_K = S. No batch factor. theta = (ln sigma_D, k, gamma, ln sigma_Z, ln tau, ln a_eq)."""
+    NAMES = ("sigma_D", "k", "gamma", "sigma_Z", "tau", "a_eq")
+    LO = np.array([math.log(1.0), 1.0, 0.0, math.log(0.02), math.log(1.0), math.log(1e-3)])
+    HI = np.array([math.log(1e4), 40.0, 1.0, math.log(2.5), math.log(1e9), math.log(2.9)])
+
+    def __init__(self, rows):
+        Model.__init__(self, rows, "crack")
+        self.plain = self.notch == "plain"
+        self._cache = {}
+
+    def admissible(self, th):
+        return bool(np.all(th >= self.LO) and np.all(th <= self.HI))
+
+    def keff_a(self, a):
+        key = round(a, 6)
+        if key not in self._cache:
+            k = np.ones(len(self.s))
+            for n in self.kinds:
+                if n != "plain":
+                    p = M._prof(n)
+                    k[self.notch == n] = crack_stress(lambda x: p(_refl(x)), a)
+            self._cache = {key: k}
+        return self._cache[key]
+
+    def predict(self, th, s=None, idx=None):
+        lsD, kk, g, lsZ, ltau, la = th
+        S = self.s if s is None else s
+        se = S * self.keff_a(math.exp(la))
+        lc = kk * (lsD - np.log(se) - g * np.log((1 - self.R) / 2))
+        return lc, quantiles(math.exp(lsZ), np.exp(lc - ltau))
