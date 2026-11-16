@@ -536,3 +536,46 @@ def predictive_residual(model, draws, iters=40):
     F = mix_cdf(model, draws)
     return dict(dlogS=np.log10(np.exp(0.5 * (lo + hi)) / model.s), F=F, inside=(F >= 0.1) & (F <= 0.9),
                 dlnN=np.zeros(len(F)) * np.nan)
+
+
+# ----------------------------------------------------------------------------------------------- elastic TCD + Walker
+class WalkerTCD(Model):
+    """Variant adopted after the independent review (2026-11-16, https://claude.ai/artifact/LUrbt2R9Md6iBudjKEHNBf):
+    - ONE structural map for every point (no plain/notch switch): elastic, no Neuber.
+    - TCD point input: sigma_1 at depth L/2 along the field's steepest-descent direction from the hot spot (on these
+      coupons that direction is the bisector, test_field_direction_is_bisector_and_chi_matches), L a material constant.
+    - Damage per cycle Phi = (sigma_eff ((1-R)/2)^gamma / sigma_D)^k  (stress-driven Walker damage, rate >= 0 for any
+      admissible k > 0, 0 <= gamma <= 1), deterministic life c = 1/Phi; the OU latent process as before.
+    - Plain pool: stress scaled by exp(b), an explicit batch factor between the Fig. 1 pool (3 labs) and the notched
+      batch. b = 0 ties them.
+    theta = (ln sigma_D, k, gamma, ln sigma_Z, ln tau, b); L fixed by the caller."""
+    NAMES = ("sigma_D", "k", "gamma", "sigma_Z", "tau", "b")
+    LO = np.array([math.log(1.0), 1.0, 0.0, math.log(0.02), math.log(1.0), -2.0])
+    HI = np.array([math.log(1e4), 40.0, 1.0, math.log(2.5), math.log(1e9), 2.0])
+
+    def __init__(self, rows, L, plain_free=True):
+        super().__init__(rows, "tcd")
+        self.L, self.plain_free = L, plain_free
+        self.k = np.ones(len(self.s))
+        for n in self.kinds:
+            if n != "plain":
+                p = M._prof(n)
+                self.k[self.notch == n] = float(p(_refl(L / 2)))
+        self.plain = self.notch == "plain"
+
+    def admissible(self, th):
+        return bool(np.all(th >= self.LO) and np.all(th <= self.HI)) and (self.plain_free or th[5] == 0.0)
+
+    def predict(self, th, s=None, idx=None):
+        lsD, kk, g, lsZ, ltau, b = th
+        S = self.s if s is None else s
+        se = S * self.k * np.where(self.plain, math.exp(b), 1.0)
+        lc = kk * (lsD - np.log(se) - g * np.log((1 - self.R) / 2))
+        return lc, quantiles(math.exp(lsZ), np.exp(lc - ltau))
+
+    def loglike(self, th):
+        if not self.admissible(th):
+            return -np.inf
+        lc, Q = self.predict(th)
+        lp, ls = logpdf_cdf(self.lnN - lc, Q)
+        return float(np.sum(np.where(self.ro, ls, lp)))
