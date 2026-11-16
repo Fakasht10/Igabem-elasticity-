@@ -662,3 +662,79 @@ class CrackWalkerFW(CrackWalker):
                     k[self.notch == n] = crack_stress(lambda x: p(_refl(x)), a) * float(f_dent(a / self.l_notch)) / 1.122
             self._cache = {key: k}
         return self._cache[key]
+
+
+# ------------------------------------------------------------------------------- one automatic path rule
+def ray_to_free_surface(box, x0, e):
+    """Distance from x0 along unit e to the boundary of an axis-aligned box [(lo, hi), ...] (the body's
+    distance field along the ray, for prismatic gauges and ligaments)."""
+    t = np.inf
+    for (lo, hi), x, d in zip(box, x0, e):
+        if d > 1e-12:
+            t = min(t, (hi - x) / d)
+        elif d < -1e-12:
+            t = min(t, (lo - x) / d)
+    return float(t)
+
+
+# Bodies as the crack sees them (mm). Notched coupons: ligament between the two roots, x along the bisector
+# (net width 6 mm, Ezeh & Susmel 2020), y through the thickness. Plain dogbone (Ref. [10]): width 6, thickness t.
+def coupon_body(kind, t_plain=3.0, t_notch=3.0):
+    if kind == "plain":
+        return [(0.0, 6.0), (0.0, t_plain)]
+    return [(0.0, 2 * LIG), (0.0, t_notch)]
+
+
+def crack_path(kind, t_plain=3.0, chi_tol=1e-6):
+    """One rule for every specimen. Start at the hot spot (a surface point of max sigma_1). The crack runs along
+    the steepest-descent direction of sigma_1 into the body. If the field is uniform there (chi = 0, direction
+    undefined), every inward direction sees the same sigma_K, so the rule takes the one with the largest
+    F(a / W), i.e. the shortest free path. W = distance along the path to the nearest free surface.
+    Returns (label, start, direction, W)."""
+    box = coupon_body(kind, t_plain)
+    chi, e = 0.0, None
+    if kind != "plain":
+        xy, s = notch_field_points(kind)
+        _, e, chi, _ = hot_spot_auto(xy, s)       # direction and chi read from the field cloud only
+    if chi > chi_tol:   # root at x = 0, mid-thickness; in-plane field -> no thickness component in e
+        x0, e3 = np.array([0.0, box[1][1] / 2]), np.array([e[0], 0.0]) / abs(e[0])
+        deg = math.degrees(math.atan2(e[1], e[0]))
+        return f"steepest descent ({deg:+.1f} deg from bisector)", x0, e3, ray_to_free_surface(box, x0, e3)
+    # uniform: candidates = inward normals of every face, started at the face centre
+    cands = []
+    for ax, (lo, hi) in enumerate(box):
+        for side, x in ((1.0, lo), (-1.0, hi)):
+            x0 = np.array([(l + h) / 2 for l, h in box]); x0[ax] = x
+            e = np.zeros(len(box)); e[ax] = side
+            cands.append((ray_to_free_surface(box, x0, e), ax))
+    W, ax = min(cands)
+    return f"uniform field: shortest free path ({'width' if ax == 0 else 'thickness'})", None, None, W
+
+
+class CrackWalkerPath(CrackWalker):
+    """CrackWalker + finite width from the automatic path rule (crack_path), same SENT factor for every specimen:
+    sigma_eq = sigma_K(a) * F_SENT(a / W) / 1.12. No per-specimen crack configuration."""
+
+    def __init__(self, rows, t_plain=3.0, force_W=None):
+        super().__init__(rows)
+        self.W = {}
+        for n in self.kinds:
+            lab, _, _, W = crack_path(n, t_plain)
+            if force_W and n in force_W:                       # diagnostic override, labelled
+                lab, W = f"forced W (diagnostic)", force_W[n]
+            self.W[n] = W
+            self.path = getattr(self, "path", {}); self.path[n] = (lab, W)
+
+    def keff_a(self, a):
+        key = ("path", round(a, 6))
+        if key not in self._cache:
+            k = np.ones(len(self.s))
+            for n in self.kinds:
+                f = float(f_sent(a / self.W[n])) / 1.12
+                if n == "plain":
+                    k[self.plain] = f
+                else:
+                    p = M._prof(n)
+                    k[self.notch == n] = crack_stress(lambda x: p(_refl(x)), a) * f
+            self._cache = {key: k}
+        return self._cache[key]

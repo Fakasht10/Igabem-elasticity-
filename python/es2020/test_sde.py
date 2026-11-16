@@ -88,3 +88,16 @@ def test_field_direction_is_bisector_and_chi_matches():
         assert abs(peak / M._prof(n).s[0] - 1) < 0.002
         # window sensitivity: halving c changes chi by < 4 %
         assert abs(sde.hot_spot_auto(xy, s, c=0.1)[2] / chi - 1) < 0.04
+
+
+def test_crack_path_rule_is_automatic():
+    """One path rule: notches follow the field's steepest descent (bisector) to the opposite root (W = net width 6 mm);
+    the uniform plain gauge has no descent direction, so the rule takes the shortest free path (the thickness)."""
+    for n in ("sharp", "intermediate", "blunt"):
+        lab, x0, e, W = sde.crack_path(n)
+        assert lab.startswith("steepest") and abs(W - 6.0) < 1e-9
+    for t in (3.0, 5.0):
+        lab, _, _, W = sde.crack_path("plain", t)
+        assert "thickness" in lab and W == t
+    assert sde.crack_path("plain", 8.0)[3] == 6.0                 # thicker than wide: the width wins
+    assert abs(sde.ray_to_free_surface([(0, 6), (0, 3)], np.array([1.0, 1.5]), np.array([1.0, 0.0])) - 5.0) < 1e-12
