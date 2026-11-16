@@ -93,3 +93,36 @@ def field(spec, h=1.5, work=WORK, volume=True, nd=200, hmat=False, coarsen=0, lo
     log(f"{spec.tag}: Kt mid {out['Kt_mid']:.3f}, mean {out['Kt_mean']:.3f}, {out['unknowns']} unknowns, "
         f"{out['seconds']:.0f} s")
     return out
+
+
+def root_surface(spec, h=1.5, work=WORK, nth=61, nz=41, nr=30, log=print):
+    """sigma_1 ON the free surfaces around an edge-notch root, evaluated directly by IgBEM (no extrapolation from Gauss
+    points), cached. Notch face: arc angle th from the root (0) to the flank tangent point, x thickness z in [0, T].
+    Side face z = 0 (z = T is its mirror): polar grid around the arc centre, r in [rho, rho + min(rho, ligament/2)].
+    Returns th (rad), z, s1_arc (nth, nz), r, s1_side (nth, nr) and the area weights dA_arc, dA_side (mm^2, quarter)."""
+    if spec.shape != "edge":
+        raise ValueError("root_surface: edge notches only")
+    path = os.path.join(work, f"{spec.tag}_b{h:g}_surf.npz")
+    if os.path.exists(path):
+        return dict(np.load(path))
+    os.makedirs(work, exist_ok=True)
+    t0 = time.perf_counter()
+    r_ = 1.5 / h
+    dat = os.path.join(work, f"{spec.tag}_b{h:g}_c0.dat")
+    blocks.write(spec, dat, h=h, h0=spec.rho / 8 / r_, hz0=spec.T / 60 / r_, nz=max(4, round(12 * r_)))
+    cx = spec.WN / 2 + spec.rho
+    th = np.linspace(0.0, np.radians(90 - spec.alpha_deg / 2), nth)
+    z = np.linspace(0.0, spec.T, nz)
+    r = spec.rho + np.concatenate([[0.0], np.geomspace(1e-3, 1.0, nr - 1)]) * min(spec.rho, spec.ligament / 2)
+    arc = np.array([(cx - spec.rho * np.cos(t), spec.rho * np.sin(t), zz) for t in th for zz in z])
+    side = np.array([(cx - rr * np.cos(t), rr * np.sin(t), 0.0) for t in th for rr in r])
+    with Solve(dat, case(spec), 3000.0, 0.35, workdir=os.path.join(work, f"run_{spec.tag}_surf"), log=log) as s:
+        sa, _ = s.stress(arc, True)
+        ss, _ = s.stress(side, True)
+    tw = np.gradient(th)
+    out = dict(th=th, z=z, r=r, s1_arc=_s1(sa).reshape(nth, nz), s1_side=_s1(ss).reshape(nth, nr),
+               dA_arc=spec.rho * np.outer(tw, np.gradient(z)), dA_side=np.outer(tw, r * np.gradient(r)),
+               seconds=time.perf_counter() - t0)
+    np.savez(path, **out)
+    log(f"{spec.tag}: root surface sigma_1 max {out['s1_arc'].max():.3f}, {out['seconds']:.0f} s")
+    return out

@@ -182,3 +182,15 @@ def test_master_factors_plain_limits():
     assert factor("net", None, [], 500.0) == 1.0 and factor("hotspot", None, [0.9], 500.0) == 1.0
     assert abs(factor("weibull", None, [8.0], V_REF) - 1.0) < 1e-12
     assert abs(factor("weibull", None, [8.0], 2 * V_REF) - 2 ** 0.125) < 1e-12
+
+
+def test_mhsv_reduces_to_point_method_when_volumes_match():
+    from fatigue import hsv
+    pl = dict(sigma_A50=5.0, k=6.0, T=1.4, UTS=42.0)
+    W, T, Lg, Lf = 6.0, 3.0, 30.0, 0.4
+    S90 = 2 * (W + T) * Lg * Lf / hsv.L_CD                  # V_N = V_S
+    g = {"n": dict(smax=3.0, S90=S90, V90=W * T * Lg, seff=1.7, prof=lambda x: 1.7)}
+    a = hsv.predict("tcd_pm", g, pl, "n", 4.0, Lf, Lg)[0]
+    assert abs(hsv.predict("mhsv", g, pl, "n", 4.0, Lf, Lg)[0] / a - 1) < 1e-12
+    b = hsv.predict("hsv", g, pl, "n", 4.0, Lf, Lg)[0]
+    assert abs(b - 2e6 * (3.0 * 4.0 / 5.0) ** -6.0) / b < 1e-12
