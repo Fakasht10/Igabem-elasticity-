@@ -1,0 +1,17 @@
+Weibull vs m:
+  m   5.0 edge 17.88 (+45%)  hole 17.58 (+47%)
+  m   7.5 edge 16.32 (+33%)  hole 15.47 (+29%)
+  m  10.0 edge 14.17 (+15%)  hole 13.09 (+9%)
+  m  15.0 edge 11.47 (-7%)  hole 10.47 (-13%)
+  m  20.0 edge 10.17 (-17%)  hole 9.25 (-23%)
+  m  30.0 edge 8.93 (-27%)  hole 8.09 (-33%)
+  m 119.0 edge 7.15 (-42%)  hole 6.47 (-46%)
+edge Kt 2.15 Kf 1.124  m that matches 12.98   TCD L that matches: PM 1.91 mm, LM 1.38 mm
+hole Kt 2.39 Kf 1.153  m that matches 11.59   TCD L that matches: PM 1.98 mm, LM 1.46 mm
+calibrate on edge, predict hole: TCD PM 11.82 (-1%), Weibull m 12.98: 11.27 (-6%)
+calibrate on hole, predict edge: TCD PM 12.48 (+1%), Weibull m 11.59: 13.07 (+6%)
+Ezeh-Susmel L(2e4) = 1.49 mm
+  edge TCD PM: 11.26 (-8%)
+  edge TCD LM: 12.56 (+2%)
+  hole TCD PM: 10.73 (-11%)
+  hole TCD LM: 12.07 (+1%)

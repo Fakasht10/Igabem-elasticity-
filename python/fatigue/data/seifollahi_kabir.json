@@ -1,0 +1,147 @@
+{
+ "id": "seifollahi-kabir-pla",
+ "material": "PLA (Yousu white, 1.75 mm), HERMES printer, nozzle 0.4 mm 215 C, bed 55 C, layer 0.2 mm, 100% infill, 3200 mm/min. Fatigue specimens YZ (on-edge): concentric-infill plates 67 x 195 mm, laser-cut along the filament direction, so filaments run along the load axis; notches and holes LASER-CUT (no perimeter bead around them).",
+ "sources": {
+  "all": "Seifollahi & Kabir 2026, Polymers 18(1):1, doi 10.3390/polym18010001 (PMC12787623): Tables 1, 3, 5, 6, 7; Fig. 1"
+ },
+ "test": "axial sinusoidal 5 Hz, R = 0.05 (sigma_min/sigma_max), to fracture (ASTM D7791-12); stresses on the net section. Two 'representative' lives per level reported, others excluded by the authors, so the scatter is understated.",
+ "N_ref": 20000.0,
+ "N_ref_note": "inside the tested life range of all three groups (hole 9.1e3-2.2e4); strengths are Basquin fits of Table 6 (equal to the paper's Table 7 to 0.05 %) evaluated at N_ref; T = sigma_10%/sigma_90% from the fit residual",
+ "E_MPa": 2980.0,
+ "nu": 0.35,
+ "UTS_MPa": 37.23,
+ "plain_specimen": {
+  "shape": "plain",
+  "W": 13.0,
+  "T": 3.2,
+  "gauge_length_mm": 50.0,
+  "note": "ASTM D638 type I: W 13, T 3.2, narrow length 57, gauge 50, fillet R 76"
+ },
+ "specimens": {
+  "edge": {
+   "shape": "edge",
+   "WG": 13.0,
+   "WN": 9.0,
+   "T": 3.2,
+   "rho": 2.0,
+   "alpha_deg": 0.0,
+   "L": 60.0
+  },
+  "hole": {
+   "shape": "hole",
+   "W": 13.0,
+   "T": 3.2,
+   "rho": 2.0,
+   "L": 60.0
+  }
+ },
+ "specimen_note": "double semicircular edge notches R 2 (net 9 mm) and a central hole R 2 (net 9 mm) in the 13 x 3.2 narrow section; L = 60 models the 57 mm narrow length (grip traction far from the root)",
+ "raw_lives": {
+  "smooth": [
+   [
+    10.611,
+    99940,
+    106880
+   ],
+   [
+    12.379,
+    38691,
+    43596
+   ],
+   [
+    13.263,
+    24400,
+    24080
+   ],
+   [
+    14.147,
+    17700,
+    18771
+   ]
+  ],
+  "edge": [
+   [
+    10.457,
+    55250,
+    58920
+   ],
+   [
+    13.071,
+    11756,
+    14992
+   ],
+   [
+    13.942,
+    9607,
+    8576
+   ],
+   [
+    14.814,
+    6101,
+    6146
+   ]
+  ],
+  "hole": [
+   [
+    11.982,
+    21670,
+    17164
+   ],
+   [
+    12.781,
+    12759,
+    9553
+   ],
+   [
+    13.58,
+    10936,
+    9112
+   ]
+  ]
+ },
+ "static_MPa": {
+  "smooth_UTS": 37.23,
+  "edge_net_UTS": 36.69,
+  "hole_net_UTS": 34.32
+ },
+ "plain": [
+  {
+   "p": 0,
+   "R": 0.05,
+   "n": 8,
+   "sigma_A50": 13.834,
+   "T": 1.028,
+   "UTS": 37.23,
+   "basquin": [
+    68.13,
+    -0.161
+   ]
+  }
+ ],
+ "notched": [
+  {
+   "notch": "edge",
+   "p": 0,
+   "R": 0.05,
+   "n": 8,
+   "sigma_nA50": 12.309,
+   "T": 1.033,
+   "basquin": [
+    57.143,
+    -0.155
+   ]
+  },
+  {
+   "notch": "hole",
+   "p": 0,
+   "R": 0.05,
+   "n": 6,
+   "sigma_nA50": 11.994,
+   "T": 1.084,
+   "basquin": [
+    48.453,
+    -0.141
+   ]
+  }
+ ]
+}

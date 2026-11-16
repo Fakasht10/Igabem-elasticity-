@@ -1,0 +1,89 @@
+{
+ "data": "fatigue/data/seifollahi_kabir.json",
+ "h": 1.5,
+ "walker": null,
+ "geometry": {
+  "edge": {
+   "Kt_mean": 2.1451464507060005,
+   "Kt_mid": 2.2068331950700006,
+   "unknowns": 5826
+  },
+  "hole": {
+   "Kt_mean": 2.393177220102,
+   "Kt_mid": 2.4671538585100006,
+   "unknowns": 5826
+  }
+ },
+ "scores": {
+  "kt": {
+   "mean_log_ratio": -0.6881541279246741,
+   "rms_log_ratio": 0.6894191344932382,
+   "max_abs_err_pct": 51.80423628203557,
+   "within_20pct": 0,
+   "n": 2
+  },
+  "weibull_Lg50": {
+   "mean_log_ratio": -0.5801060799951062,
+   "rms_log_ratio": 0.5812624859742026,
+   "max_abs_err_pct": 46.03061417306493,
+   "within_20pct": 0,
+   "n": 2
+  },
+  "weibullpool_Lg50": {
+   "mean_log_ratio": -0.5801060799951062,
+   "rms_log_ratio": 0.5812624859742026,
+   "max_abs_err_pct": 46.03061417306493,
+   "within_20pct": 0,
+   "n": 2
+  },
+  "weibullangle_Lg50": {
+   "mean_log_ratio": -0.580106079995106,
+   "rms_log_ratio": 0.5812624859742024,
+   "max_abs_err_pct": 46.03061417306492,
+   "within_20pct": 0,
+   "n": 2
+  }
+ },
+ "rows": [
+  {
+   "notch": "edge",
+   "p": 0,
+   "R": 0.05,
+   "n": 8,
+   "sigma_nA50": 12.309,
+   "T": 1.033,
+   "basquin": [
+    57.143,
+    -0.155
+   ],
+   "s0": 13.834,
+   "m": 119.03992764340866,
+   "Kt": 2.1451464507060005,
+   "kt": 6.448976943018049,
+   "weibull_Lg50": 7.148280022384024,
+   "weibullpool_Lg50": 7.148280022384024,
+   "weibullangle_Lg50": 7.148280022384025,
+   "m_pool": 119.03992764340866
+  },
+  {
+   "notch": "hole",
+   "p": 0,
+   "R": 0.05,
+   "n": 6,
+   "sigma_nA50": 11.994,
+   "T": 1.084,
+   "basquin": [
+    48.453,
+    -0.141
+   ],
+   "s0": 13.834,
+   "m": 119.03992764340866,
+   "Kt": 2.393177220102,
+   "kt": 5.780599900332654,
+   "weibull_Lg50": 6.473088136082592,
+   "weibullpool_Lg50": 6.473088136082592,
+   "weibullangle_Lg50": 6.473088136082593,
+   "m_pool": 119.03992764340866
+  }
+ ]
+}

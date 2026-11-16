@@ -1,0 +1,246 @@
+{
+ "A": 68.13026483611074,
+ "B": -0.16098047722156847,
+ "scores": {
+  "Kt (blind)": {
+   "bias": -1.8269691189064676,
+   "rms": 1.8305940285740356,
+   "x2": 0,
+   "x3": 0,
+   "n": 14
+  },
+  "Weibull m 7.5 (fitted on Ezeh-Susmel)": {
+   "bias": 0.7426851016595019,
+   "rms": 0.7450933991021639,
+   "x2": 0,
+   "x3": 0,
+   "n": 14
+  },
+  "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter": {
+   "bias": 0.16171009985644988,
+   "rms": 0.18043469350014105,
+   "x2": 14,
+   "x3": 14,
+   "n": 14
+  },
+  "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel": {
+   "bias": 0.11600447328041465,
+   "rms": 0.14354495277893697,
+   "x2": 14,
+   "x3": 14,
+   "n": 14
+  },
+  "TCD point, L(N) fitted on Ezeh-Susmel": {
+   "bias": -0.10082645730013214,
+   "rms": 0.15389615706201096,
+   "x2": 12,
+   "x3": 14,
+   "n": 14
+  },
+  "TCD line, L(N) fitted on Ezeh-Susmel": {
+   "bias": 0.08413001816659622,
+   "rms": 0.12918380417281775,
+   "x2": 14,
+   "x3": 14,
+   "n": 14
+  },
+  "Weibull m 12 (fitted here)": {
+   "bias": 0.05378822433371905,
+   "rms": 0.10417080715373397,
+   "x2": 14,
+   "x3": 14,
+   "n": 14
+  },
+  "measured Kf per notch (in-sample)": {
+   "bias": 0.013450314032238564,
+   "rms": 0.055260456445970524,
+   "x2": 14,
+   "x3": 14,
+   "n": 14
+  }
+ },
+ "rows": [
+  {
+   "notch": "edge",
+   "s_a": 10.457,
+   "N": 55250,
+   "Kt (blind)": 993.3651188492719,
+   "Weibull m 7.5 (fitted on Ezeh-Susmel)": 318092.0861263545,
+   "Weibull m 12 (fitted here)": 71042.83773511875,
+   "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter": 88974.17011334332,
+   "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel": 81030.53590499319,
+   "TCD point, L(N) fitted on Ezeh-Susmel": 27055.787193812885,
+   "TCD line, L(N) fitted on Ezeh-Susmel": 45283.50192622578,
+   "measured Kf per notch (in-sample)": 55080.39695081158
+  },
+  {
+   "notch": "edge",
+   "s_a": 10.457,
+   "N": 58920,
+   "Kt (blind)": 993.3651188492719,
+   "Weibull m 7.5 (fitted on Ezeh-Susmel)": 318092.0861263545,
+   "Weibull m 12 (fitted here)": 71042.83773511875,
+   "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter": 88974.17011334332,
+   "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel": 81030.53590499319,
+   "TCD point, L(N) fitted on Ezeh-Susmel": 27055.787193812885,
+   "TCD line, L(N) fitted on Ezeh-Susmel": 45283.50192622578,
+   "measured Kf per notch (in-sample)": 55080.39695081158
+  },
+  {
+   "notch": "edge",
+   "s_a": 13.071,
+   "N": 11756,
+   "Kt (blind)": 248.40593046257666,
+   "Weibull m 7.5 (fitted on Ezeh-Susmel)": 79543.72378056959,
+   "Weibull m 12 (fitted here)": 17765.33308390886,
+   "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter": 22249.333195576226,
+   "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel": 20262.907651396257,
+   "TCD point, L(N) fitted on Ezeh-Susmel": 10990.607633113612,
+   "TCD line, L(N) fitted on Ezeh-Susmel": 16700.274219647894,
+   "measured Kf per notch (in-sample)": 13773.684011236632
+  },
+  {
+   "notch": "edge",
+   "s_a": 13.071,
+   "N": 14992,
+   "Kt (blind)": 248.40593046257666,
+   "Weibull m 7.5 (fitted on Ezeh-Susmel)": 79543.72378056959,
+   "Weibull m 12 (fitted here)": 17765.33308390886,
+   "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter": 22249.333195576226,
+   "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel": 20262.907651396257,
+   "TCD point, L(N) fitted on Ezeh-Susmel": 10990.607633113612,
+   "TCD line, L(N) fitted on Ezeh-Susmel": 16700.274219647894,
+   "measured Kf per notch (in-sample)": 13773.684011236632
+  },
+  {
+   "notch": "edge",
+   "s_a": 13.942,
+   "N": 9607,
+   "Kt (blind)": 166.38983691130184,
+   "Weibull m 7.5 (fitted on Ezeh-Susmel)": 53280.80212304175,
+   "Weibull m 12 (fitted here)": 11899.759675632515,
+   "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter": 14903.279140329836,
+   "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel": 13572.710978301418,
+   "TCD point, L(N) fitted on Ezeh-Susmel": 8487.599484506116,
+   "TCD line, L(N) fitted on Ezeh-Susmel": 12466.070853416446,
+   "measured Kf per notch (in-sample)": 9226.031890743205
+  },
+  {
+   "notch": "edge",
+   "s_a": 13.942,
+   "N": 8576,
+   "Kt (blind)": 166.38983691130184,
+   "Weibull m 7.5 (fitted on Ezeh-Susmel)": 53280.80212304175,
+   "Weibull m 12 (fitted here)": 11899.759675632515,
+   "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter": 14903.279140329836,
+   "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel": 13572.710978301418,
+   "TCD point, L(N) fitted on Ezeh-Susmel": 8487.599484506116,
+   "TCD line, L(N) fitted on Ezeh-Susmel": 12466.070853416446,
+   "measured Kf per notch (in-sample)": 9226.031890743205
+  },
+  {
+   "notch": "edge",
+   "s_a": 14.814,
+   "N": 6101,
+   "Kt (blind)": 114.1456486268045,
+   "Weibull m 7.5 (fitted on Ezeh-Susmel)": 36551.34129936714,
+   "Weibull m 12 (fitted here)": 8163.393942156754,
+   "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter": 10223.84837750703,
+   "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel": 9311.060861657312,
+   "TCD point, L(N) fitted on Ezeh-Susmel": 6649.0888044563235,
+   "TCD line, L(N) fitted on Ezeh-Susmel": 9449.298919505334,
+   "measured Kf per notch (in-sample)": 6329.181000290627
+  },
+  {
+   "notch": "edge",
+   "s_a": 14.814,
+   "N": 6146,
+   "Kt (blind)": 114.1456486268045,
+   "Weibull m 7.5 (fitted on Ezeh-Susmel)": 36551.34129936714,
+   "Weibull m 12 (fitted here)": 8163.393942156754,
+   "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter": 10223.84837750703,
+   "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel": 9311.060861657312,
+   "TCD point, L(N) fitted on Ezeh-Susmel": 6649.0888044563235,
+   "TCD line, L(N) fitted on Ezeh-Susmel": 9449.298919505334,
+   "measured Kf per notch (in-sample)": 6329.181000290627
+  },
+  {
+   "notch": "hole",
+   "s_a": 11.982,
+   "N": 21670,
+   "Kt (blind)": 216.1063770503806,
+   "Weibull m 7.5 (fitted on Ezeh-Susmel)": 97709.20646012109,
+   "Weibull m 12 (fitted here)": 17805.446036449695,
+   "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter": 23552.971500465675,
+   "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel": 20871.462931120157,
+   "TCD point, L(N) fitted on Ezeh-Susmel": 12988.367186253832,
+   "TCD line, L(N) fitted on Ezeh-Susmel": 20616.085421504857,
+   "measured Kf per notch (in-sample)": 20127.757231192514
+  },
+  {
+   "notch": "hole",
+   "s_a": 11.982,
+   "N": 17164,
+   "Kt (blind)": 216.1063770503806,
+   "Weibull m 7.5 (fitted on Ezeh-Susmel)": 97709.20646012109,
+   "Weibull m 12 (fitted here)": 17805.446036449695,
+   "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter": 23552.971500465675,
+   "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel": 20871.462931120157,
+   "TCD point, L(N) fitted on Ezeh-Susmel": 12988.367186253832,
+   "TCD line, L(N) fitted on Ezeh-Susmel": 20616.085421504857,
+   "measured Kf per notch (in-sample)": 20127.757231192514
+  },
+  {
+   "notch": "hole",
+   "s_a": 12.781,
+   "N": 12759,
+   "Kt (blind)": 144.7147513095467,
+   "Weibull m 7.5 (fitted on Ezeh-Susmel)": 65430.570381701895,
+   "Weibull m 12 (fitted here)": 11923.344096966046,
+   "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter": 15772.15101105559,
+   "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel": 13976.4897675339,
+   "TCD point, L(N) fitted on Ezeh-Susmel": 10114.493198547189,
+   "TCD line, L(N) fitted on Ezeh-Susmel": 15645.409555273314,
+   "measured Kf per notch (in-sample)": 13478.470288046607
+  },
+  {
+   "notch": "hole",
+   "s_a": 12.781,
+   "N": 9553,
+   "Kt (blind)": 144.7147513095467,
+   "Weibull m 7.5 (fitted on Ezeh-Susmel)": 65430.570381701895,
+   "Weibull m 12 (fitted here)": 11923.344096966046,
+   "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter": 15772.15101105559,
+   "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel": 13976.4897675339,
+   "TCD point, L(N) fitted on Ezeh-Susmel": 10114.493198547189,
+   "TCD line, L(N) fitted on Ezeh-Susmel": 15645.409555273314,
+   "measured Kf per notch (in-sample)": 13478.470288046607
+  },
+  {
+   "notch": "hole",
+   "s_a": 13.58,
+   "N": 10936,
+   "Kt (blind)": 99.29375624940594,
+   "Weibull m 7.5 (fitted on Ezeh-Susmel)": 44894.15935797373,
+   "Weibull m 12 (fitted here)": 8181.015492398092,
+   "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter": 10821.813974380007,
+   "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel": 9589.749183421929,
+   "TCD point, L(N) fitted on Ezeh-Susmel": 7991.538672008728,
+   "TCD line, L(N) fitted on Ezeh-Susmel": 12085.576732974287,
+   "measured Kf per notch (in-sample)": 9248.04093076496
+  },
+  {
+   "notch": "hole",
+   "s_a": 13.58,
+   "N": 9112,
+   "Kt (blind)": 99.29375624940594,
+   "Weibull m 7.5 (fitted on Ezeh-Susmel)": 44894.15935797373,
+   "Weibull m 12 (fitted here)": 8181.015492398092,
+   "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter": 10821.813974380007,
+   "supported hot spot Kt/(1+sqrt(l chi0)), l 0.986 fitted on Ezeh-Susmel": 9589.749183421929,
+   "TCD point, L(N) fitted on Ezeh-Susmel": 7991.538672008728,
+   "TCD line, L(N) fitted on Ezeh-Susmel": 12085.576732974287,
+   "measured Kf per notch (in-sample)": 9248.04093076496
+  }
+ ]
+}
