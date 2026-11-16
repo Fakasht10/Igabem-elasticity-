@@ -7,6 +7,8 @@ Criteria and what each one is allowed to know:
     kt               nothing but the elastic field (Kf = Kt)                                   blind
     weibull          m from the plain series' own scatter ratio T; plain gauge volume W T L_g  blind (L_g assumed)
     weibullpool      as weibull, m pooled over every plain series (sample-size weighted)      blind (L_g assumed)
+    weibullangle     plain strength and m pooled over the print angles at the same R (the notched strengths of
+                     printed notches do not follow the plain angle effect; fatigue.printed)  blind (L_g assumed)
     tcd_point/line   L from the dataset's own TCD calibration (tcd_reference), if it has one   fitted on notches
 Runtime: one IgBEM solve per notch geometry (~1.5 min each at h 1.5, cached in cache/fatigue), criteria in < 1 s.
 """
@@ -52,6 +54,11 @@ def predict(data, fields, gauges, log=print):
     tcd = data.get("tcd_reference")
     L = tcd["A_mm"] * data["N_ref"] ** tcd["b"] if tcd else None
     m_pool = C.m_pooled([(r["T"], r["n"]) for r in data["plain"]])
+    by_R = {}
+    for q in data["plain"]:
+        by_R.setdefault(q["R"], []).append(q)
+    ang = {R: (math.exp(np.mean([math.log(q["sigma_A50"]) for q in ser])), C.m_pooled([(q["T"], q["n"]) for q in ser]))
+           for R, ser in by_R.items()}
     rows = []
     for r in data["notched"]:
         pr = plain.get((r["p"], r["R"]))
@@ -65,6 +72,7 @@ def predict(data, fields, gauges, log=print):
         for g in gauges:
             row[f"weibull_Lg{g:g}"] = C.weibull(f, s0, m, ps["W"] * ps["T"] * g)
             row[f"weibullpool_Lg{g:g}"] = C.weibull(f, s0, m_pool, ps["W"] * ps["T"] * g)
+            row[f"weibullangle_Lg{g:g}"] = C.weibull(f, *ang[r["R"]], ps["W"] * ps["T"] * g)
         row["m_pool"] = m_pool
         if L:
             row["L_mm"] = L
@@ -148,7 +156,7 @@ def main(argv=None):
         for p, w in walker.items():
             print(f"Walker p {p}: gamma {w['gamma']:.3f}, rms log residual of the plain fit {w['rms_log']:.3f}")
     rows = predict(data, fields, a.gauge)
-    keys = ["kt"] + [f"weibull_Lg{g:g}" for g in a.gauge] + [f"weibullpool_Lg{g:g}" for g in a.gauge] + (["tcd_point", "tcd_line"] if data.get("tcd_reference") else [])
+    keys = ["kt"] + [f"weibull_Lg{g:g}" for g in a.gauge] + [f"weibullpool_Lg{g:g}" for g in a.gauge] + [f"weibullangle_Lg{g:g}" for g in a.gauge] + (["tcd_point", "tcd_line"] if data.get("tcd_reference") else [])
     sc = scores(rows, keys)
     os.makedirs(a.out, exist_ok=True)
     tag = f"{data['id']}_h{a.h:g}" + (f"_walker{a.walker:g}" if a.walker is not None else "")
@@ -163,11 +171,12 @@ def main(argv=None):
         print(f"{k:16s} mean {100 * math.expm1(v['mean_log_ratio']):+6.1f}%  rms log {v['rms_log_ratio']:.3f}  "
               f"max |err| {v['max_abs_err_pct']:5.1f}%  within 20%: {v['within_20pct']}/{v['n']}")
     g = a.gauge[len(a.gauge) // 2]
-    mid, pool = f"weibull_Lg{g:g}", f"weibullpool_Lg{g:g}"
+    mid, pool, angle = f"weibull_Lg{g:g}", f"weibullpool_Lg{g:g}", f"weibullangle_Lg{g:g}"
     labels = {"kt": r"$K_f = K_t$ (blind)", mid: f"Weibull, m per series\n($L_g$ = {g:g} mm, blind)",
               pool: f"Weibull, pooled m = {rows[0]['m_pool']:.1f}\n($L_g$ = {g:g} mm, blind)",
+              angle: f"Weibull, plain pooled over angles\n($L_g$ = {g:g} mm, blind)",
               "tcd_point": "TCD point, authors' $L_M$\n(L fitted on notches)"}
-    figure(rows, [k for k in ("kt", mid, pool, "tcd_point") if k in keys], labels,
+    figure(rows, [k for k in ("kt", mid, angle, "tcd_point") if k in keys], labels,
            os.path.join(a.out, f"fig_transfer_{tag}.png"))
 
 

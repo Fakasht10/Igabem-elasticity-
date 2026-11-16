@@ -56564,3 +56564,21 @@ Convergence: `python3 -m fatigue.figures --convergence` runs nested levels 4…0
 
 The TCD point stress moves by less than 2.5% at every level and every notch. A conforming tensor-product multipatch still carries the root's flank columns and thickness layers to the grip, about 35% of the V's unknowns. Only a non-conforming seam would stop that.
 
+
+## Print angle and print-resolved Weibull (`fatigue.printed`)
+
+On Ezeh–Susmel the notched strengths hardly change with the manufacturing angle p, while the plain strengths do (R −1: 10.4 / 4.5 / 6.3 MPa). The notches are printed and have a 0.4 mm perimeter bead at the root. Pooling the plain series over p at the same R (`weibullangle`, Lg 30) is the best blind transfer: +1%, rms log 0.198, 13/18 within 20%. Matching on p gives 11/18 at rms 0.275.
+
+`python3 -m fatigue.printed` sums the hazards over two regions and two failure modes. The regions are the contour bead, with its frame along the edge, and the infill at ±45 − p. The modes are F (filament) and T (filament bond). S_T and the shear ratio are calibrated on the plain series at each R, and S_F comes from the static PLA card.
+
+| run | mean | rms log | within ±20% |
+|---|---|---|---|
+| blind | +27% | 0.317 | 6/18 |
+| S_F/S_T fitted, leave one notch out | +2% | 0.252 | 9/18 |
+| S_F/S_T fitted on all 18 (1.21) | +2% | 0.192 | 12/18 |
+
+The result is negative and stable for t_c from 0.2 to 0.8 mm:
+- The model learns the plain angle effect as an infill-T effect and carries it into the notches, which don't show it.
+- The fitted S_F/S_T of about 1.2 tends toward isotropic.
+
+Bead-level localisation tensors would only rescale S0 per mode, so they were not built. The field cache now stores the full stress tensor (`sig`) at the TET10 points.

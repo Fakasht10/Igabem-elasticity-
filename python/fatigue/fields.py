@@ -5,6 +5,7 @@
     f["Kt_mid"], f["Kt_mean"]      root sigma_1 / nominal net stress at mid-thickness, and averaged over z
     f["P"], f["w"], f["s1"]        TET10 Gauss points of the quarter, weights (mm^3), positive sigma_1 there
     f["g1"]                        |grad sigma_1| at the Gauss points (for gradient-supported Weibull)
+    f["sig"]                       full stress there, Voigt (xx, yy, zz, yz, xz, xy), float32 (ply-frame criteria)
 
 Reuses failure.igabem_backend (STEP -> multipatch, TET10 mesh, `bc_case --serve`) and failure.fields (TET10
 quadrature and gradient), exactly as failure.pla_orient does for the static PLA plates. A traction-loaded model's
@@ -39,7 +40,10 @@ def field(spec, h=1.5, work=WORK, volume=True, nd=200, hmat=False, coarsen=0, lo
     path = os.path.join(work, f"{spec.tag}_{'b' if designed else 'h'}{h:g}{f'_c{coarsen}' if coarsen else ''}"
                         f"{'' if volume else '_line'}.npz")
     if os.path.exists(path):
-        return dict(np.load(path))
+        f = dict(np.load(path))
+        if not volume or "sig" in f:
+            return f
+        log(f"{spec.tag}: cache has no full stress tensor; re-solving")
     os.makedirs(work, exist_ok=True)
     step = os.path.join(work, f"{spec.tag}.step")
     if not os.path.exists(step):
@@ -80,7 +84,8 @@ def field(spec, h=1.5, work=WORK, volume=True, nd=200, hmat=False, coarsen=0, lo
             lam, vec = np.linalg.eigh(sq)
             n1 = vec[..., -1]                                               # d sigma_1 = n1 . (d sigma) . n1
             g1 = np.einsum("qi,qijk,qj->qk", n1, grad, n1)
-            out.update(P=P, w=w, s1=np.maximum(lam[:, -1], 0.0), g1=np.linalg.norm(g1, axis=1))
+            out.update(P=P, w=w, s1=np.maximum(lam[:, -1], 0.0), g1=np.linalg.norm(g1, axis=1),
+                       sig=sq[:, [0, 1, 2, 1, 0, 0], [0, 1, 2, 2, 2, 1]].astype(np.float32))
     out["Kt_mid"] = float(out["s1_line"][len(z) // 2, 0])
     out["Kt_mean"] = float(out["s1_line"][:, 0].mean())
     out["seconds"] = time.perf_counter() - t0

@@ -120,3 +120,26 @@ def test_blocks_exact_closed_and_fast():
                             _, xu, xv = evaluate(Q, U[i] + a * du, V[j] + b * dv)
                             area += wa * wb * du * dv * np.linalg.norm(np.cross(xu, xv))
         assert math.isclose(area, _outline_area(s), rel_tol=1e-6)
+
+
+def test_printed_edge_distance_and_frames():
+    from fatigue import printed as Pr
+    s = Specimen.from_dict(DATA["specimens"]["blunt"])              # root arc centre (WN/2 + rho, 0), radius 3
+    xy = np.array([[2.9, 0.0], [3.0 + 3 - 3 * math.cos(0.3), 3 * math.sin(0.3) * 0.9], [1.0, 0.0], [12.4, 30.0]])
+    d, t = Pr.edge_distance(s, xy)
+    assert d[0] == pytest.approx(0.1) and abs(t[0] @ [1, 0]) < 1e-12        # root: tangent along the load axis
+    assert d[2] == pytest.approx(2.0)                                       # symmetry lines are not free edges
+    assert d[3] == pytest.approx(0.1) and abs(t[3] @ [0, 1]) == pytest.approx(1.0)
+    # uniaxial unit stress along y in a ply at phi: F = cos^2, T = sqrt(sin^4 + r^2 sin^2 cos^2)
+    sig = Pr.tensor(np.array([[0, 1.0, 0, 0, 0, 0]]))
+    F, N, X = Pr.mode_stresses(sig, Pr._frame_from_dir(Pr.ply_dir(30.0)[None]))
+    assert F[0] == pytest.approx(math.cos(math.radians(30)) ** 2) and N[0] == pytest.approx(0.25)
+    assert abs(X[0]) == pytest.approx(math.sin(math.radians(30)) * math.cos(math.radians(30)))
+
+
+def test_printed_plain_hazard_is_the_uniform_limit():
+    from fatigue import printed as Pr
+    m, V = 30.0, 540.0
+    # contour only: J = V / S_F^m; one 0-deg ply set and no contour: F mode at S_F, T mode zero
+    assert Pr.plain_log_hazard((0.0,), m, 20.0, 9.0, 1.0, V, 1.0) == pytest.approx(math.log(V) - m * math.log(20.0))
+    assert Pr.plain_log_hazard((0.0,), m, 20.0, 9.0, 1.0, V, 0.0) == pytest.approx(math.log(V) - m * math.log(20.0))
