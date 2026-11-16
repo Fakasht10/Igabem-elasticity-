@@ -74,3 +74,17 @@ def test_likelihood_runs_and_respects_admissibility():
     m = sde.Model(sde.dataset(), "point")
     assert np.isfinite(m.loglike(th()))
     assert m.loglike(th(n=1.3)) == -np.inf
+
+
+def test_field_direction_is_bisector_and_chi_matches():
+    """Geometry-free input: the steepest-descent direction read from the field cloud equals the notch bisector
+    (x axis) within 2 degrees, and chi matches the bisector-profile fit within 4 %, on all three coupon notches."""
+    from . import methods as M
+    for n in ("sharp", "intermediate", "blunt"):
+        xy, s = sde.notch_field_points(n)
+        peak, e, chi, h = sde.hot_spot_auto(xy, s)
+        assert abs(math.degrees(math.atan2(e[1], e[0]))) < 2.0
+        assert abs(chi / M.chi(n) - 1) < 0.04
+        assert abs(peak / M._prof(n).s[0] - 1) < 0.002
+        # window sensitivity: halving c changes chi by < 4 %
+        assert abs(sde.hot_spot_auto(xy, s, c=0.1)[2] / chi - 1) < 0.04

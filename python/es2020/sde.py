@@ -244,6 +244,61 @@ def _refl(x):
     return np.where(x <= LIG, x, 2 * LIG - np.minimum(x, 2 * LIG))
 
 
+def field_input(xyz, s1, h):
+    """Geometry-free process-model input from ANY elastic field sampled at points xyz (n x d, mm) with values s1
+    (max principal stress per unit load): the hot-spot value sigma_peak, the steepest-descent direction e (unit vector,
+    -grad sigma / |grad sigma|) and the relative gradient chi = |grad sigma| / sigma_peak (1/mm). Weighted quadratic
+    least squares on the points within h of the hot spot. No K_t, nominal stress, notch radius or bisector is used.
+    (At a notch root on a free surface the tangential derivative vanishes, so e is the inward normal.)"""
+    xyz = np.atleast_2d(np.asarray(xyz, float))
+    s1 = np.asarray(s1, float)
+    i0 = int(np.argmax(s1))
+    d = xyz - xyz[i0]
+    rr = np.linalg.norm(d, axis=1)
+    m = rr <= h
+    D = d[m]
+    nd = D.shape[1]
+    cols = [np.ones(len(D))] + [D[:, k] for k in range(nd)] + \
+           [D[:, k] * D[:, l] for k in range(nd) for l in range(k, nd)]
+    A = np.stack(cols, axis=1)
+    w = np.exp(-(rr[m] / h) ** 2)
+    coef, *_ = np.linalg.lstsq(A * w[:, None], s1[m] * w, rcond=None)
+    g = coef[1:1 + nd]
+    peak = coef[0]
+    return float(peak), -g / np.linalg.norm(g), float(np.linalg.norm(g) / peak)
+
+
+def notch_field_points(notch):
+    """The stored thickness-mean sigma_1 field around a coupon root as a plain point cloud (x, y in mm, apex at 0):
+    the polar grid of fields.json (theta from the bisector, one half by symmetry, mirrored here to both halves)."""
+    a = M.fields()[notch]["area"]
+    r, th, s = np.asarray(a["r"]), np.asarray(a["th"]), np.asarray(a["s1"])
+    R, T = np.meshgrid(r, np.concatenate([-th[::-1], th]), indexing="ij")
+    S = np.concatenate([s[:, ::-1], s], axis=1)
+    return np.stack([R.ravel() * np.cos(T.ravel()), R.ravel() * np.sin(T.ravel())], axis=1), S.ravel()
+
+
+def hot_spot_auto(xyz, s1, c=0.2, h0=1.0, it=8):
+    """field_input with a self-consistent window h = c / chi (the field's own decay length), so no geometric length
+    enters. Returns (sigma_peak, e, chi, h)."""
+    h = h0
+    for _ in range(it):
+        peak, e, chi = field_input(xyz, s1, h)
+        h_new = c / chi
+        if abs(h_new / h - 1) < 1e-3:
+            break
+        h = h_new
+    return peak, e, chi, h
+
+
+@lru_cache(maxsize=None)
+def hot_spot(notch):
+    """(sigma_peak, chi) per unit net load for a coupon notch, read from the field cloud only (hot_spot_auto)."""
+    xy, s = notch_field_points(notch)
+    peak, e, chi, h = hot_spot_auto(xy, s)
+    return peak, chi
+
+
 def k_eff(notch, L, mode):
     """Effective elastic stress per unit net stress at the hot spot of a notch.
     'point': Kt / (1 + chi L / 2), chi = relative gradient at the root (first-order process-zone average, Pade-stable).
@@ -251,11 +306,11 @@ def k_eff(notch, L, mode):
              this equals (sigma(0) + sigma(L)) / 2, the trapezoid line average over L.
     'peak' : Kt (no support, L unused)."""
     p = M._prof(notch)
-    kt = float(p.s[0])
+    kt, chi = hot_spot(notch)            # field-derived: peak and steepest-descent gradient, no K_t or bisector input
     if mode == "peak":
         return kt
     if mode == "point":
-        return kt / (1 + M.chi(notch) * L / 2)
+        return kt / (1 + chi * L / 2)
     if mode == "avg":
         return 0.5 * (kt + float(p(_refl(L))))
     raise ValueError(mode)
