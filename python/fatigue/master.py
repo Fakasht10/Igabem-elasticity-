@@ -157,22 +157,23 @@ def figure(res, path, show=(("net", "fitted"), ("kt", "fitted"), ("tcd_point", "
              "tcd_point": "TCD point, constant L", "hotspot": r"supported hot spot $K_t/(1+\sqrt{l\chi_0})$"}
     for ax, key in zip(axs, show):
         th, g, per, (c, d), (x, y, w, ds, nt) = res[key]
-        groups = [("Ezeh-Susmel", False, "0.6", "o", "Ezeh-Susmel plain (series lines)"),
-                  ("Ezeh-Susmel", True, "#9467bd", "s", "Ezeh-Susmel notched (series lines)"),
+        groups = [("Ezeh-Susmel", False, "0.35", "o", "Ezeh-Susmel plain, one point per series at 2e6"),
+                  ("Ezeh-Susmel", True, "#9467bd", "s", "Ezeh-Susmel notched, one point per series at 2e6"),
                   ("Seifollahi", False, "k", "o", "Seifollahi smooth"),
                   ("Seifollahi", True, "#d62728", "^", "Seifollahi notched")]
         for dsn, isn, col, mk, lab in groups:
             k = (ds == dsn) & (nt == isn)
-            if dsn == "Ezeh-Susmel":                                  # 4 samples per series: draw the series line
-                xs, ys = x[k].reshape(-1, len(N_EZ)), y[k].reshape(-1, len(N_EZ))
-                for i, (xx, yy) in enumerate(zip(xs, ys)):
-                    ax.plot(10 ** yy, 10 ** xx, color=col, lw=1.0, alpha=0.8, label=lab if i == 0 else None)
+            if dsn == "Ezeh-Susmel":       # only the reported value per series: sigma_A50 at 2e6 (Table 1)
+                xs = x[k].reshape(-1, len(N_EZ))[:, -1]
+                jit = np.exp(np.linspace(-0.12, 0.12, len(xs)))      # spread the 2e6 column so series are visible
+                ax.scatter(2e6 * jit, 10 ** xs, marker=mk, s=24, facecolor="none" if not isn else col,
+                           edgecolors=col, linewidths=1.0, zorder=4, label=lab)
             else:
                 ax.scatter(10 ** y[k], 10 ** x[k], marker=mk, s=26, color=col, edgecolors="k", linewidths=0.3,
                            zorder=4, label=lab)
         ax.grid(alpha=0.3, which="both")
         Ns = np.geomspace(1e3, 3e6, 20)
-        ax.plot(Ns, 10 ** ((np.log10(Ns) - c) / d), "k-", lw=1.4, label="master line")
+        ax.plot(Ns, 10 ** ((np.log10(Ns) - c) / d), "k-", lw=1.4, label="the one master curve (fitted)")
         ax.set(xscale="log", yscale="log", xlabel="cycles to failure $N_f$",
                title=f"{title[key[0]]}\n$\\gamma$ {g:.2f}; rms Seif {per['Seifollahi']:.2f}, Ezeh {per['Ezeh-Susmel']:.2f}")
         ax.title.set_fontsize(9.5)
