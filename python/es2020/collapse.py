@@ -70,6 +70,32 @@ def constraint(base):
     return lambda n, N, s, p, L=_len: base(n, N, s, p[:-1], L) * p[-1] ** (-np.asarray(s) / paper.UTS)
 
 
+# ---------------------------------------------------------------- stress triaxiality on the bisector (stored tensor)
+NU = 0.35
+
+
+def eta_profile(notch):
+    """eta = sigma_h / sigma_vM along the bisector (thickness mean of each measure), from the stored IgBEM full-tensor
+    measures: tr(sigma) = s1 + (s1 - E eps1) / nu (isotropic Hooke, principal axes shared). Uniaxial = 1/3."""
+    P = M.measure_profile
+    d = P(notch, "s1").d
+    s1, vm, e1 = P(notch, "s1").s, P(notch, "vm").s, P(notch, "eps1").s
+    return d, (s1 + (s1 - e1) / NU) / 3 / vm
+
+
+def eta_at(notch, x):
+    d, e = eta_profile(notch)
+    return np.interp(np.clip(x, 0, d[-1]), d, e)
+
+
+def triax(base_len):
+    """K_f = base * (3 eta(L/2))^beta, beta = ln(last constant): eta at the point-method distance L/2."""
+    def f(n, N, s, p, L=_len):
+        Lp = base_len(p, N)
+        return (p[-1] ** np.log(3 * eta_at(n, Lp / 2)))
+    return f
+
+
 CLOSURES = {   # name: (f, p0, length map, label, kind) ; kind: 'free' fit, 'pred' no fit
     "net": (lambda n, N, s, p, L=None: np.ones(np.shape(N)), (), None, "C0 net stress, K_f = 1", "pred"),
     "kt": (lambda n, N, s, p, L=None: np.full(np.shape(N), kt(n)), (), None, "C1 K_f = K_t (elastic)", "pred"),
@@ -82,6 +108,14 @@ CLOSURES = {   # name: (f, p0, length map, label, kind) ; kind: 'free' fit, 'pre
                    "C6 Neuber x constraint, rho' = {:.3g} N^{:.3f} mm, NSR {:.3g}", "free"),
     "net_nsr": (lambda n, N, s, p, L=None: p[0] * p[1] ** (-np.asarray(s) / paper.UTS) * np.ones(np.shape(N)),
                 (1.0, 1.5), None, "C6'' net x constraint only, c {:.3g}, NSR {:.3g}", "free2"),
+    "net_triax": (lambda n, N, s, p, L=None: p[0] * p[1] ** np.log(3 * eta_at(n, paper.lm_paper(N) / 2)),
+                  (1.0, 2.0), None, "T1 net x c (3 eta)^beta at paper L_M/2, c {:.3g}, exp(beta) {:.3g}", "free2"),
+    "neuber_triax": (lambda n, N, s, p, L=_len: neuber(n, N, s, p[:2], L) * p[2] ** np.log(3 * eta_at(n, L(p[:2], N) / 2)),
+                     (5.0, -0.25, 2.0), _len, "T2 Neuber x (3 eta(rho'/2))^beta, rho' = {:.3g} N^{:.3f} mm, exp(beta) {:.3g}", "free"),
+    "neuber_nsr_triax": (lambda n, N, s, p, L=_len: neuber(n, N, s, p[:2], L) * p[2] ** (-np.asarray(s) / paper.UTS)
+                         * p[3] ** np.log(3 * eta_at(n, paper.lm_paper(N) / 2)),
+                         (5.0, -0.25, 1.5, 2.0), _len,
+                         "T3 Neuber x constraint x triaxiality, rho' = {:.3g} N^{:.3f} mm, NSR {:.3g}, exp(beta) {:.3g}", "free"),
     "elhaddad_nsr": (constraint(elhaddad), (16.4, -0.242, 1.5), _len,
                      "C6' El Haddad x constraint, L = {:.3g} N^{:.3f} mm, NSR {:.3g}", "free"),
 }
