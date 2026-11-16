@@ -135,7 +135,8 @@ def insert(P, d, params):
         P.V = K
 
 
-def grade(patches, targets, h0=0.025, growth=1.4, split=0, inner=(), tol=None):
+def link(patches, tol=None):
+    """Classes of (patch, direction) that must share knots, and the patches sharing each (patch, d, side) row."""
     if tol is None:
         X = np.vstack([P.euclid().reshape(-1, 3) for P in patches])
         tol = 1e-8 * np.linalg.norm(X.max(0) - X.min(0))
@@ -158,6 +159,11 @@ def grade(patches, targets, h0=0.025, growth=1.4, split=0, inner=(), tol=None):
                 cls.union((ka, da), (kb, db), rev)
                 shared.setdefault((ka, da, sa), []).append(kb)
                 shared.setdefault((kb, db, sb), []).append(ka)
+    return cls, shared
+
+
+def grade(patches, targets, h0=0.025, growth=1.4, split=0, inner=(), tol=None):
+    cls, shared = link(patches, tol)
     tset = set(targets)
     # 2. requests: rows of direction 1 - d at side `end` are the ends of direction d
     want = {}

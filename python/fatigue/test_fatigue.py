@@ -76,4 +76,47 @@ def test_every_notched_series_has_its_plain_series():
 def test_blunt_notch_Kt_on_igabem(tmp_path):
     from fatigue.fields import field
     f = field(Specimen.from_dict(DATA["specimens"]["blunt"]), h=1.5, work=str(tmp_path), volume=False)
-    assert abs(f["Kt_mean"] / 1.591 - 1) < 0.01          # regression value, h 1.5 (2026-11-15)
+    assert abs(f["Kt_mid"] / 1.621 - 1) < 0.01           # regression value, designed blocks, h 1.5 (2026-11-15)
+
+
+def _outline_area(s, n=4000):
+    pts = []
+    for seg in outline(s):
+        if seg[0] == "line":
+            pts.append(seg[1])
+            continue
+        p, c, q = (np.asarray(x) for x in seg[1:])
+        a0, a1 = math.atan2(*(p - c)[::-1]), math.atan2(*(q - c)[::-1])
+        pts += [c + s.rho * np.array([math.cos(a), math.sin(a)]) for a in np.linspace(a0, a1, n)[:-1]]
+    x, y = np.array(pts).T
+    return 0.5 * abs(x @ np.roll(y, -1) - y @ np.roll(x, -1))
+
+
+def test_blocks_exact_closed_and_fast():
+    """Designed root layout: every patch edge shared (closed, conforming), top face area = outline area, < 1 s."""
+    import time
+    from grade_dat import link
+    from spline_checks import evaluate
+    from fatigue import blocks
+    g, w = np.polynomial.legendre.leggauss(4)
+    g, w = 0.5 * (g + 1), 0.5 * w
+    for v in DATA["specimens"].values():
+        s = Specimen.from_dict(v)
+        t = time.perf_counter()
+        P, names, info = blocks.build(s)
+        assert time.perf_counter() - t < 1.0
+        _, shared = link(P)
+        assert all((k, d, e) in shared for k in range(len(P)) for d in (0, 1) for e in (0, 1))
+        area = 0.0
+        for Q, nm in zip(P, names):
+            if not nm.endswith(".top"):
+                continue
+            U, V = np.unique(Q.U), np.unique(Q.V)
+            for i in range(len(U) - 1):
+                for j in range(len(V) - 1):
+                    du, dv = U[i + 1] - U[i], V[j + 1] - V[j]
+                    for a, wa in zip(g, w):
+                        for b, wb in zip(g, w):
+                            _, xu, xv = evaluate(Q, U[i] + a * du, V[j] + b * dv)
+                            area += wa * wb * du * dv * np.linalg.norm(np.cross(xu, xv))
+        assert math.isclose(area, _outline_area(s), rel_tol=1e-6)

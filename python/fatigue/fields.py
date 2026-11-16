@@ -18,6 +18,7 @@ import numpy as np
 from failure.fields import tet10_gradient, tet10_quadrature
 from failure.igabem_backend import ROOT, Solve, fea_mesh, igabem_geometry
 
+from . import blocks
 from .specimens import case, quarter_step
 
 WORK = os.path.join(ROOT, "cache", "fatigue")
@@ -28,11 +29,15 @@ def _s1(sig):
     return np.linalg.eigvalsh(sig)[..., -1]
 
 
-def field(spec, h=1.5, work=WORK, volume=True, nd=200, hmat=False, log=print):
-    """hmat: H-matrix solver (needed past ~25k unknowns, where the dense LU outgrows 15 GB); same cache file."""
+def field(spec, h=1.5, work=WORK, volume=True, nd=200, hmat=False, coarsen=0, log=print):
+    """h: element size away from the root. An edge notch is built from the designed block layout (fatigue.blocks,
+    root-graded, < 1 s); a hole still goes through the STEP import. hmat: H-matrix solver (needed past ~25k unknowns,
+    where the dense LU outgrows 15 GB); same cache file. coarsen: nested coarser level of the block mesh (convergence)."""
     if spec.shape == "plain":
         raise ValueError("a plain bar has the unit field everywhere; no solve")
-    path = os.path.join(work, f"{spec.tag}_h{h:g}{'' if volume else '_line'}.npz")
+    designed = spec.shape == "edge"                    # exact block layout (fatigue.blocks); others still via STEP
+    path = os.path.join(work, f"{spec.tag}_{'b' if designed else 'h'}{h:g}{f'_c{coarsen}' if coarsen else ''}"
+                        f"{'' if volume else '_line'}.npz")
     if os.path.exists(path):
         return dict(np.load(path))
     os.makedirs(work, exist_ok=True)
@@ -40,7 +45,13 @@ def field(spec, h=1.5, work=WORK, volume=True, nd=200, hmat=False, log=print):
     if not os.path.exists(step):
         quarter_step(spec, step)
     t0 = time.perf_counter()
-    dat, info = igabem_geometry(step, work, h=h, curvature=12, degree=2, log=log)
+    if designed:
+        dat = os.path.join(work, f"{spec.tag}_b{h:g}_c{coarsen}.dat")
+        r = 1.5 / h                                    # h is one global mesh scale: 1.5 = the block defaults
+        info = blocks.write(spec, dat, h=h, h0=spec.rho / 8 / r, hz0=spec.T / 60 / r, nz=max(4, round(12 * r)),
+                            coarsen=coarsen)
+    else:
+        dat, info = igabem_geometry(step, work, h=h, curvature=12, degree=2, log=log)
     (rx, ry, _), sgn = spec.root
     z = np.array(Z_STATIONS) * spec.T
     d = np.concatenate([[0.0], np.geomspace(2e-3, 0.999 * spec.ligament, nd - 1)])
