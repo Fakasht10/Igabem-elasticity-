@@ -1,6 +1,7 @@
 // Solution cache (src/case_io.hpp CaseFile::solve): a case solved once is read back with no operators and no
 // factorisation, bit for bit; any change to an input the solution depends on misses; a new load case on the same
-// geometry and supports reuses the stored operators and LU factors and matches a fresh solve.
+// geometry and supports reuses the stored operators and LU factors and matches a fresh solve; the key does not
+// depend on where the input files are (copied or relative paths hit).
 //
 // usage: test_solution_cache <repository root>
 
@@ -108,6 +109,15 @@ int main(int argc, char** argv) {
     expect("load changed: cached-LU solution equals a fresh solve (1e-12)", e < 1e-12);
     const double s = (dF.sol[0].u - 1.5 * a.sol[0].u).norm() / dF.sol[0].u.norm();
     expect("load changed: 1.5 x force gives 1.5 x displacement (1e-12)", s < 1e-12);
+  }
+  {  // 5. the key depends on file contents, not locations: a copied geometry in another folder still hits
+    fs::create_directories(tmp / "moved");
+    const std::string geo2 = (tmp / "moved" / "renamed.dat").string();
+    fs::copy_file(geo, geo2);
+    Run mv(write(tmp / "moved" / "case.json", caseText(geo2, cache)));
+    expect("geometry copied to another folder and renamed: still a hit", mv.cf.solution_from_cache);
+    Run rel(write(tmp / "moved" / "rel.json", caseText("renamed.dat", cache)));
+    expect("geometry given relative to the case file: still a hit", rel.cf.solution_from_cache);
   }
   std::ofstream(geo, std::ios::app) << "\n# mesh edited\n";
   Run dgeo(base);

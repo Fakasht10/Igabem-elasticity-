@@ -119,10 +119,10 @@ struct CaseFile {
   std::map<std::string, Json> names;  // "names": named regions
 
   // Builds the mesh, regions, supports and load cases into model and cases.
-  // Solution cache (solve()): the key hashes the canonical case text (all but "output" and "cache"), the bytes
+  // Solution cache (solve()): the key hashes the canonical case text (all but "output", "cache" and the file paths), the bytes
   // of every file it reads (geometry after grading, face map, field files), the material, quadrature and
   // partition options, and the operator and solution format versions.
-  static constexpr int kSolutionVersion = 1;
+  static constexpr int kSolutionVersion = 2;  // 2: key independent of file locations (content only)
   std::string doc;                  // canonical case text
   std::vector<std::string> inputs;  // files read
   bool solution_from_cache = false;
@@ -130,7 +130,7 @@ struct CaseFile {
 
   void load(const std::string& path, BcModel& model, std::vector<LoadCase>& cases) {
     const Json J = Json::load(path);
-    doc = J.dump({"output", "cache"});
+    doc = J.dump({"output", "cache", "geometry", "faces"});  // file paths left out: the files are hashed by content
     inputs.clear();
     const std::filesystem::path dir = std::filesystem::path(path).parent_path();
     auto resolve = [&](const std::string& f) {
@@ -338,7 +338,7 @@ struct CaseFile {
     std::vector<std::string> files = inputs;
     files.push_back(geometry);
     files.push_back(faces);
-    for (const auto& f : files) h = fnv1a(f + '|' + (std::filesystem::exists(f) ? readFile(f) : std::string("-")), h);
+    for (const auto& f : files) h = fnv1a('|' + (std::filesystem::exists(f) ? readFile(f) : std::string("-")), h);  // content, not path
     char hex[17];
     std::snprintf(hex, sizeof hex, "%016llx", static_cast<unsigned long long>(h));
     return std::string("sol_") + hex;
