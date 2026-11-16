@@ -145,3 +145,21 @@ def test_printed_plain_hazard_is_the_uniform_limit():
     # contour only: J = V / S_F^m; one 0-deg ply set and no contour: F mode at S_F, T mode zero
     assert Pr.plain_log_hazard((0.0,), m, 20.0, 9.0, 1.0, V, 1.0) == pytest.approx(math.log(V) - m * math.log(20.0))
     assert Pr.plain_log_hazard((0.0,), m, 20.0, 9.0, 1.0, V, 0.0) == pytest.approx(math.log(V) - m * math.log(20.0))
+
+
+def test_sn_life_and_supported_weibull_limits():
+    """life() inverts Basquin; supported Weibull with l -> 0 is plain Weibull and lowers the effective stress for l > 0."""
+    import math
+    from . import criteria as C
+    from .fields import field
+    from .sn_transfer import life
+    from .specimens import Specimen
+    A, B = 68.13, -0.161
+    assert abs(life(lambda N: 1.0, A * 2e4 ** B, A, B) / 2e4 - 1) < 1e-9
+    assert abs(life(lambda N: 1.2, A * 2e4 ** B / 1.2, A, B) / 2e4 - 1) < 1e-9
+    f = field(Specimen.from_dict(dict(shape="hole", W=13.0, T=3.2, rho=2.0, L=60.0)), h=1.5, log=lambda *_: None)
+    V = 13 * 3.2 * 50
+    for m in (7.5, 40.0):
+        w0, ws = C.weibull(f, 1.0, m, V), C.weibull_support(f, 1.0, m, V, 1e-9)
+        assert abs(ws / w0 - 1) < 1e-4
+        assert C.weibull_support(f, 1.0, m, V, 0.7) > w0

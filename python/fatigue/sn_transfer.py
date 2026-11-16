@@ -47,7 +47,8 @@ def main(argv=None):
                     help="TCD L(N) = A_L N^b_L mm fitted on another data set (default Ezeh & Susmel 2020 PLA)")
     ap.add_argument("--support", type=float, nargs=2, default=[0.713, 119.0], metavar=("l_mm", "m"),
                     help="gradient-supported Weibull (Maede et al.: n = 1 + sqrt(l chi)); default l fitted on Ezeh-Susmel "
-                         "at m 119 (this data set's own plain scatter)")
+                         "(fatigue.support_fit) at m 119, which is THIS data set's own smooth scatter (T 1.028): one "
+                         "number taken from the target. With Ezeh-Susmel's own m 7.5 the fitted l is ~0 and it fails.")
     ap.add_argument("--out", default=OUT)
     a = ap.parse_args(argv)
     d = json.load(open(a.data))
@@ -61,10 +62,16 @@ def main(argv=None):
     for m, tag in [(m, "fitted on Ezeh-Susmel") for m in a.m] + [(m, "fitted here") for m in a.m_fit]:
         crit[f"Weibull m {m:g} ({tag})"] = lambda f, m=m: (lambda N, w=1.0 / C.weibull(f, 1.0, m, V): w)
     l_s, m_s = a.support
-    crit[f"Weibull + support l {l_s:g} fitted on Ezeh-Susmel, m {m_s:g}"] = (
+    crit[SUP] = (
         lambda f: (lambda N, w=1.0 / C.weibull_support(f, 1.0, m_s, V, l_s): w))
     crit["TCD point, L(N) fitted on Ezeh-Susmel"] = lambda f: (lambda N: 1.0 / C.tcd_point(f, 1.0, LN(N)))
     crit["TCD line, L(N) fitted on Ezeh-Susmel"] = lambda f: (lambda N: 1.0 / C.tcd_line(f, 1.0, LN(N)))
+    # in-sample reference: the measured fatigue notch factor of each notch at N_ref (plain / notched strength), constant in
+    # N. It uses the notched data themselves, so it is the ceiling a constant-factor criterion can reach, not a prediction.
+    Kf = {r["notch"]: d["plain"][0]["sigma_A50"] / r["sigma_nA50"] for r in d["notched"]}
+    crit[KF] = lambda f: (lambda N, w=Kf[f["_notch"]]: w)
+    for k in F:
+        F[k]["_notch"] = k
     rows = []
     for k, pts in raw.items():
         if k == "smooth":
@@ -112,7 +119,10 @@ def main(argv=None):
     lines = [f"# S-N transfer, {d['id']}: smooth Basquin A {A:.3f}, B {B:.4f}; every notched specimen", "",
              "| criterion | n | mean log10(N_pred/N) | rms log10 | within x2 | within x3 |", "|---|---|---|---|---|---|"]
     sc = {}
-    for c in crit:
+    order = [c for c in crit if not insample(c)] + [c for c in crit if insample(c)]
+    for i, c in enumerate(order):
+        if i and insample(c) and not insample(order[i - 1]):
+            lines.append("| *in-sample references (fitted on these notches, not predictions)* | | | | | |")
         e = np.log10([r[c] / r["N"] for r in rows])
         sc[c] = dict(bias=float(e.mean()), rms=float(np.sqrt(np.mean(e ** 2))), x2=int((abs(e) < math.log10(2)).sum()),
                      x3=int((abs(e) < math.log10(3)).sum()), n=len(e))
@@ -131,17 +141,26 @@ def main(argv=None):
     print("\n".join(lines))
 
 
+SUP = "Weibull + support: l 0.713 fitted on Ezeh-Susmel, m 119 from this smooth scatter"
+KF = "measured Kf per notch (in-sample)"
+
+
+def insample(c):
+    return "fitted here" in c or "in-sample" in c
+
+
 def paper_fits(d):
-    """The paper's own Basquin fits sigma_a = A N^B per group (Seifollahi & Kabir Table 7; equal to our refit)."""
+    """Basquin fits sigma_a = A N^B of each group's tests, as stored in the data file: a refit of Table 6 that equals the
+    paper's Table 7 constants to 0.04 % (68.159 / 57.147 / 48.436 printed)."""
     out = {"smooth": tuple(d["plain"][0]["basquin"])}
     out.update({r["notch"]: tuple(r["basquin"]) for r in d["notched"]})
     return out
 
 
 def passing(sc):
-    """Criteria worth drawing: not Kt, and at least half of the specimens within a factor 2 (failed ones stay in the
-    table, not on the plot)."""
-    return [c for c, v in sc.items() if not c.startswith("Kt") and v["x2"] >= v["n"] / 2]
+    """Transferred criteria worth drawing: not Kt, not in-sample, and at least half of the specimens within a factor 2
+    (failed and in-sample ones stay in the table, not on the plot)."""
+    return [c for c, v in sc.items() if not c.startswith("Kt") and not insample(c) and v["x2"] >= v["n"] / 2]
 
 
 STY = {"Weibull + support": ("--", "#2ca02c"), "TCD line": (":", "#ff7f0e"), "TCD point": ("-.", "#9467bd"),
@@ -153,8 +172,12 @@ def sty(c):
 
 
 def short(c):
-    return (c.replace(", L(N) fitted on Ezeh-Susmel", ", L(N) fitted on Ezeh-Susmel")
-             .replace("Weibull + support l 0.713 fitted on Ezeh-Susmel, m 119", "supported Weibull (l, m fitted on Ezeh-Susmel)"))
+    return {SUP: "supported Weibull (l fitted on Ezeh-Susmel, m 119 from this smooth scatter)"}.get(c, c)
+
+
+def tiny(c):
+    """Legend name; provenance goes in the caption (README)."""
+    return ("supported Weibull" if c == SUP else c.split(",")[0]) + " (predicted)"
 
 
 def figure_overview(d, raw, F, crit, rows, sc, path):
@@ -174,23 +197,26 @@ def figure_overview(d, raw, F, crit, rows, sc, path):
         lab = name[k] % float(F[k]["Kt_mean"]) if k != "smooth" else name[k]
         n = [n for s, *ns in pts for n in ns]
         Ns = np.geomspace(min(n) / 1.5, max(n) * 1.5, 60)
-        a.scatter(n, [s for s, *ns in pts for _ in ns], marker=mk[k], s=36, color=col[k], zorder=4, label=f"{lab}: test")
+        a.scatter(n, [s for s, *ns in pts for _ in ns], marker=mk[k], s=36, color=col[k], zorder=4,
+                  label=f"{lab}")
         Ak, Bk = PF[k]
-        a.plot(Ns, Ak * Ns ** Bk, color=col[k], lw=1.6,
-               label=rf"{k}: paper fit $\sigma_a = {Ak:.2f}\,N^{{{Bk:.3f}}}$")
-    show = [c for c in passing(sc) if c.startswith(("TCD line", "Weibull + support"))]
+        a.plot(Ns, Ak * Ns ** Bk, color=col[k], lw=1.8)
+    show = passing(sc)
     Ns = np.geomspace(3e3, 2e5, 80)
     for k in raw:
         if k == "smooth":
             continue
         for c in show:
             eff = crit[c](F[k])
-            a.plot(Ns, [A * N ** B / eff(N) for N in Ns], color=col[k], ls=sty(c)[0], lw=1.3,
-                   label=f"{k}: predicted, {short(c)}")
+            a.plot(Ns, [A * N ** B / eff(N) for N in Ns], color=col[k], ls=sty(c)[0], lw=1.3)
     a.set(xscale="log", xlim=(3e3, 2e5), ylim=(8, 17), xlabel="cycles to failure $N_f$",
           ylabel=r"net stress amplitude $\sigma_a$ (MPa)", title="(a) Seifollahi & Kabir 2026, YZ PLA, R = 0.05")
     a.grid(alpha=0.3, which="both")
-    a.legend(fontsize=7, loc="upper center", bbox_to_anchor=(0.5, -0.13), ncol=2, frameon=False)
+    from matplotlib.lines import Line2D
+    h, lb = a.get_legend_handles_labels()
+    h += [Line2D([], [], color="k", lw=1.8)] + [Line2D([], [], color="k", ls=sty(c)[0], lw=1.3) for c in show]
+    lb += ["Basquin fit of the tests (paper Table 7 to 0.04 %)"] + [tiny(c) for c in show]
+    a.legend(h, lb, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.13), ncol=2, frameon=False)
     lo, hi = 3e3, 2e5
     x = np.geomspace(lo, hi, 2)
     b.fill_between(x, x / 2, x * 2, color="0.9", lw=0, label="factor 2")
@@ -200,7 +226,8 @@ def figure_overview(d, raw, F, crit, rows, sc, path):
             rr = [r for r in rows if r["notch"] == k]
             b.scatter([r["N"] for r in rr], [r[c] for r in rr], marker=mk[k], s=28, color=sty(c)[1],
                       edgecolors="k", linewidths=0.3, zorder=3,
-                      label=f"{short(c)}: {sc[c]['x2']}/{sc[c]['n']} within x2" if k == "edge" else None)
+                      label=f"{tiny(c)}: {sc[c]['x2']}/{sc[c]['n']} within x2, rms {sc[c]['rms']:.2f}"
+                      if k == "edge" else None)
     b.set(xscale="log", yscale="log", xlim=(lo, hi), ylim=(lo, hi), aspect="equal", xlabel="measured life",
           ylabel="predicted life", title="(b) every notched specimen (\u25b2 edge, \u25c6 hole)")
     b.grid(alpha=0.3, which="both")
@@ -223,16 +250,16 @@ def figure(d, raw, F, crit, sc, path):
     fig, axs = plt.subplots(1, len(notches), figsize=(5.6 * len(notches), 6.4), sharey=True)
     Ns = np.geomspace(3e3, 2e5, 60)
     for ax, k in zip(np.atleast_1d(axs), notches):
-        for g, m, fc in (("smooth", "o", "k"), (k, "D", "white")):
+        for g, m, fc in (("smooth", "o", "k"), (k, {"edge": "^", "hole": "D"}[k], "white")):
             ax.scatter([n for s, *ns in raw[g] for n in ns], [s for s, *ns in raw[g] for _ in ns], marker=m, s=24,
                        facecolor=fc, edgecolor="k", lw=1.0, zorder=4, label=f"{g}: test")
             Ag, Bg = PF[g]
             ax.plot(Ns, Ag * Ns ** Bg, "k-", lw=1.4 if g == k else 0.8,
-                    label=rf"{g}: paper fit ${Ag:.2f}\,N^{{{Bg:.3f}}}$")
+                    label=f"{g}: fit of the tests (paper), {Ag:.2f} N^{Bg:.3f}")
         for c in passing(sc):
             eff = crit[c](F[k])
             ls, col = sty(c)
-            ax.plot(Ns, [A * N ** B / eff(N) for N in Ns], color=col, ls=ls, lw=1.3, label=f"predicted: {short(c)}")
+            ax.plot(Ns, [A * N ** B / eff(N) for N in Ns], color=col, ls=ls, lw=1.3, label=tiny(c))
         ax.set(xscale="log", xlabel="cycles to failure $N_f$", title=f"{k}: Kt {float(F[k]['Kt_mean']):.2f}",
                xlim=(3e3, 2e5), ylim=(8, 17))
         ax.grid(alpha=0.3, which="both")
