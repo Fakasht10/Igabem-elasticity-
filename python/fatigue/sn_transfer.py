@@ -149,6 +149,7 @@ def main(argv=None):
     json.dump(dict(A=A, B=B, scores=sc, rows=rows), open(os.path.join(a.out, tag + ".json"), "w"), indent=1)
     figure(d, raw, F, crit, sc, os.path.join(a.out, "fig_" + tag))
     figure_overview(d, raw, F, crit, rows, sc, os.path.join(a.out, "fig_" + tag + "_overview"))
+    figure_collapse(d, raw, F, crit, sc, os.path.join(a.out, "fig_" + tag + "_collapse"))
     print("\n".join(lines))
 
 
@@ -242,6 +243,51 @@ def figure_overview(d, raw, F, crit, rows, sc, path):
           ylabel="predicted life", title="(c) every specimen (\u25b2 edge, \u25c6 hole)")
     b.grid(alpha=0.3, which="both")
     b.legend(fontsize=8, loc="upper left", title="within x2, rms log10", title_fontsize=8)
+    for ext in ("png", "pdf"):
+        fig.savefig(f"{path}.{ext}", dpi=200)
+    plt.close(fig)
+
+
+def figure_collapse(d, raw, F, crit, sc, path):
+    """Each notched test re-plotted at its EFFECTIVE stress amplitude, eff(N_f) x net amplitude (the local quantity the
+    criterion compares with the smooth curve: sigma_max = Kt s_n for Kt, sigma(L/2) for TCD point, ...). A criterion
+    that works puts the notched tests on the smooth S-N curve. First panel: Kt (sigma_max at the root) for reference."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({"font.size": 10, "font.family": "serif", "mathtext.fontset": "cm"})
+    PF = paper_fits(d)
+    A, B = PF["smooth"]
+    col = {"edge": "#d62728", "hole": "#1f77b4"}
+    mk = {"edge": "^", "hole": "D"}
+    cs = [c for c in crit if c.startswith("Kt")] + passing(sc)
+    fig, axs = plt.subplots(1, len(cs), figsize=(4.0 * len(cs), 4.6), sharey=True, layout="constrained")
+    Ns = np.geomspace(3e3, 2e5, 60)
+    for ax, c in zip(axs, cs):
+        ax.scatter([n for s, *ns in raw["smooth"] for n in ns], [s for s, *ns in raw["smooth"] for _ in ns], c="k",
+                   s=26, zorder=4, label="smooth tests")
+        ax.plot(Ns, A * Ns ** B, "k-", lw=1.4, label="smooth Basquin fit")
+        ax.fill_between(Ns, A * (Ns / 2) ** B, A * (Ns * 2) ** B, color="0.9", lw=0, label="life factor 2")
+        for k in ("edge", "hole"):
+            eff = crit[c](F[k])
+            n = [n for s, *ns in raw[k] for n in ns]
+            se = [s * eff(N) for s, *ns in raw[k] for N in ns]
+            ax.scatter(n, se, marker=mk[k], s=34, color=col[k], edgecolors="k", linewidths=0.4, zorder=5,
+                       label=f"{k} tests at effective stress")
+        t = "Kt: peak root stress $K_t\\sigma_n$" if c.startswith("Kt") else tiny(c).replace(" (predicted)", "")
+        ax.set(xscale="log", xlim=(3e3, 2e5), xlabel="cycles to failure $N_f$",
+               title=f"{t}\n{sc[c]['x2']}/{sc[c]['n']} within x2, rms {sc[c]['rms']:.2f}")
+        ax.title.set_fontsize(9.5)
+        ax.grid(alpha=0.3, which="both")
+    axs[0].set_ylabel(r"effective stress amplitude (MPa)")
+    axs[0].set_yscale("log")
+    axs[0].set_ylim(8, 40)
+    from matplotlib.ticker import ScalarFormatter, FixedLocator
+    axs[0].yaxis.set_major_locator(FixedLocator([8, 10, 12, 15, 20, 25, 30, 40]))
+    axs[0].yaxis.set_major_formatter(ScalarFormatter())
+    axs[0].yaxis.set_minor_formatter(plt.NullFormatter())
+    h, lb = axs[0].get_legend_handles_labels()
+    fig.legend(h, lb, loc="outside lower center", ncol=5, fontsize=9, frameon=False)
     for ext in ("png", "pdf"):
         fig.savefig(f"{path}.{ext}", dpi=200)
     plt.close(fig)
