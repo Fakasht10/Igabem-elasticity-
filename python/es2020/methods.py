@@ -231,3 +231,35 @@ METHODS.update({
     "gradient": (_ab(k_gradient), (0.1, -0.2), "K_t / (1 + sqrt(c chi)), c = {:.3g} N^{:.3f} mm"),
     "sed": (_ab(k_sed), (2.0, -0.2), "R0 = {:.3g} N^{:.3f} mm"),
 })
+
+
+# ---------------------------------------------------------------- local measures along the bisector (Aleksey, 2026-11-16)
+MEASURES = {"s1": "max principal stress", "vm": "von Mises (= octahedral shear x 3/sqrt2)",
+            "eps1": "E x max principal strain", "syy": "stress normal to the bisector"}
+
+
+@lru_cache(None)
+def measure_profile(notch, meas):
+    P = json.load(open(os.path.join(paper.DATA, "igabem_bisector_measures.json")))["profiles"][notch]
+    return point.Profile(P["d"], P[meas])
+
+
+def k_point_m(notch, L, meas):
+    return measure_profile(notch, meas)(np.asarray(L) / 2)
+
+
+def k_line_m(notch, L, meas):
+    p = measure_profile(notch, meas)
+    lig = p.d[-1]
+    out = []
+    for l2 in np.atleast_1d(np.minimum(2 * np.asarray(L, float), 2 * lig)):
+        x = np.linspace(0, l2, 400)
+        out.append(np.mean(p(np.where(x <= lig, x, 2 * lig - x))))
+    return np.array(out)
+
+
+for _m in ("vm", "eps1"):
+    METHODS[f"point_{_m}"] = (_ab(lambda n, L, m=_m: k_point_m(n, L, m)), (16.4, -0.242),
+                              f"point on {MEASURES[_m]}: L = {{:.3g}} N^{{:.3f}} mm")
+    METHODS[f"line_{_m}"] = (_ab(lambda n, L, m=_m: k_line_m(n, L, m)), (5.0, -0.2),
+                             f"line on {MEASURES[_m]}: L = {{:.3g}} N^{{:.3f}} mm")

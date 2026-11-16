@@ -91,3 +91,13 @@ def test_methods_calibration():
     (A, B), _ = methods.calibrate("point")                       # least squares over N, close to Fig. 9e / Eq. 6
     assert A == pytest.approx(16.4, rel=0.06) and B == pytest.approx(-0.242, abs=0.01)
     assert methods.M_STRENGTH == pytest.approx(3.44, abs=0.01) and methods.K_LIFE == pytest.approx(0.675, abs=0.001)
+
+
+def test_bisector_measures():
+    """Local measures on the bisector (pure post-process of the stored profiles): held-out rms as reported."""
+    from . import measures
+    S = measures.scores()
+    want = {"net": 0.141, "point": 0.193, "point_vm": 0.209, "point_eps1": 0.228,
+            "line": 0.167, "line_vm": 0.178, "line_eps1": 0.188}
+    for k, v in want.items():
+        assert abs(S[k]["held"]["rms"] - v) < 6e-4, (k, S[k]["held"]["rms"])
