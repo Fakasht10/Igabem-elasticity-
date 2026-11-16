@@ -174,3 +174,11 @@ def test_root_chi_near_siebel_and_supported_kt_limit():
     chi = C.root_chi(f)
     assert 0.5 < chi < 1.3                                        # 2/rho = 1.0; finite width raises it
     assert abs(C.supported_kt(f, 1.0, 0.0) * float(C.line_profile(f)[1][0]) - 1) < 1e-12
+
+
+def test_master_factors_plain_limits():
+    """Master collapse: a plain bar has f_eff 1 (net, kt, hotspot) and (V/V_ref)^(1/m) for Weibull."""
+    from .master import V_REF, factor
+    assert factor("net", None, [], 500.0) == 1.0 and factor("hotspot", None, [0.9], 500.0) == 1.0
+    assert abs(factor("weibull", None, [8.0], V_REF) - 1.0) < 1e-12
+    assert abs(factor("weibull", None, [8.0], 2 * V_REF) - 2 ** 0.125) < 1e-12
