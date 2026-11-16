@@ -86,7 +86,59 @@ def main(argv=None):
     open(os.path.join(a.out, tag + ".md"), "w").write("\n".join(lines) + "\n")
     json.dump(dict(A=A, B=B, scores=sc, rows=rows), open(os.path.join(a.out, tag + ".json"), "w"), indent=1)
     figure(d, raw, A, B, F, crit, os.path.join(a.out, "fig_" + tag))
+    figure_overview(raw, A, B, F, crit, rows, os.path.join(a.out, "fig_" + tag + "_overview"))
     print("\n".join(lines))
+
+
+def figure_overview(raw, A, B, F, crit, rows, path, show=("TCD line, L(N) (blind)", "TCD point, L(N) (blind)")):
+    """(a) all data sets on one S-N plot with the predicted notch curves; (b) predicted vs measured life, every
+    notched specimen, every criterion."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({"font.size": 10, "font.family": "serif", "mathtext.fontset": "cm"})
+    col = {"smooth": "k", "edge": "#d62728", "hole": "#1f77b4"}
+    mk = {"smooth": "o", "edge": "^", "hole": "D"}
+    name = {"smooth": "smooth", "edge": "edge notch R2 (Kt %.2f)", "hole": "central hole R2 (Kt %.2f)"}
+    fig, (a, b) = plt.subplots(1, 2, figsize=(12.5, 5.0), gridspec_kw={"width_ratios": [1.25, 1]})
+    Ns = np.geomspace(3e3, 2e5, 80)
+    for k, pts in raw.items():
+        lab = name[k] % float(F[k]["Kt_mean"]) if k != "smooth" else name[k]
+        a.scatter([n for s, *ns in pts for n in ns], [s for s, *ns in pts for _ in ns], marker=mk[k], s=34,
+                  color=col[k], zorder=4, label=f"{lab}: test")
+    a.plot(Ns, A * Ns ** B, color="k", lw=1.2, label="smooth: Basquin fit (input)")
+    ls = {show[0]: "-", show[1]: "--"}
+    for k in raw:
+        if k == "smooth":
+            continue
+        for c in show:
+            eff = crit[c](F[k])
+            a.plot(Ns, [A * N ** B / eff(N) for N in Ns], color=col[k], ls=ls[c], lw=1.4,
+                   label=f"{k}: {c.replace(' (blind)', '')}, blind")
+    a.set(xscale="log", xlim=(3e3, 2e5), ylim=(8, 17), xlabel="cycles to failure $N_f$",
+          ylabel=r"net stress amplitude $\sigma_a$ (MPa)", title="(a) Seifollahi & Kabir 2026, YZ PLA, R = 0.05")
+    a.grid(alpha=0.3, which="both")
+    a.legend(fontsize=7.5, loc="upper right", ncol=1)
+    cc = {"Kt (blind)": "0.55", "TCD point, L(N) (blind)": "#d62728", "TCD line, L(N) (blind)": "#ff7f0e"}
+    wc = iter(["#1f77b4", "#17becf"])
+    cc.update({c: next(wc) for c in crit if c not in cc})
+    lo, hi = 50, 5e5
+    x = np.geomspace(lo, hi, 2)
+    b.fill_between(x, x / 2, x * 2, color="0.9", lw=0, label="factor 2")
+    b.plot(x, x, "k-", lw=0.8)
+    for c in crit:
+        for k in ("edge", "hole"):
+            rr = [r for r in rows if r["notch"] == k]
+            b.scatter([r["N"] for r in rr], [r[c] for r in rr], marker=mk[k], s=26, color=cc[c],
+                      label=c if k == "edge" else None, zorder=3)
+    b.set(xscale="log", yscale="log", xlim=(lo, hi), ylim=(lo, hi), aspect="equal", xlabel="measured life",
+          ylabel="predicted life", title="(b) every notched specimen (▲ edge, ◆ hole)")
+    b.grid(alpha=0.3, which="both")
+    b.legend(fontsize=7.5, loc="upper left")
+    fig.tight_layout()
+    for ext in ("png", "pdf"):
+        fig.savefig(f"{path}.{ext}", dpi=200)
+    plt.close(fig)
 
 
 def figure(d, raw, A, B, F, crit, path):
