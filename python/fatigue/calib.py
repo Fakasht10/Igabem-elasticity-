@@ -25,21 +25,50 @@ import numpy as np
 from scipy.optimize import minimize
 
 from . import criteria as C
-from .band import P50, T_BAND
+from .band import P50 as P50_PRINTED, T_BAND as T_PRINTED
 from .hsv import L_CD, W21, load as hsv_load
 from .transfer import HERE, OUT
 
 V_PLAIN = 6.0 * 3.0 * 30.0
+# Plain curve in the Walker effective stress S = sigma_max^(1-g) sigma_a^g / UTS (g = 0: sigma_max, the authors' choice).
+PLAIN = dict(gamma=0.0, S50=0.16, k=5.1, T=2.451, printed=True)
+
+
+def P50(N):
+    if PLAIN["printed"]:
+        return P50_PRINTED(N)
+    return PLAIN["S50"] * (np.asarray(N, float) / 2e6) ** (-1 / PLAIN["k"])
+
+
+def set_plain(gamma, printed):
+    """printed: the band exactly as printed in Fig. 1 (gamma 0 only). Otherwise refit P50, k and T on the failed Fig. 1
+    plain points (150 < N < 1.9e6, run-outs and the static knee left out) in the Walker variable at this gamma."""
+    PLAIN.update(gamma=gamma, printed=printed and gamma == 0)
+    if PLAIN["printed"]:
+        PLAIN.update(S50=0.16, k=5.1, T=T_PRINTED)
+        return
+    pts = json.load(open(os.path.join(HERE, "data", "ezeh_susmel_2020_fig1_plain.json")))
+    q = [x for x in pts if 150 < x["N"] < 1.9e6]
+    lN = np.log10([x["N"] for x in q]) - math.log10(2e6)
+    lS = np.log10([x["smax_uts"] * ((1 - x["R"]) / 2) ** gamma for x in q])
+    b, a = np.polyfit(lN, lS, 1)                      # log S = a + b log(N/2e6): stress direction
+    sd = float(np.std(lS - (a + b * lN), ddof=2))
+    PLAIN.update(S50=10 ** a, k=-1 / b, T=10 ** (2 * 1.2815516 * sd))
+
+
 NAMES = {"blunt": "U r3", "intermediate": "U r1", "sharp": "V r0.15"}
 CRIT = {"net": ([], []), "kt": ([], []), "tcd_ln_paper": ([], []), "tcd_ln": (["A", "B"], [16.4, -0.242]),
         "tcd_const": (["L"], [0.5]), "tcd_line": (["L"], [0.5]),
         "tcd_line_ln": (["A", "B"], [16.4, -0.242]), "sup_tcd": (["L", "l"], [0.5, 1.0]), "sup_tcd_line": (["L", "l"], [0.5, 1.0]),
-        "weibull": (["m"], [10.0]), "hotspot": (["l"], [1.0]), "mhsv": (["L_FCI"], [0.4])}
+        "weibull": (["m"], [10.0]), "hotspot": (["l"], [1.0]), "mhsv": (["L_FCI"], [0.4]),
+        "mhsv_e": (["e"], [0.1]), "hsv90": (["m"], [10.0]), "hsv80": (["m"], [10.0])}
 TITLE = {"net": "net stress (no notch factor)", "kt": "elastic peak Kt x net", "tcd_ln_paper": "TCD point, authors' L(N)",
          "tcd_ln": "TCD point, L(N) = A N^B", "tcd_const": "TCD point, constant L", "tcd_line": "TCD line, constant L",
          "tcd_line_ln": "TCD line, L(N) = A N^B", "sup_tcd": "supported TCD point, L and l",
          "sup_tcd_line": "supported TCD line, L and l", "weibull": "Weibull, m",
-         "hotspot": "supported hot spot, l", "mhsv": "modified HSV, L_FCI"}
+         "hotspot": "supported hot spot, l", "mhsv": "modified HSV, L_FCI",
+         "mhsv_e": "modified HSV, exponent e (L_FCI 0.4 measured)", "hsv90": "HSV, peak x (V90/V_plain)^(1/m)",
+         "hsv80": "HSV, peak x (V80/V_plain)^(1/m)"}
 
 
 class Notch:
@@ -50,6 +79,11 @@ class Notch:
         self.chi = C.root_chi(f)
         self.f, self.G = f, G
         self._J = {}
+
+    def vq(self, q):
+        """Highly stressed volume: full-specimen volume where sigma_1 >= q max sigma_1 (TET10 Gauss points, quarter x 4)."""
+        s1, w = np.asarray(self.f["s1"]), np.asarray(self.f["w"])
+        return 4 * float(w[s1 >= q * s1.max()].sum())
 
     def pm(self, L):
         return float(np.interp(np.clip(L / 2, 0, self.lig), self.d, self.s))
@@ -90,14 +124,19 @@ def feff(name, n, N, th):
     if name == "hotspot":
         return max(1.0, n.kt / (1 + math.sqrt(th[0] * n.chi)))
     if name == "mhsv":                                # life-domain size factor mapped to stress with the plain k 5.1
-        kl = W21 / (5.1 * math.log(T_BAND))
+        kl = W21 / (PLAIN["k"] * math.log(PLAIN["T"]))
         ratio = 18 * 30.0 * th[0] / (n.G["S90"] * L_CD)
-        return n.pm(L_CD) * ratio ** (-1 / (kl * 5.1))
+        return n.pm(L_CD) * ratio ** (-1 / (kl * PLAIN["k"]))
+    if name in ("hsv90", "hsv80"):                  # traditional HSV with the weakest-link exponent fitted (like m)
+        return n.kt * (n.vq(0.9 if name == "hsv90" else 0.8) / V_PLAIN) ** (1 / th[0])
+    if name == "mhsv_e":                              # size exponent e = 1/(k k_SN) FITTED, like Weibull's 1/m;
+        ratio = 18 * 30.0 * 0.4 / (n.G["S90"] * L_CD)  # L_FCI 0.4 mm = embryonic crack length (Ezeh-Susmel 2020 p. 8)
+        return n.pm(L_CD) * ratio ** (-th[0])
     raise KeyError(name)
 
 
 def resid(name, notches, rows, uts, th):
-    return np.array([math.log10(feff(name, notches[k], N, th) * s * 2 / (1 - R) / uts[p] / P50(N))
+    return np.array([math.log10(feff(name, notches[k], N, th) * s * (2 / (1 - R)) ** (1 - PLAIN["gamma"]) / uts[p] / P50(N))
                      for k, p, R, s, N in rows])
 
 
@@ -106,7 +145,7 @@ def fit(name, notches, rows, uts):
     if not names:
         return []
     bounds = {"A": (0.1, 200), "B": (-1.0, 0.2), "L": (1e-3, 6.0), "m": (2.0, 200.0), "l": (1e-4, 50.0),
-              "L_FCI": (1e-6, 100.0)}
+              "L_FCI": (1e-6, 100.0), "e": (1e-4, 1.0)}
 
     def unpack(z):
         out = []
@@ -124,13 +163,17 @@ def fit(name, notches, rows, uts):
 
 def stats(r):
     return dict(bias=float(r.mean()), rms=float(np.sqrt(np.mean(r ** 2))),
-                band=float(np.mean(abs(r) < math.log10(T_BAND) / 2)))
+                band=float(np.mean(abs(r) < math.log10(PLAIN["T"]) / 2)))
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default=OUT)
+    ap.add_argument("--gamma", type=float, default=0.0, help="Walker exponent of the effective stress (0 = sigma_max)")
+    ap.add_argument("--refit-plain", action="store_true", help="refit the plain P50 on the Fig. 1 points (forced if gamma > 0)")
     a = ap.parse_args(argv)
+    set_plain(a.gamma, not a.refit_plain)
+    tag = "" if PLAIN["printed"] else f"_g{a.gamma:g}"
     g, plain, spec = hsv_load()
     uts = {p: q["UTS"] for (p, _), q in plain.items()}
     notches = {k: Notch(g[k]["f"], g[k]) for k in g}
@@ -139,7 +182,10 @@ def main(argv=None):
     held = [r for r in rows if r[0] != "sharp"]
     L = ["# One protocol for every criterion: fit on plain (Fig. 1 P50) + sharp V specimens, predict U r1 and U r3", "",
          f"Fitted on {len(cal)} failed sharp-V specimens; held out {len(held)} failed U-notch specimens. Residual "
-         "log10(S_eff / P50(N)); band = printed P10-P90 (T 2.451).", "",
+         "log10(S_eff / P50(N)).", "",
+         (f"Plain curve: Fig. 1 band as printed (sigma_max/UTS, P50 0.16 at 2e6, k 5.1, T 2.451)." if PLAIN["printed"] else
+          f"Plain curve REFIT on the Fig. 1 points in the Walker effective stress, gamma {PLAIN['gamma']:g}: "
+          f"P50 {PLAIN['S50']:.4f} at 2e6, k {PLAIN['k']:.2f}, T {PLAIN['T']:.3f}. Notched: same variable."), "",
          "| criterion | fitted parameters | sharp V (fitted): bias / rms | HELD OUT U r1: bias / rms, in band | "
          "HELD OUT U r3: bias / rms, in band | HELD OUT both: rms, in band |", "|---|---|---|---|---|---|"]
     res = {}
@@ -155,17 +201,18 @@ def main(argv=None):
                  f"{100 * si['band']:.0f} % | {sb['bias']:+.3f} / {sb['rms']:.3f}, {100 * sb['band']:.0f} % | "
                  f"{h['rms']:.3f}, {100 * h['band']:.0f} % |")
     os.makedirs(a.out, exist_ok=True)
-    open(os.path.join(a.out, "calib_sharp_holdout.md"), "w").write("\n".join(L) + "\n")
+    open(os.path.join(a.out, f"calib_sharp_holdout{tag}.md"), "w").write("\n".join(L) + "\n")
     json.dump({k: dict(theta=v[0], resid={n: r.tolist() for n, r in v[1].items()}) for k, v in res.items()},
-              open(os.path.join(a.out, "calib_sharp_holdout.json"), "w"), indent=1)
+              open(os.path.join(a.out, f"calib_sharp_holdout{tag}.json"), "w"), indent=1)
     print("\n".join(L))
-    figure(res, notches, rows, uts, os.path.join(a.out, "fig_calib_sharp_holdout"))
+    figure(res, notches, rows, uts, os.path.join(a.out, f"fig_calib_sharp_holdout{tag}"))
 
 
 GROUPS = [("baselines", "Baselines (no free parameter)", ["net", "kt"]),
           ("tcd_point", "TCD point family", ["tcd_ln_paper", "tcd_ln", "tcd_const", "sup_tcd"]),
           ("tcd_line", "TCD line family", ["tcd_line", "tcd_line_ln", "sup_tcd_line"]),
-          ("volume", "Volume and gradient methods", ["weibull", "hotspot", "mhsv"])]
+          ("volume", "Volume and gradient methods", ["weibull", "hsv90", "hsv80", "hotspot"]),
+          ("mhsv", "Modified HSV (Zhang et al. 2023)", ["mhsv", "mhsv_e"])]
 
 
 def _style():
@@ -198,8 +245,8 @@ def figure(res, notches, rows, uts, path):
         for ax, name in zip(axs.flat, names):
             th, r = res[name]
             ax.plot(Ns, P50(Ns), "k-", lw=1.6)
-            ax.plot(Ns, P50(Ns) * math.sqrt(T_BAND), "k--", lw=1)
-            ax.plot(Ns, P50(Ns) / math.sqrt(T_BAND), "k--", lw=1)
+            ax.plot(Ns, P50(Ns) * math.sqrt(PLAIN["T"]), "k--", lw=1)
+            ax.plot(Ns, P50(Ns) / math.sqrt(PLAIN["T"]), "k--", lw=1)
             ax.scatter([q["N"] for q in plain], [q["smax_uts"] for q in plain], s=9, facecolor="none", edgecolors="0.7",
                        linewidths=0.5, zorder=1)
             for k in ("sharp", "intermediate", "blunt"):
@@ -237,7 +284,7 @@ def ranking(res, path):
     fig, ax = plt.subplots(figsize=(10, 6.2), layout="constrained")
     y = np.arange(len(rows))
     fam = {n: g for g, _, ns in GROUPS for n in ns}
-    col = {"baselines": "0.55", "tcd_point": "#1f77b4", "tcd_line": "#2ca02c", "volume": "#d62728"}
+    col = {"baselines": "0.55", "tcd_point": "#1f77b4", "tcd_line": "#2ca02c", "volume": "#d62728", "mhsv": "#ff7f0e"}
     ax.barh(y, [r[0] for r in rows], color=[col[fam[r[1]]] for r in rows], height=0.6)
     ax.scatter([r[3] for r in rows], y, marker="s", color="k", s=18, zorder=3, label="U r1 alone (held out)")
     ax.scatter([r[4] for r in rows], y, marker="P", color="k", s=26, zorder=3, label="U r3 alone (held out)")
@@ -250,7 +297,7 @@ def ranking(res, path):
     ax.invert_yaxis()
     ax.set_xlabel("rms log10(S_eff / P50), bar = both held-out U notches")
     ax.set_title("Held-out error by method: Ezeh-Susmel PLA, fitted on plain + sharp V\n"
-                 "colour: grey baselines, blue TCD point, green TCD line, red volume / gradient", fontsize=11)
+                 "colour: grey baselines, blue TCD point, green TCD line, red volume / gradient, orange modified HSV", fontsize=11)
     ax.grid(alpha=0.3, axis="x")
     ax.set_xlim(0, 0.9)
     ax.legend(fontsize=9, loc="center right")

@@ -1,6 +1,8 @@
 # One protocol for every criterion: fit on plain (Fig. 1 P50) + sharp V specimens, predict U r1 and U r3
 
-Fitted on 47 failed sharp-V specimens; held out 102 failed U-notch specimens. Residual log10(S_eff / P50(N)); band = printed P10-P90 (T 2.451).
+Fitted on 47 failed sharp-V specimens; held out 102 failed U-notch specimens. Residual log10(S_eff / P50(N)).
+
+Plain curve: Fig. 1 band as printed (sigma_max/UTS, P50 0.16 at 2e6, k 5.1, T 2.451).
 
 | criterion | fitted parameters | sharp V (fitted): bias / rms | HELD OUT U r1: bias / rms, in band | HELD OUT U r3: bias / rms, in band | HELD OUT both: rms, in band |
 |---|---|---|---|---|---|
@@ -16,3 +18,6 @@ Fitted on 47 failed sharp-V specimens; held out 102 failed U-notch specimens. Re
 | Weibull, m | m 5.23 | +0.000 / 0.102 | -0.080 / 0.140, 81 % | +0.011 / 0.106, 93 % | 0.123, 87 % |
 | supported hot spot, l | l 7.03 | +0.015 / 0.103 | +0.015 / 0.116, 98 % | +0.126 / 0.165, 74 % | 0.144, 85 % |
 | modified HSV, L_FCI | L_FCI 0.0048 | -0.000 / 0.102 | +0.213 / 0.242, 50 % | +0.393 / 0.407, 2 % | 0.340, 25 % |
+| modified HSV, exponent e (L_FCI 0.4 measured) | e 0.0941 | +0.000 / 0.102 | +0.060 / 0.130, 83 % | +0.129 / 0.167, 74 % | 0.151, 78 % |
+| HSV, peak x (V90/V_plain)^(1/m) | m 6.12 | -0.000 / 0.102 | -0.144 / 0.185, 52 % | -0.056 / 0.120, 94 % | 0.154, 75 % |
+| HSV, peak x (V80/V_plain)^(1/m) | m 5.52 | -0.000 / 0.102 | -0.104 / 0.155, 71 % | -0.012 / 0.107, 94 % | 0.132, 83 % |
