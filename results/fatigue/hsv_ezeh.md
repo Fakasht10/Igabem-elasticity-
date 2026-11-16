@@ -15,12 +15,14 @@ Every failed specimen (149). Cells: bias / rms log10(N_pred/N); within x2; withi
 | method | all: bias / rms | within x2 | within x3 | in P10-P90 band | blunt | U r1 | V sharp |
 |---|---|---|---|---|---|---|---|
 | **plain S-N = 2019 Table 1 series at the same p and R** | | | | | | | |
+| blind Weibull (m from plain scatter, gauge volume) | -0.90 / 1.45 | 31 % | 40 % | 44 % | -0.56 | -0.37 | -1.84 |
 | TCD point, authors' L_M(N) (their own method) | -0.42 / 0.65 | 40 % | 58 % | 53 % | -0.77 | -0.27 | -0.16 |
 | TCD point, L_CD 0.49 (no size term) | -1.67 / 1.81 | 2 % | 3 % | 2 % | -1.73 | -1.55 | -1.73 |
 | traditional HSV (V90, peak stress) | -0.56 / 1.49 | 12 % | 23 % | 35 % | -0.30 | +0.01 | -1.44 |
 | modified HSV (L_FCI 0.4) | +0.01 / 0.91 | 30 % | 42 % | 44 % | -0.55 | +0.09 | +0.57 |
 | variant, NOT in the paper: modified HSV with L_M(N) (L_FCI 0.4) | +0.47 / 0.86 | 23 % | 38 % | 44 % | -0.22 | +0.61 | +1.14 |
 | **plain S-N = 2020 Fig. 1 unifying curve (P50 0.16 UTS at 2e6, k 5.1, T 2.451)** | | | | | | | |
+| blind Weibull (m from plain scatter, gauge volume) | +0.40 / 0.74 | 40 % | 52 % | 87 % | +0.03 | +0.63 | +0.60 |
 | TCD point, authors' L_M(N) (their own method) | -0.37 / 0.66 | 42 % | 64 % | 78 % | -0.68 | -0.30 | -0.09 |
 | TCD point, L_CD 0.49 (no size term) | -1.35 / 1.45 | 1 % | 5 % | 15 % | -1.37 | -1.30 | -1.36 |
 | traditional HSV (V90, peak stress) | +2.59 / 2.72 | 0 % | 1 % | 7 % | +1.77 | +2.89 | +3.21 |

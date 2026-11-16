@@ -141,3 +141,12 @@ Master variable S* = f_eff σ_a,n (2/(1−R))^(1−γ) / σ_plain,ds(10⁵). It 
   - l fitted on Ezeh–Susmel is 0.88 mm and predicts Seifollahi at +0.04 / 0.09 log10 life (14/14 within ×2).
   - l fitted on Seifollahi is 0.83 mm.
   - It is the only criterion whose length agrees between the two data sets. Predicting Ezeh–Susmel fails for every criterion, because of its plain reference and the blunt notch.
+
+## Correction (2026-11-16): specimen-level scoring, and the modified HSV (`fatigue.hsv`)
+
+The earlier Weibull results (−5 to −8 %, 11/18 within 20 %) only compare the 18 Table 1 series strengths at 2·10⁶. Scored against the 149 real notched specimens at their own lives (1e2–2e6, median 2e4), blind Weibull is −25 % in stress, with the V notch at −44 %. Its life rms is 1.45 log10. Any notch factor that does not depend on N inherits the plain S–N slope (k ≈ 7), but the U r1 and V notches have k 4.7 and 4.3. The authors' TCD L_M(N) is calibrated on the plain curve and the sharp-notch curve at every life, so it tracks the slope (−14 %, life rms 0.65). It is in-sample for the sharp notch.
+
+`fatigue.hsv` applies the modified HSV of Zhang et al. (IJF 2023) as written. S90 is computed by IgBEM on the root surface (`fields.root_surface`). L_FCI and the plain gauge length are assumed and swept. Results:
+- As written, life rms is 0.91.
+- With L_FCI calibrated on the sharp notch, as the authors calibrated L, the held-out U notches have life rms 1.16–1.74, against 0.73–0.76 for the authors' TCD.
+- The size credit grows as S90 shrinks, so it favours the V notch, which is the one TCD already gets right.

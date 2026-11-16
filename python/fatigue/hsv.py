@@ -55,7 +55,7 @@ def geometry(F, S):
         V90 = 4 * f["w"][f["s1"] >= 0.9 * f["s1"].max()].sum()
         prof = f["s1_line"].mean(axis=0)                 # thickness-averaged bisector profile
         g[k] = dict(smax=float(sm), S90=float(S90), V90=float(V90), seff=float(np.interp(L_CD / 2, f["d"], prof)),
-                    prof=lambda x, d=f["d"], p=prof: float(np.interp(x, d, p)))
+                    prof=lambda x, d=f["d"], p=prof: float(np.interp(x, d, p)), f=f)
     return g
 
 
@@ -73,6 +73,10 @@ def predict(method, g, pl, notch, s_a, L_fci, gauge, W=6.0, T=3.0, src="series",
     G = g[notch]
     s0, kb, Ts = plain_curve(src, pl, R)
     k = W21 / (kb * math.log(Ts))
+    if method == "weibull":                            # blind Weibull, m from the plain series scatter (fatigue.criteria)
+        from .criteria import m_from_T, weibull
+        f = 1.0 / weibull(G["f"], 1.0, m_from_T(Ts), W * T * gauge)
+        return 2e6 * (f * s_a / s0) ** -kb, k
     if method == "tcd_pm":
         return 2e6 * (G["seff"] * s_a / s0) ** -kb, k
     if method == "tcd_pm_LN":                          # authors' own TCD: L_M(N) solved with the life (fixed point)
@@ -141,7 +145,7 @@ def main(argv=None):
     L += ["", "Every failed specimen (149). Cells: bias / rms log10(N_pred/N); within x2; within x3; inside the "
           "predicted P_S 10-90 % band. Per notch: bias.", "",
           "| method | all: bias / rms | within x2 | within x3 | in P10-P90 band | blunt | U r1 | V sharp |", "|---|---|---|---|---|---|---|---|"]
-    lab = {"tcd_pm_LN": "TCD point, authors' L_M(N) (their own method)", "tcd_pm": "TCD point, L_CD 0.49 (no size term)",
+    lab = {"weibull": "blind Weibull (m from plain scatter, gauge volume)", "tcd_pm_LN": "TCD point, authors' L_M(N) (their own method)", "tcd_pm": "TCD point, L_CD 0.49 (no size term)",
            "hsv": "traditional HSV (V90, peak stress)", "mhsv": f"modified HSV (L_FCI {a.L_fci:g})",
            "mhsv_LN": f"variant, NOT in the paper: modified HSV with L_M(N) (L_FCI {a.L_fci:g})"}
     srcs = {"series": "plain S-N = 2019 Table 1 series at the same p and R",
