@@ -24,7 +24,7 @@ Requirements: `numpy scipy matplotlib pymupdf scikit-fem triangle`. Run from `py
 | `fig_sde_tcd_heldout.png/pdf` | `python $R/sde_tcd_fig.py` | s |
 | `sde_tcd_heat2_results.json` (lumped self-heating) | `python $R/sde_tcd_heat2.py` | ~3 min |
 | `fig_review_bead_depth.png/pdf` (fixed-depth rule) | `python $R/bead_depth_fig.py` | s |
-| `rank_fig8.txt`, `rank_figs57.txt` (ranking bootstrap) | `python $R/rank_bootstrap.py fig8 > $R/rank_fig8.txt`; same with `figs57` | ~2 min each |
+| `rank_fig8.txt`, `rank_figs57.txt` (ranking bootstrap) | `python $R/rank_bootstrap.py fig8 > $R/rank_fig8.txt`; same with `figs57`. **Needs `es2020/collapse.py` from branch `claude/project-thread-m5ejoo` (commit e438184, `field_rank`), which is not on this branch**: `git checkout origin/claude/project-thread-m5ejoo -- python/es2020/collapse.py` first, then restore it. | ~2 min each |
 | `fig1_source_match.json` | `python $R/match_fig1_sources.py <mdp2.45.pdf>` (PDF not redistributed; the JSON is committed) | s |
 | `plain_split_results.json` (split by R) | `python $R/plain_split.py` | ~5 min |
 | `plain_split2_results.json` (split by source) | `python $R/plain_split2.py` | ~3 min |
@@ -41,3 +41,6 @@ Each script prints one line per model: `p` constants, AIC on the fitted set, FIT
 - `ys/specimens_ijf2025.csv`: REAL specimens, vector-extracted from Yaren & Susmel IJF 193 (2025) 108750 Figs 4–7 (thread "Extract fatigue data from homogenised-material paper"). `ys/table*.csv`: REAL, transcribed tables. `ys/profiles.json`: 2D plane-stress FE bisector profiles (`ys/fe2d.py`).
 - `fig1_source_match.json`: DERIVED attribution (image overlay), not stated by the authors point by point.
 - Ezeh–Susmel specimens and IgBEM fields: `es2020/data/`.
+
+## Clean-checkout check (2026-11-16)
+Fresh clone of this branch, every command above run in order: all 12 result JSON files reproduce the committed ones exactly (no difference above 1e-3 in any number); both figures re-render. The only script that does not run on this branch as is is `rank_bootstrap.py` (see its row). Total runtime about 15 min.
