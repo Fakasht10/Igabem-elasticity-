@@ -61,14 +61,20 @@ CRIT = {"net": ([], []), "kt": ([], []), "tcd_ln_paper": ([], []), "tcd_ln": (["
         "tcd_const": (["L"], [0.5]), "tcd_line": (["L"], [0.5]),
         "tcd_line_ln": (["A", "B"], [16.4, -0.242]), "sup_tcd": (["l"], [0.05]), "sup_tcd_line": (["l"], [0.05]),
         "weibull": (["m"], [10.0]), "hotspot": (["l"], [1.0]), "mhsv": (["L_FCI"], [0.4]),
-        "mhsv_e": (["e"], [0.1]), "hsv90": (["m"], [10.0]), "hsv80": (["m"], [10.0])}
+        "mhsv_e": (["e"], [0.1]), "hsv90": (["m"], [10.0]), "hsv80": (["m"], [10.0]),
+        # life-dependent versions (same move as the authors' L_M(N)): a constant factor cannot follow the steeper
+        # notched S-N curve, so the fitted V would tilt across P50. p(N) = p2e6 (N / 2e6)^B, both fitted on the V.
+        "weibull_n": (["m", "B"], [7.0, 0.05]), "hsv80_n": (["m", "B"], [7.0, 0.05]),
+        "sup_tcd_line_n": (["l", "B"], [0.05, 0.0])}
 TITLE = {"net": "net stress (no notch factor)", "kt": "elastic peak Kt x net", "tcd_ln_paper": "TCD point, authors' L(N)",
          "tcd_ln": "TCD point, L(N) = A N^B", "tcd_const": "TCD point, constant L", "tcd_line": "TCD line, constant L",
          "tcd_line_ln": "TCD line, L(N) = A N^B", "sup_tcd": "supported TCD point, l (L 0.49 authors')",
          "sup_tcd_line": "supported TCD line, l (L 0.49 authors')", "weibull": "Weibull, m",
          "hotspot": "supported hot spot, l", "mhsv": "modified HSV, L_FCI",
          "mhsv_e": "modified HSV, exponent e (L_FCI 0.4 measured)", "hsv90": "HSV, peak x (V90/V_plain)^(1/m)",
-         "hsv80": "HSV, peak x (V80/V_plain)^(1/m)"}
+         "hsv80": "HSV, peak x (V80/V_plain)^(1/m)",
+         "weibull_n": "Weibull, m(N) = m (N/2e6)^B", "hsv80_n": "HSV V80, m(N) = m (N/2e6)^B",
+         "sup_tcd_line_n": "supported TCD line, authors' L(N), l(N) = l (N/2e6)^B"}
 
 
 class Notch:
@@ -124,6 +130,12 @@ def feff(name, n, N, th):
         return max(1.0, n.lm(L_CD) / (1 + math.sqrt(th[0] * n.chi)))
     if name == "weibull":
         return n.weib(th[0])
+    if name == "weibull_n":
+        return n.weib(min(max(th[0] * (N / 2e6) ** th[1], 2.0), 200.0))
+    if name == "hsv80_n":
+        return n.kt * (n.vq(0.8) / V_PLAIN) ** (1 / min(max(th[0] * (N / 2e6) ** th[1], 2.0), 200.0))
+    if name == "sup_tcd_line_n":
+        return max(1.0, n.lm(16.4 * N ** -0.242) / (1 + math.sqrt(th[0] * (N / 2e6) ** th[1] * n.chi)))
     if name == "hotspot":
         return max(1.0, n.kt / (1 + math.sqrt(th[0] * n.chi)))
     if name == "mhsv":                                # life-domain size factor mapped to stress with the plain k 5.1
@@ -147,26 +159,42 @@ def fit(name, notches, rows, uts):
     names, th0 = CRIT[name]
     if not names:
         return []
-    bounds = {"A": (0.1, 200), "B": (-1.0, 0.2), "L": (1e-3, 6.0), "m": (2.0, 200.0), "l": (1e-4, 50.0),
+    bounds = {"A": (0.1, 200), "B": (-1.0, 1.0), "L": (1e-3, 6.0), "m": (2.0, 200.0), "l": (1e-4, 50.0),
               "L_FCI": (1e-6, 100.0), "e": (1e-4, 1.0)}
+    signed = {"B"}
 
     def unpack(z):
         out = []
         for v, nm in zip(z, names):
             lo, hi = bounds[nm]
-            out.append(min(max(v if nm == "B" else math.exp(v), lo), hi))
+            out.append(min(max(v if nm in signed else math.exp(v), lo), hi))
         return out
 
     obj = lambda z: float(np.mean(resid(name, notches, rows, uts, unpack(z)) ** 2))
-    z0 = [v if nm == "B" else math.log(v) for v, nm in zip(th0, names)]
-    best = min((minimize(obj, [z + (s if nm != "B" else 0) for z, nm in zip(z0, names)], method="Nelder-Mead",
+    z0 = [v if nm in signed else math.log(v) for v, nm in zip(th0, names)]
+    best = min((minimize(obj, [z + (s if nm not in signed else 0) for z, nm in zip(z0, names)], method="Nelder-Mead",
                          options=dict(xatol=1e-4, fatol=1e-8, maxiter=2000)) for s in (-1.5, 0.0, 1.5)), key=lambda o: o.fun)
     return unpack(best.x)
 
 
-def stats(r):
-    return dict(bias=float(r.mean()), rms=float(np.sqrt(np.mean(r ** 2))),
-                band=float(np.mean(abs(r) < math.log10(PLAIN["T"]) / 2)))
+TILT_MAX = 0.05   # flag a fit whose residual trend moves the fitted-set ends more than 0.05 log10 (12 %) off the curve
+
+
+def stats(r, N=None):
+    """bias, rms, share in band; with N also the residual slope per decade of life and the end drift
+    slope * (decades spanned) / 2, i.e. how far the trend puts the short- and long-life ends off the curve."""
+    out = dict(bias=float(r.mean()), rms=float(np.sqrt(np.mean(r ** 2))),
+               band=float(np.mean(abs(r) < math.log10(PLAIN["T"]) / 2)))
+    if N is not None:
+        lN = np.log10(N)
+        out["slope"] = float(np.polyfit(lN, r, 1)[0])
+        out["drift"] = abs(out["slope"]) * float(lN.max() - lN.min()) / 2
+        out["tilted"] = out["drift"] > TILT_MAX
+    return out
+
+
+def lives(rows, k):
+    return np.array([x[4] for x in rows if x[0] == k])
 
 
 def main(argv=None):
@@ -189,7 +217,7 @@ def main(argv=None):
          (f"Plain curve: Fig. 1 band as printed (sigma_max/UTS, P50 0.16 at 2e6, k 5.1, T 2.451)." if PLAIN["printed"] else
           f"Plain curve REFIT on the Fig. 1 points in the Walker effective stress, gamma {PLAIN['gamma']:g}: "
           f"P50 {PLAIN['S50']:.4f} at 2e6, k {PLAIN['k']:.2f}, T {PLAIN['T']:.3f}. Notched: same variable."), "",
-         "| criterion | fitted parameters | sharp V (fitted): bias / rms | HELD OUT U r1: bias / rms, in band | "
+         "| criterion | fitted parameters | sharp V (fitted): bias / rms / slope per decade / end drift | HELD OUT U r1: bias / rms, in band | "
          "HELD OUT U r3: bias / rms, in band | HELD OUT both: rms, in band |", "|---|---|---|---|---|---|"]
     res = {}
     for name in CRIT:
@@ -197,10 +225,10 @@ def main(argv=None):
         r = {k: resid(name, notches, [x for x in rows if x[0] == k], uts, th) for k in NAMES}
         res[name] = (th, r)
         h = stats(np.concatenate([r["intermediate"], r["blunt"]]))
-        si, sb, ss = stats(r["intermediate"]), stats(r["blunt"]), stats(r["sharp"])
+        si, sb, ss = stats(r["intermediate"]), stats(r["blunt"]), stats(r["sharp"], lives(rows, "sharp"))
         par = ", ".join(f"{n} {v:.3g}" for n, v in zip(CRIT[name][0], th)) or (
             "A 16.4, B -0.242 (published, fitted by the authors)" if name == "tcd_ln_paper" else "none")
-        L.append(f"| {TITLE[name]} | {par} | {ss['bias']:+.3f} / {ss['rms']:.3f} | {si['bias']:+.3f} / {si['rms']:.3f}, "
+        L.append(f"| {TITLE[name]} | {par} | {ss['bias']:+.3f} / {ss['rms']:.3f} / {ss['slope']:+.3f} / {ss['drift']:.3f}{' **TILTED**' if ss['tilted'] else ''} | {si['bias']:+.3f} / {si['rms']:.3f}, "
                  f"{100 * si['band']:.0f} % | {sb['bias']:+.3f} / {sb['rms']:.3f}, {100 * sb['band']:.0f} % | "
                  f"{h['rms']:.3f}, {100 * h['band']:.0f} % |")
     os.makedirs(a.out, exist_ok=True)
@@ -211,7 +239,8 @@ def main(argv=None):
     figure(res, notches, rows, uts, os.path.join(a.out, f"fig_calib_sharp_holdout{tag}"))
 
 
-GROUPS = [("focus", "Methods in question", ["weibull", "hsv80", "tcd_line", "sup_tcd_line"]),
+GROUPS = [("focus", "Methods in question, life-dependent factor", ["weibull_n", "hsv80_n", "tcd_line_ln", "sup_tcd_line_n"]),
+          ("focus_const", "Methods in question, constant factor (fitted V tilts)", ["weibull", "hsv80", "tcd_line", "sup_tcd_line"]),
           ("baselines", "Baselines (no free parameter)", ["net", "kt"]),
           ("tcd_point", "TCD point family", ["tcd_ln_paper", "tcd_ln", "tcd_const", "sup_tcd"]),
           ("tcd_line", "TCD line family", ["tcd_line", "tcd_line_ln", "sup_tcd_line"]),
@@ -259,8 +288,10 @@ def figure(res, notches, rows, uts, path):
             h = stats(np.concatenate([r["intermediate"], r["blunt"]]))
             par = ", ".join(f"{n} {v:.3g}" for n, v in zip(CRIT[name][0], th)) or (
                 "published by the authors" if name == "tcd_ln_paper" else "no free parameter")
-            ax.set_title(f"{TITLE[name]} ({par})\nheld out: rms {h['rms']:.3f} log10 S, {100 * h['band']:.0f} % in band",
-                         fontsize=10.5)
+            fs = stats(r["sharp"], lives(rows, "sharp"))
+            ax.set_title(f"{TITLE[name]} ({par})\nfitted V: bias {fs['bias']:+.3f}, slope {fs['slope']:+.3f}/decade"
+                         + (" - TILTED" if fs["tilted"] else "") + f"\nheld out: rms {h['rms']:.3f} log10 S, "
+                         f"{100 * h['band']:.0f} % in band", fontsize=10, color="#b00000" if fs["tilted"] else "k")
             ax.set(xscale="log", yscale="log", xlim=(10, 1e7), ylim=(0.05, 10) if tag == "baselines" else (0.08, 2.5))
             ax.grid(alpha=0.3, which="both")
         for ax in axs.flat[len(names):]:
@@ -290,7 +321,7 @@ def ranking(res, path):
     fig, ax = plt.subplots(figsize=(10, 6.2), layout="constrained")
     y = np.arange(len(rows))
     fam = {n: g for g, _, ns in GROUPS for n in ns}
-    col = {"baselines": "0.55", "tcd_point": "#1f77b4", "tcd_line": "#2ca02c", "volume": "#d62728", "mhsv": "#ff7f0e"}
+    col = {"baselines": "0.55", "tcd_point": "#1f77b4", "tcd_line": "#2ca02c", "volume": "#d62728", "mhsv": "#ff7f0e", "focus": "#9467bd", "focus_const": "#9467bd"}
     ax.barh(y, [r[0] for r in rows], color=[col[fam[r[1]]] for r in rows], height=0.6)
     ax.scatter([r[3] for r in rows], y, marker="s", color="k", s=18, zorder=3, label="U r1 alone (held out)")
     ax.scatter([r[4] for r in rows], y, marker="P", color="k", s=26, zorder=3, label="U r3 alone (held out)")

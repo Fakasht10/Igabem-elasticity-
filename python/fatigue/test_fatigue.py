@@ -213,3 +213,14 @@ def test_hsv_fix_surface_weights_and_size_term():
     assert abs((f * sn) ** -ksn / NN - 1) < 1e-12
     x = np.random.default_rng(1).weibull(1.5, 4000)
     assert abs(hsv_fix.k_weibull_mle(x) - 1.5) < 0.06
+
+
+def test_calib_stats_flags_tilted_fit():
+    """A residual that is centred (bias 0) but trends with life must be flagged; a flat one must not."""
+    import numpy as np
+    from fatigue.calib import stats
+    N = np.geomspace(1e2, 1e6, 40)
+    tilt = stats(-0.09 * (np.log10(N) - 4), N)
+    flat = stats(0.01 * np.sin(np.arange(40)), N)
+    assert abs(tilt["bias"]) < 1e-12 and tilt["tilted"] and abs(tilt["slope"] + 0.09) < 1e-9
+    assert not flat["tilted"]
