@@ -10,7 +10,9 @@ Per specimen K_f,i = sigma_0(N_i) / sigma_n,max,i (Fig. 8 stresses, the paper's 
 Closures K_f(N[, sigma]) are calibrated the paper's way (plain P50 + Fig. 8a sharp curve on 1e3..2e6) and U r1,
 U r3 are never used in a fit. Post-processing only: K_t, chi and the profiles are the stored IgBEM fields.
 """
+import json
 import math
+from functools import lru_cache
 import os
 import sys
 
@@ -96,6 +98,33 @@ def triax(base_len):
     return f
 
 
+# ---------------------------------------------------------------- SED split on the Lazzarin-Berto crescent
+@lru_cache(None)
+def _sed_grid(notch):
+    """Stored crescent grid (es2020/sed_split.py on the comparison branch, post-process of the cached solve): per point
+    thickness-mean (tr sigma)^2 and sigma_vM^2 at unit net stress; reproduces the stored w2E to 5e-16."""
+    g = json.load(open(os.path.join(paper.DATA, "igabem_sed_split.json")))
+    g = g.get("notches", g)[notch]
+    return g["r0"], np.asarray(g["rc"]), np.asarray(g["dA"]), np.asarray(g["tr2"]), np.asarray(g["vm2"])
+
+
+def sed_parts(notch, R0):
+    """Crescent averages of 2E W_dev = 2(1+nu)/3 vM^2 and 2E W_vol = (1-2nu)/3 tr^2 over rc <= R0 + r0."""
+    r0, rc, dA, tr2, vm2 = _sed_grid(notch)
+    out = []
+    for R in np.atleast_1d(R0):
+        m = rc <= R + r0
+        w = dA[m] / dA[m].sum()
+        out.append((2 * (1 + NU) / 3 * (w @ vm2[m]), (1 - 2 * NU) / 3 * (w @ tr2[m])))
+    return np.array(out)
+
+
+def sed_split(notch, R0, alpha):
+    """K_eq = sqrt((W_dev + alpha W_vol) / same for uniaxial unit stress); alpha = 1 is Lazzarin-Berto."""
+    wd, wv = sed_parts(notch, R0).T
+    return np.sqrt((wd + alpha * wv) / (2 * (1 + NU) / 3 + alpha * (1 - 2 * NU) / 3))
+
+
 CLOSURES = {   # name: (f, p0, length map, label, kind) ; kind: 'free' fit, 'pred' no fit
     "net": (lambda n, N, s, p, L=None: np.ones(np.shape(N)), (), None, "C0 net stress, K_f = 1", "pred"),
     "kt": (lambda n, N, s, p, L=None: np.full(np.shape(N), kt(n)), (), None, "C1 K_f = K_t (elastic)", "pred"),
@@ -116,6 +145,14 @@ CLOSURES = {   # name: (f, p0, length map, label, kind) ; kind: 'free' fit, 'pre
                          * p[3] ** np.log(3 * eta_at(n, paper.lm_paper(N) / 2)),
                          (5.0, -0.25, 1.5, 2.0), _len,
                          "T3 Neuber x constraint x triaxiality, rho' = {:.3g} N^{:.3f} mm, NSR {:.3g}, exp(beta) {:.3g}", "free"),
+    "sed": (lambda n, N, s, p, L=_len: sed_split(n, L(p, N), 1.0), (2.0, -0.2), _len,
+            "S1 averaged SED (alpha = 1, Lazzarin-Berto), R0 = {:.3g} N^{:.3f} mm", "free"),
+    "sed_const": (lambda n, N, s, p, L=None: sed_split(n, np.full(np.shape(N), p[0]), 1.0), (1.0,), None,
+                  "S1c averaged SED, constant R0 = {:.3g} mm", "free2"),
+    "sed_split": (lambda n, N, s, p, L=_len: sed_split(n, L(p[:2], N), p[2]), (2.0, -0.2, 1.0), _len,
+                  "S2 W_dev + alpha W_vol, R0 = {:.3g} N^{:.3f} mm, alpha {:.3g}", "free"),
+    "sed_split_const": (lambda n, N, s, p, L=None: sed_split(n, np.full(np.shape(N), p[0]), p[1]), (1.0, 1.0), None,
+                        "S2c W_dev + alpha W_vol, constant R0 = {:.3g} mm, alpha {:.3g}", "free2"),
     "elhaddad_nsr": (constraint(elhaddad), (16.4, -0.242, 1.5), _len,
                      "C6' El Haddad x constraint, L = {:.3g} N^{:.3f} mm, NSR {:.3g}", "free"),
 }
@@ -149,7 +186,7 @@ def calibrate(name):
     best = None
     for dA in (-2, 0, 2):
         for dB in (-0.15, 0, 0.15):
-            o = minimize(cost, x0 + np.r_[dA, dB, np.zeros(len(p0) - 2)], method="Nelder-Mead",
+            o = minimize(cost, x0 + (np.full(len(p0), dA / 2) if kind == "free2" else np.r_[dA, dB, np.zeros(len(p0) - 2)]), method="Nelder-Mead",
                          options=dict(xatol=1e-10, fatol=1e-14, maxiter=20000))
             best = o if best is None or o.fun < best.fun else best
     return unpack(best.x), float(math.sqrt(best.fun / len(N)))
@@ -258,6 +295,8 @@ GROUPS = {   # name: (x per notch from the specimen dict, axis label)
     "chi_L": (lambda k, d: M.chi(k) * d["L"], r"gradient group $\chi^* L(N_f)$ (Siebel-Stieler / FKM)"),
     "static": (lambda k, d: d["s50"] / paper.UTS,
                r"static group $\sigma_{n,max,50}(N_f)/\sigma_{UTS}$ (notch's own median S-N line at $N_f$)"),
+    "wvol_wdev": (lambda k, d: (lambda P: P[:, 1] / P[:, 0])(sed_parts(k, d["L"])),
+                  r"SED ratio $W_{vol}/W_{dev}$ on the crescent of radius $L(N)$"),
     "v90_L3": (lambda k, d: v90(k) / d["L"] ** 3, r"volume group $V_{90}/L(N_f)^3$ (Kuguel $V_{90}$, IgBEM)"),
 }
 
