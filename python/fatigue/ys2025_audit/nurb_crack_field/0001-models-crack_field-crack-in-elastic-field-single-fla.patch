@@ -1,0 +1,859 @@
+From bbc84047da3f96971ee123eca818b6619bd27208 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 16 Nov 2026 20:28:03 +0000
+Subject: [PATCH] models/crack_field: crack-in-elastic-field single-flaw
+ fatigue model on the PLA benchmark
+
+ES2020 finite-width crack (one constant a0) and YS2025 void-seeded crack superposed on the
+IgBEM field (linear and saturating defect size, a_cap = 2.1 mm a priori). Fits on the paper
+split's FIT ids, scores with calibration.pla_fatigue.score (interval + pred_life). Reads only
+specimens.csv, splits.json and the stored IgBEM extracts. One command per headline number,
+--check against expected.json, 8 tests (~15 s) + 1 slow.
+
+Held stress rms (net stress): ES 0.075 (0.127), YS saturating 0.076 (0.197), YS linear 0.088.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Xyo3tXioYkS4yA5vW8bxH1
+---
+ models/__init__.py               |   1 +
+ models/crack_field/README.md     | 127 ++++++++++++
+ models/crack_field/__init__.py   |   1 +
+ models/crack_field/__main__.py   |  95 +++++++++
+ models/crack_field/expected.json | 188 ++++++++++++++++++
+ models/crack_field/model.py      | 319 +++++++++++++++++++++++++++++++
+ tests/test_crack_field.py        |  49 +++++
+ 7 files changed, 780 insertions(+)
+ create mode 100644 models/__init__.py
+ create mode 100644 models/crack_field/README.md
+ create mode 100644 models/crack_field/__init__.py
+ create mode 100644 models/crack_field/__main__.py
+ create mode 100644 models/crack_field/expected.json
+ create mode 100644 models/crack_field/model.py
+ create mode 100644 tests/test_crack_field.py
+
+diff --git a/models/__init__.py b/models/__init__.py
+new file mode 100644
+index 0000000..a1c9272
+--- /dev/null
++++ b/models/__init__.py
+@@ -0,0 +1 @@
++"""Fatigue / failure models scored on the calibration benchmarks."""
+diff --git a/models/crack_field/README.md b/models/crack_field/README.md
+new file mode 100644
+index 0000000..979dd29
+--- /dev/null
++++ b/models/crack_field/README.md
+@@ -0,0 +1,127 @@
++# Crack-in-elastic-field fatigue model (single flaw)
++
++This package holds two single-flaw models, scored on the PLA fatigue benchmark (`calibration/pla_fatigue.py`, v1.1.0):
++
++- **ES2020**: a finite-width edge crack, with one constant a0.
++- **YS2025**: a void-seeded crack. Its size grows with the measured void size d_V and saturates at the half-thickness of the infill core.
++
++Every number below is reproduced from a clean clone in under a minute:
++
++```
++pip install numpy scipy                      # plus pytest for the tests
++python -m models.crack_field es              # ES2020, ~1 s
++python -m models.crack_field ys-lin          # YS2025 3D baseline, linear defect, ~6 s
++python -m models.crack_field ys-sat          # YS2025 saturating defect, a_cap = 2.1 mm a priori, ~6 s   <- YS headline
++python -m models.crack_field ys-sat-fit      # YS2025 saturating defect, a_cap fitted, ~40 s
++python -m models.crack_field all --check     # all four: refit + compare with expected.json (exit 1 on mismatch)
++python -m models.crack_field all --stored    # score the stored optima only (no fit), < 2 s
++python -m pytest tests/test_crack_field.py   # 8 tests, ~15 s (+1 slow: the fitted-cap refit)
++```
++
++The inputs are only `calibration/data/pla_fatigue/specimens.csv`, `splits.json`, and two IgBEM field extracts in `fields/extracts/`:
++- `ES_igabem_bisector_profiles.json.gz`
++- `YS_igabem_fields_3d.json.gz`
++
++There are no other files, no network access and no IgBEM solve.
++
++## Equations
++
++**Damage law.** The same law applies to every row of both sources:
++
++    ln c = k [ ln sD − ln(S · F) − γ ln((1 − R)/2) ]
++    ln N_f ~ Normal(ln c, sZ)                     run-outs right-censored (log survival)
++
++- S = `sigma_max_MPa`, the net-section nominal maximum stress. For YS, voids are ignored.
++- `(1 − R)/2` is the Walker term. At R = −1 it equals 1, so γ acts only on R ≥ 0.
++- **Free constants:** sD, k, γ and sZ. Their admissible bounds are 1 < k < 40, 0 ≤ γ ≤ 1 and −4 < ln sZ < 1.5.
++
++**Structural map F.** A crack of depth a sits in the *uncracked* IgBEM field K(x) of the specimen (σ1 per unit net stress, on the notch bisector, at depth x from the root). F is the stress it produces at the process-zone point r = L0/2 ahead of the tip.
++
++**ES2020** (`es`). The plain bar is a uniform field.
++
++    plain:    F = f_sent(a0 / 3.0) / 1.12
++    notched:  F = K̄(a0) · f_sent(a0 / 6.0) / 1.12,        K̄(a) = (2/π) ∫_0^{π/2} K(a sin θ) dθ   (weight-function mean)
++    f_sent(α) = 1.12 − 0.231α + 10.55α² − 21.72α³ + 30.39α⁴    (Tada 2.10, single-edge crack in a strip)
++
++- **Field:** K is the mean of the 5 thickness stations, clipped at the ligament half-width b = 2.997 mm.
++- **Constant:** one, a0, with bounds 1e-3 to 2.9 mm.
++
++**YS2025** (`ys-*`). Here the plain hourglass carries a field too (Kt 1.217).
++
++    F = φ^(−n) [ K(a + r) + (W(a, r) − 1) · K̄(a) ],       W(a, r) = (a + r)/sqrt(r (2a + r))  (Westergaard), r = L0/2
++    F = ∞ if a + r ≥ b = 6.0 mm   (the crack cannot leave the ligament; the wall is tested on the fitted rows only)
++    ys-lin:      a = a0 + κ d_V
++    ys-sat:      a = a0 + a_cap (1 − exp(−κ d_V / a_cap)),   a_cap = 2.1 mm FIXED a priori
++    ys-sat-fit:  same, with a_cap fitted (bounds 0.05 to 5.8 mm)
++
++- **Field:** the mid-plane station z = 2.5 mm, clipped at b. φ is the infill fraction.
++- **Constants:** a0 (0 to 5.5), κ (0 to 30 for linear, 0 to 60 for saturating) and n (0 to 5).
++
++**Fixed constants.**
++- L0 = 0.4 mm.
++- a_cap = 2.1 mm. This is the YS half-thickness 2.5 mm minus the 0.4 mm perimeter shell, i.e. the infill core that a void-seeded crack can occupy. It was chosen before the fit.
++- K̄ is evaluated with 128-point Gauss–Legendre quadrature in θ.
++
++## Protocol
++
++- **Splits:** `paper/ES2020` and `paper/YS2025`. Each fits on plain plus sharp V (every infill level for YS) and holds out U r1 and U r3.
++- **Fit:** maximum likelihood on the FIT ids only. Each start is combined with 2 core starts, and each run is a two-stage Nelder–Mead. `fit()` reports any parameter within 1e-3 of a bound in `on_bound`.
++- **Prediction for each row:** the median strength at that row's life, `S_pred = S · exp((ln c − ln N_f)/k)`.
++- **P10–P90 interval:** `S_pred · exp(±1.2816 sZ / k)`.
++- **Median life:** `exp(ln c)`, passed to the scorer as `pred_life`.
++- **Scoring:** `B.score(pred, "paper", source, interval=..., pred_life=...)`. The run also prints the life-residual statistics: rms, bias, tilt against N_exp and against N_pred, and P10–P90 coverage.
++
++## Expected outputs (`expected.json`)
++
++Stress residuals are log10(S_pred/S_exp), on failures. Life residuals are log10(N_exp/N_pred).
++
++| model | p | AIC | fit rms S | held rms S | net stress, held | held − net (90 % CI, series bootstrap) | fit / held rms log N | held P10–P90 coverage | held tilt vs N_pred (life) |
++|---|---|---|---|---|---|---|---|---|---|
++| `es` | 5 | 617.06 | 0.095 | **0.075** | 0.127 | −0.051 [−0.067, −0.033] better | 0.491 / 0.387 | 93 % | −0.05 |
++| `ys-lin` | 7 | 566.18 | 0.072 | 0.088 | 0.197 | −0.109 [−0.139, −0.079] better | 0.355 / 0.434 | 70 % | −0.20 |
++| `ys-sat` | 7 | **543.92** | 0.066 | **0.076** | 0.197 | −0.121 [−0.153, −0.090] better | 0.335 / 0.385 | 74 % | −0.15 |
++| `ys-sat-fit` | 8 | 545.56 | 0.066 | 0.077 | 0.197 | −0.120 [−0.151, −0.089] better | 0.335 / 0.390 | 73 % | −0.16 |
++
++No parameter is on a bound. The fitted constants:
++
++| model | a0 (mm) | κ | n | a_cap (mm) | largest a (mm) | gap to the wall (mm) |
++|---|---|---|---|---|---|---|
++| `es` | 0.95 | n/a | n/a | n/a | n/a | n/a |
++| `ys-lin` | 0.30 | 2.79 | 0.24 | n/a | 4.94 | 0.86 |
++| `ys-sat` | 0.40 | 4.46 | 0.40 | 2.1 fixed | 2.44 | 3.36 |
++| `ys-sat-fit` | 0.39 | 4.38 | 0.38 | 2.41 | 2.69 | 3.11 |
++
++## Departures from the papers (labelled)
++
++- **Not the papers' own methods.** Both papers use a TCD L_M(N). This package replaces that with a crack superposed on the IgBEM field.
++- **YS: Walker exponent γ.** The YS paper uses σ_max only.
++- **YS: a = f(d_V).** The paper uses a homogenised crack a_eq = kt·d_V that shifts plain and notched equally. Here a = f(d_V) is a void-seeded crack with saturation.
++- **YS: plain field.** The plain hourglass field is used, not a uniform bar.
++- **ES: own-lab plain points only** (143 of 195, per `splits.json`), converted with the ASSUMED UTS 42.9 MPa.
++
++## Audits and known limits
++
++**Audit 1** (independent, 2026-11-16). The shared field code mirrored the profile with no cap on a, which gave a spurious likelihood mode at a ≈ 23 mm. The old 24-point quadrature was also 2–3 % low for V. Both are fixed here: the field is clipped at b, the wall is a + L0/2 < b, and the quadrature is 128-point Gauss.
++
++**Audit 2.** It confirmed the fix and found a sign error in the old stress-bias column; this has been corrected. The finite-width Irwin factor on the YS crack costs +34 AIC, so it is off.
++
++**Audit 3** (saturating defect, 80 random starts, own loader and scorer). It reproduced the AIC to 1e-3 and every score to 1e-4. It found three things:
++- **Held-out leak.** The wall check covered the held-out rows. It is now limited to fitted rows; the optima are unchanged.
++- **a0 kinks.** a0 sits on a K-profile node because the field is linearly interpolated, so its curvature standard errors are meaningless. A smooth interpolant changes AIC by at most 0.01.
++- **a_cap profile.** The profile minimum is at 2.4 mm, with an approximate 95 % interval of 1.7–4.0. Fixing a_cap = 2.1 costs 0.18 NLL.
++
++**Caveats a validator should test:**
++- **The saturation evidence depends on the 20 % infill level.** Leaving out 20 % gives ΔAIC(sat − lin) = +1.6. Leaving out any other level gives −10 to −24. The held-out gain shows at every level but is about 0 at 60 % and small at 80 %. The held-out set prefers a smaller a_cap than the fitted set.
++- **YS U r1 − U r3 gap.** The mean life residual differs by −0.27 decades and grows with d_V (−0.20 at 100 %, −0.47 at 20 %). Per-level biases reach +0.40 decades at 100 % and −0.31 at 40 %. This is the main open deficiency.
++- **Coverage below target.** Held-out P10–P90 coverage is 70–74 % on YS (target 80 %). The benchmark's stress-tilt against N_pred flags YS held-out as TILTED (+0.03 per decade, t 3.3).
++- **Identifiability.** With only plain + V fitted, γ and any R or gradient driver only change how U is interpolated.
++- **ES plain geometry** is assumed (33 mm gauge, 3 mm thick). The plain strip width used by f_sent (3 mm per side) is part of that assumption.
++
++## Provenance
++
++The model was developed in IgBEM (`Fakasht10/Igabem-elasticity-`, branch `claude/project-thread-ramlnd`, `python/fatigue/ys2025_audit/`). That branch holds:
++- the original scripts;
++- audits 1–3 (`audit3/`: refit, profile, robustness, smooth);
++- `bench/bench_rescore.json`, the first rescore on benchmark 3f2a5d5.
++
++This package is a clean re-implementation on the benchmark loader. It reproduces those numbers exactly.
+diff --git a/models/crack_field/__init__.py b/models/crack_field/__init__.py
+new file mode 100644
+index 0000000..4578831
+--- /dev/null
++++ b/models/crack_field/__init__.py
+@@ -0,0 +1 @@
++"""Crack-in-elastic-field single-flaw fatigue model (see README.md)."""
+diff --git a/models/crack_field/__main__.py b/models/crack_field/__main__.py
+new file mode 100644
+index 0000000..d4ee062
+--- /dev/null
++++ b/models/crack_field/__main__.py
+@@ -0,0 +1,95 @@
++"""Run: python -m models.crack_field {es|ys-lin|ys-sat|ys-sat-fit|all} [--check] [--stored] [--write].
++
++Fits the model on the split's FIT ids, predicts every row, scores with calibration.pla_fatigue.score and prints the
++benchmark report plus the life-residual statistics. --stored skips the fit and uses expected.json's parameters (seconds).
++--check compares the result with expected.json and exits non-zero on any difference beyond its tolerance.
++"""
++
++import json
++import sys
++import time
++from pathlib import Path
++
++from calibration import pla_fatigue as B
++
++from . import model as M
++
++EXP = Path(__file__).with_name("expected.json")
++TOL = dict(aic=0.05, par=0.02, rms=2e-3)
++
++
++def headline(res: dict) -> dict:
++    """Headline numbers of one run (what expected.json stores)."""
++    b, o = res["bench"], res["own"]
++    return dict(
++        aic=res.get("aic"),
++        par=res["par"],
++        held_rms_logS=b["held"]["rms"],
++        fit_rms_logS=b["fit"]["rms"],
++        held_net_stress_rms_logS=b["held_net_stress"]["rms"],
++        held_vs_net=b["held_vs_net_stress"],
++        held_rms_logN=o["held"]["rms_logN"],
++        fit_rms_logN=o["fit"]["rms_logN"],
++        own=o,
++        on_bound=res.get("on_bound"),
++        wall_gap=res.get("wall_gap"),
++    )
++
++
++def check(name: str, h: dict, e: dict) -> bool:
++    """Compare a run with expected.json within TOL; print PASS or the differences."""
++    bad = []
++    if h["aic"] is not None and abs(h["aic"] - e["aic"]) > TOL["aic"]:
++        bad.append(f"aic {h['aic']:.3f} vs {e['aic']:.3f}")
++    for k, v in e["par"].items():
++        if abs(h["par"][k] - v) > TOL["par"] * max(1, abs(v)):
++            bad.append(f"{k} {h['par'][k]:.4f} vs {v:.4f}")
++    for k in ("held_rms_logS", "fit_rms_logS", "held_rms_logN", "fit_rms_logN"):
++        if abs(h[k] - e[k]) > TOL["rms"] * (5 if "logN" in k else 1):
++            bad.append(f"{k} {h[k]:.4f} vs {e[k]:.4f}")
++    if h["on_bound"]:
++        bad.append(f"on bound {h['on_bound']}")
++    print(f"CHECK {name}: " + ("PASS" if not bad else "FAIL " + "; ".join(bad)))
++    return not bad
++
++
++def main(argv: list[str]) -> int:
++    """Run the named models (or all), print the reports, optionally --check / --write."""
++    names = [a for a in argv if not a.startswith("--")] or ["all"]
++    names = list(M.MODELS) if names == ["all"] else names
++    exp = json.loads(EXP.read_text()) if EXP.exists() else {}
++    ok, out = True, {}
++    for n in names:
++        t = time.time()
++        res = M.run(n, par=exp[n]["par"] if "--stored" in argv else None)
++        if "--stored" in argv:
++            res["aic"], res["on_bound"] = None, []
++        h = out[n] = headline(res)
++        print(
++            f"\n### {n}  ({time.time() - t:.0f} s)  AIC {h['aic'] if h['aic'] is None else round(h['aic'], 2)}  "
++            f"params { ({k: round(v, 4) for k, v in h['par'].items()}) }  on bound {h['on_bound']}"
++            + (
++                f"  wall gap {h['wall_gap']:.2f} mm"
++                if h["wall_gap"] is not None
++                else ""
++            )
++        )
++        print(B.report_text(res["bench"]))
++        for part in ("fit", "held"):
++            s = h["own"][part]
++            print(
++                f"  life residual {part:4s}: n {s['n']}, rms {s['rms_logN']:.3f}, bias {s['bias_logN']:+.3f}, tilt vs N_exp "
++                f"{s['tilt_vs_Nexp']:+.3f}, vs N_pred {s['tilt_vs_Npred']:+.3f}, P10-P90 coverage {100 * s['coverage80']:.0f} %"
++            )
++        if "U1_minus_U3_logN" in h["own"]:
++            print(
++                f"  U r1 - U r3 mean life residual {h['own']['U1_minus_U3_logN']:+.3f} decades"
++            )
++        if "--check" in argv:
++            ok &= check(n, h, exp[n])
++    if "--write" in argv:
++        EXP.write_text(json.dumps({**exp, **out}, indent=1))
++    return 0 if ok else 1
++
++
++sys.exit(main(sys.argv[1:]))
+diff --git a/models/crack_field/expected.json b/models/crack_field/expected.json
+new file mode 100644
+index 0000000..99903db
+--- /dev/null
++++ b/models/crack_field/expected.json
+@@ -0,0 +1,188 @@
++{
++ "es": {
++  "aic": 617.0602321201645,
++  "par": {
++   "lnsD": 5.079509434950435,
++   "k": 5.155391045413127,
++   "gam": 0.45669244620965166,
++   "lnsZ": 0.23316349186990126,
++   "a0": 0.9505371961619193
++  },
++  "held_rms_logS": 0.07514213830355213,
++  "fit_rms_logS": 0.09517220609781286,
++  "held_net_stress_rms_logS": 0.12663027964582615,
++  "held_vs_net": {
++   "rms_model_minus_net": -0.05148814134227403,
++   "ci90": [
++    -0.06664702267681263,
++    -0.03341916958253956
++   ],
++   "n_series": 12,
++   "verdict": "better"
++  },
++  "held_rms_logN": 0.3873871069433274,
++  "fit_rms_logN": 0.490649939088877,
++  "own": {
++   "fit": {
++    "n": 174,
++    "rms_logN": 0.490649939088877,
++    "bias_logN": -0.07506015747499058,
++    "tilt_vs_Nexp": 0.1645334789843098,
++    "tilt_vs_Npred": -0.0981466839698995,
++    "coverage80": 0.8275862068965517
++   },
++   "held": {
++    "n": 102,
++    "rms_logN": 0.3873871069433274,
++    "bias_logN": 0.08847036957869533,
++    "tilt_vs_Nexp": 0.10901771246662117,
++    "tilt_vs_Npred": -0.04850514577861489,
++    "coverage80": 0.9313725490196079
++   }
++  },
++  "on_bound": [],
++  "wall_gap": null
++ },
++ "ys-lin": {
++  "aic": 566.1836213338775,
++  "par": {
++   "lnsD": 4.183482891583727,
++   "k": 4.9557768375464075,
++   "gam": 0.4074180121957479,
++   "lnsZ": -0.14819467533425607,
++   "a0": 0.3032510000012604,
++   "kap": 2.792944450616533,
++   "n": 0.2421823534568448
++  },
++  "held_rms_logS": 0.0875273182279787,
++  "fit_rms_logS": 0.07159869021835147,
++  "held_net_stress_rms_logS": 0.19689221647457925,
++  "held_vs_net": {
++   "rms_model_minus_net": -0.10936489824660055,
++   "ci90": [
++    -0.1393938725279783,
++    -0.07879336913959656
++   ],
++   "n_series": 20,
++   "verdict": "better"
++  },
++  "held_rms_logN": 0.4337658563267702,
++  "fit_rms_logN": 0.3548271305827667,
++  "own": {
++   "fit": {
++    "n": 208,
++    "rms_logN": 0.3548271305827667,
++    "bias_logN": -0.031020127499754697,
++    "tilt_vs_Nexp": 0.18059053220577365,
++    "tilt_vs_Npred": -0.08014464760923726,
++    "coverage80": 0.8269230769230769
++   },
++   "held": {
++    "n": 159,
++    "rms_logN": 0.4337658563267702,
++    "bias_logN": 0.02400238498071618,
++    "tilt_vs_Nexp": 0.23426057481160897,
++    "tilt_vs_Npred": -0.20144368899072174,
++    "coverage80": 0.7044025157232704
++   },
++   "U1_minus_U3_logN": -0.2495552720267472
++  },
++  "on_bound": [],
++  "wall_gap": 0.860461211975295
++ },
++ "ys-sat": {
++  "aic": 543.9239750077448,
++  "par": {
++   "lnsD": 4.199264789990576,
++   "k": 5.0842409828896376,
++   "gam": 0.41328484345521244,
++   "lnsZ": -0.20209541479444965,
++   "a0": 0.3996715857470572,
++   "kap": 4.458175838046551,
++   "n": 0.39544896919711875
++  },
++  "held_rms_logS": 0.07569080644540124,
++  "fit_rms_logS": 0.06590786463804459,
++  "held_net_stress_rms_logS": 0.19689221647457925,
++  "held_vs_net": {
++   "rms_model_minus_net": -0.121201410029178,
++   "ci90": [
++    -0.15264166493681133,
++    -0.08970713018219573
++   ],
++   "n_series": 20,
++   "verdict": "better"
++  },
++  "held_rms_logN": 0.38483030015767616,
++  "fit_rms_logN": 0.33509146648748894,
++  "own": {
++   "fit": {
++    "n": 208,
++    "rms_logN": 0.33509146648748894,
++    "bias_logN": -0.029845659515902404,
++    "tilt_vs_Nexp": 0.1555757562207801,
++    "tilt_vs_Npred": -0.075631774059851,
++    "coverage80": 0.8365384615384616
++   },
++   "held": {
++    "n": 159,
++    "rms_logN": 0.38483030015767616,
++    "bias_logN": 0.041721802084667525,
++    "tilt_vs_Nexp": 0.19090757878672,
++    "tilt_vs_Npred": -0.14982444924127042,
++    "coverage80": 0.7358490566037735
++   },
++   "U1_minus_U3_logN": -0.2667521058215414
++  },
++  "on_bound": [],
++  "wall_gap": 3.3622340220953535
++ },
++ "ys-sat-fit": {
++  "aic": 545.5622517816053,
++  "par": {
++   "lnsD": 4.19534340535237,
++   "k": 5.089084786713214,
++   "gam": 0.41175627481839405,
++   "lnsZ": -0.20297551906616051,
++   "a0": 0.3936269999947694,
++   "kap": 4.378184525539398,
++   "n": 0.37763952157375147,
++   "acap": 2.41043482093722
++  },
++  "held_rms_logS": 0.07669477926856867,
++  "fit_rms_logS": 0.06580971209311366,
++  "held_net_stress_rms_logS": 0.19689221647457925,
++  "held_vs_net": {
++   "rms_model_minus_net": -0.12019743720601057,
++   "ci90": [
++    -0.1507269787298425,
++    -0.08894435737680394
++   ],
++   "n_series": 20,
++   "verdict": "better"
++  },
++  "held_rms_logN": 0.3903062343960008,
++  "fit_rms_logN": 0.3349112046310413,
++  "own": {
++   "fit": {
++    "n": 208,
++    "rms_logN": 0.3349112046310413,
++    "bias_logN": -0.029796901224338184,
++    "tilt_vs_Nexp": 0.1552915941848235,
++    "tilt_vs_Npred": -0.0756552328717692,
++    "coverage80": 0.8365384615384616
++   },
++   "held": {
++    "n": 159,
++    "rms_logN": 0.3903062343960008,
++    "bias_logN": 0.03219633367891709,
++    "tilt_vs_Nexp": 0.192905156390777,
++    "tilt_vs_Npred": -0.15836285440107908,
++    "coverage80": 0.7295597484276729
++   },
++   "U1_minus_U3_logN": -0.26984410421869304
++  },
++  "on_bound": [],
++  "wall_gap": 3.1141440138768344
++ }
++}
+\ No newline at end of file
+diff --git a/models/crack_field/model.py b/models/crack_field/model.py
+new file mode 100644
+index 0000000..cbf0b33
+--- /dev/null
++++ b/models/crack_field/model.py
+@@ -0,0 +1,319 @@
++"""Crack-in-elastic-field fatigue model on the PLA fatigue benchmark (calibration/pla_fatigue.py).
++
++One damage law for every row, one structural map F per specimen (see README.md for the equations):
++
++    ln c  = k (ln sD - ln(S F) - gam ln((1 - R)/2))          S = sigma_max (net nominal), Walker R correction
++    ln N  ~ Normal(ln c, sZ); run-outs right-censored          likelihood over the split's FIT ids only
++
++F is the amplification a crack of depth a feels at a process-zone distance L0/2 = 0.2 mm ahead of its tip when it sits in
++the uncracked IgBEM field of the specimen (unit net stress). Fields are the benchmark's stored IgBEM extracts.
++
++Models (MODELS below): "es" ES2020 finite-width crack (one constant a0); "ys-lin" YS 3D baseline a = a0 + kap d_V;
++"ys-sat" YS saturating defect a = a0 + a_cap (1 - exp(-kap d_V / a_cap)), a_cap = 2.1 mm a priori; "ys-sat-fit" a_cap fitted.
++"""
++
++from __future__ import annotations
++
++import gzip
++import json
++import math
++from collections.abc import Callable
++from functools import lru_cache
++
++import numpy as np
++from scipy.optimize import minimize
++from scipy.stats import norm
++
++from calibration import pla_fatigue as B
++
++EXTRACTS = B.DATA / "fields" / "extracts"
++L0 = 0.4  # process-zone length (mm), fixed: F is read at L0/2 ahead of the crack tip
++A_CAP = 2.1  # mm, a priori: YS half-thickness 2.5 minus the 0.4 mm shell = infill core a void-seeded crack can occupy
++Z90 = 1.2815515655446004  # standard-normal P90
++_GL_X, _GL_W = np.polynomial.legendre.leggauss(128)
++_TH, _WT = (
++    (_GL_X + 1) * math.pi / 4,
++    _GL_W / 2,
++)  # theta in (0, pi/2), weights summing to 1
++
++
++@lru_cache
++def fields(source: str) -> dict:
++    """Bisector sigma_1 profiles (d mm from the root, K = sigma_1 / net stress) and ligament half-width b (mm).
++
++    ES: mean over the 5 thickness stations of ES_igabem_bisector_profiles (V, U r1, U r3; the ES plain bar is uniform).
++    YS: mid-plane station z = 2.5 mm of YS_igabem_fields_3d, including the plain hourglass (Kt 1.217, not 1).
++    """
++    if source == "ES2020":
++        js = json.load(gzip.open(EXTRACTS / "ES_igabem_bisector_profiles.json.gz"))[
++            "profiles"
++        ]
++        nm = {"sharp": "V_r0.15", "intermediate": "U_r1", "blunt": "U_r3"}
++        prof = {
++            nm[k]: (np.asarray(v["d"]), np.asarray(v["s1"]).mean(0))
++            for k, v in js.items()
++        }
++        return {"prof": prof, "b": 2.997}  # net 6 mm
++    js = json.load(gzip.open(EXTRACTS / "YS_igabem_fields_3d.json.gz"))["specimens"]
++    prof = {}
++    for k, v in js.items():
++        bi = v["bisector"]
++        z = np.asarray(bi["z"])
++        prof[k] = (
++            np.asarray(bi["d"]),
++            np.asarray(bi["s1"])[int(np.argmin(abs(z - 2.5)))],
++        )
++    return {"prof": prof, "b": 6.0}  # net 12 mm
++
++
++def K(fd: dict, g: str, x: float | np.ndarray) -> np.ndarray:
++    """Uncracked field at depth x, clipped at the ligament half-width (never mirrored)."""
++    d, s = fd["prof"][g]
++    return np.interp(np.clip(np.asarray(x, float), 0.0, fd["b"]), d, s)
++
++
++def wf_mean(fd: dict, g: str, a: float) -> float:
++    """(2/pi) int_0^{pi/2} K(a sin th) dth: weight-function average of the field over the crack (128-pt Gauss)."""
++    return float(K(fd, g, a * np.sin(_TH)) @ _WT)
++
++
++def westergaard(a: float, r: float) -> float:
++    """Amplification of a remote stress at distance r ahead of a crack of half-length a."""
++    return (a + r) / math.sqrt(r * (2 * a + r))
++
++
++def f_sent(al: float) -> float:
++    """Single-edge crack in a strip under tension, a/W = al (Tada 2.10, error < 0.5 % for al <= 0.6)."""
++    al = min(al, 0.9)
++    return 1.12 - 0.231 * al + 10.55 * al**2 - 21.72 * al**3 + 30.39 * al**4
++
++
++def F_es(fd: dict, g: str, a0: float) -> float:
++    """ES finite-width crack: edge crack a0 in the plain strip (W 3 mm per side) or in the notch field (net W 6 mm)."""
++    if g == "plain":
++        return f_sent(a0 / 3.0) / 1.12
++    return wf_mean(fd, g, a0) * f_sent(a0 / 6.0) / 1.12
++
++
++def F_ys(fd: dict, g: str, a: float, phi: float, n: float) -> float:
++    """YS crack superposed on the local field; inadmissible (inf) once crack + L0/2 reaches the ligament half-width."""
++    r = L0 / 2
++    if a + r >= fd["b"]:
++        return math.inf
++    return phi**-n * (
++        float(K(fd, g, a + r)) + (westergaard(a, r) - 1) * wf_mean(fd, g, a)
++    )
++
++
++def a_lin(p: dict, dv: float) -> float:
++    """Linear equivalent defect: a = a0 + kap d_V."""
++    return p["a0"] + p["kap"] * dv
++
++
++def a_sat(cap: float | None) -> Callable[[dict, float], float]:
++    """Saturating defect a = a0 + a_cap (1 - exp(-kap d_V / a_cap)); cap None -> a_cap is the parameter acap."""
++
++    def f(p: dict, dv: float) -> float:
++        c = cap if cap else p["acap"]
++        return p["a0"] + c * (1 - math.exp(-p["kap"] * dv / c))
++
++    return f
++
++
++Y_STARTS = [[0.5, 3.0, 0.7], [0.05, 8.0, 0.7], [1.5, 1.0, 0.7]]  # a0, kap, n
++MODELS = {
++    "es": dict(
++        source="ES2020",
++        extra=["a0"],
++        starts=[[0.3], [1.0], [1.8], [2.4]],
++        bounds=dict(a0=(1e-3, 2.9)),
++    ),
++    "ys-lin": dict(
++        source="YS2025",
++        extra=["a0", "kap", "n"],
++        starts=Y_STARTS,
++        amap=a_lin,
++        bounds=dict(a0=(0, 5.5), kap=(0, 30), n=(0, 5)),
++    ),
++    "ys-sat": dict(
++        source="YS2025",
++        extra=["a0", "kap", "n"],
++        starts=Y_STARTS,
++        amap=a_sat(A_CAP),
++        bounds=dict(a0=(0, 5.5), kap=(0, 60), n=(0, 5)),
++    ),
++    "ys-sat-fit": dict(
++        source="YS2025",
++        extra=["a0", "kap", "n", "acap"],
++        amap=a_sat(None),
++        starts=[s + [c] for s in Y_STARTS for c in (1.0, 2.5, 4.0)],
++        bounds=dict(a0=(0, 5.5), kap=(0, 60), n=(0, 5), acap=(0.05, 5.8)),
++    ),
++}
++CORE = ["lnsD", "k", "gam", "lnsZ"]
++
++
++class Data:
++    """Rows of one paper split as arrays; geometry key g = specimen_type."""
++
++    def __init__(self, source: str) -> None:
++        sp = B.split("paper", source)
++        by = {r["specimen_id"]: r for r in B.load()}
++        self.ids = sp["fit"] + sp["held"]
++        rr = [by[i] for i in self.ids]
++        self.source = source
++        self.g = np.array([r["specimen_type"] for r in rr])
++        self.R = np.array([r["R"] for r in rr])
++        self.S = np.array([r["sigma_max_MPa"] for r in rr])
++        self.lnN = np.log([r["N_f"] for r in rr])
++        self.ro = np.array([r["runout"] for r in rr])
++        self.dv = np.array([r["d_v_mm"] or 0.0 for r in rr])  # 100 % in-fill: no void
++        self.phi = np.array([r["infill_pct"] / 100.0 for r in rr])
++        fit = set(sp["fit"])
++        self.fit = np.array([i in fit for i in self.ids])
++        keys = list(zip(self.g, self.dv, self.phi, strict=True))
++        self.ukeys = sorted(set(keys))
++        self.inv = np.array([self.ukeys.index(k) for k in keys])
++
++
++def F_rows(m: dict, d: Data, p: dict) -> np.ndarray:
++    """F for every row (evaluated once per unique geometry, void size, infill)."""
++    fd = fields(d.source)
++    if d.source == "ES2020":
++        u = [F_es(fd, g, p["a0"]) for g, _, _ in d.ukeys]
++    else:
++        u = [F_ys(fd, g, m["amap"](p, dv), ph, p["n"]) for g, dv, ph in d.ukeys]
++    return np.asarray(u)[d.inv]
++
++
++def lnc(d: Data, p: dict, F: np.ndarray) -> np.ndarray:
++    """Median log-life of every row."""
++    return p["k"] * (p["lnsD"] - np.log(d.S * F) - p["gam"] * np.log((1 - d.R) / 2))
++
++
++def fit(name: str, d: Data | None = None) -> dict:
++    """Maximum likelihood on the FIT ids (two-stage Nelder-Mead from every start x 2 core starts)."""
++    m = MODELS[name]
++    d = d or Data(m["source"])
++    names = CORE + m["extra"]
++
++    def unpack(x: np.ndarray) -> dict:
++        return {k: float(v) for k, v in zip(names, x, strict=True)}
++
++    def nll(x: np.ndarray) -> float:
++        p = unpack(x)
++        if not (1 < p["k"] < 40 and 0 <= p["gam"] <= 1 and -4 < p["lnsZ"] < 1.5):
++            return 1e12
++        if any(not lo <= p[k] <= hi for k, (lo, hi) in m["bounds"].items()):
++            return 1e12
++        c = lnc(d, p, F_rows(m, d, p))
++        if not np.all(
++            np.isfinite(c[d.fit])
++        ):  # admissibility wall, tested on fitted rows only
++            return 1e12
++        z = (d.lnN - c) / math.exp(p["lnsZ"])
++        ll = np.where(d.ro, norm.logsf(z), norm.logpdf(z) - p["lnsZ"])
++        return -float(ll[d.fit].sum())
++
++    base = [math.log(60 if d.source == "ES2020" else 20), 5.0, 0.45, math.log(1.3)]
++    best = None
++    for s in m["starts"]:
++        for b in (base, [base[0] + 0.7, 4.0, 0.3, 0.0]):
++            o = minimize(
++                nll,
++                np.array(b + s),
++                method="Nelder-Mead",
++                options=dict(maxiter=8000, xatol=1e-5, fatol=1e-7),
++            )
++            o = minimize(
++                nll,
++                o.x,
++                method="Nelder-Mead",
++                options=dict(maxiter=8000, xatol=1e-6, fatol=1e-9),
++            )
++            if best is None or o.fun < best.fun:
++                best = o
++    p = unpack(best.x)
++    on_bound = [
++        k
++        for k, (lo, hi) in m["bounds"].items()
++        if min(abs(p[k] - lo), abs(p[k] - hi)) < 1e-3 * max(1, abs(hi))
++    ]
++    return dict(
++        model=name,
++        par=p,
++        nll=float(best.fun),
++        aic=float(2 * best.fun + 2 * len(names)),
++        on_bound=on_bound,
++    )
++
++
++def predict(name: str, p: dict, d: Data | None = None) -> dict:
++    """Benchmark inputs: median strength at each row's life, its P10-P90 interval, and the median life at the applied S."""
++    m = MODELS[name]
++    d = d or Data(m["source"])
++    F = F_rows(m, d, p)
++    c = lnc(d, p, F)
++    rs = (c - d.lnN) / p["k"]  # ln(S_pred / S)
++    hw = Z90 * math.exp(p["lnsZ"]) / p["k"]
++    S = d.S * np.exp(rs)
++    out = dict(pred={}, interval={}, pred_life={}, F=F, lnc=c, d=d)
++    for j, i in enumerate(d.ids):
++        if np.isfinite(S[j]):
++            out["pred"][i] = float(S[j])
++            out["interval"][i] = (
++                float(S[j] * math.exp(-hw)),
++                float(S[j] * math.exp(hw)),
++            )
++            out["pred_life"][i] = float(math.exp(c[j]))
++    return out
++
++
++def own_stats(pr: dict, p: dict) -> dict:
++    """Life-residual statistics, log10(N_exp / N_pred), on failures, fit and held.
++
++    rms, bias, tilt vs N_exp and vs N_pred, P10-P90 coverage in life; plus the YS U r1 - U r3
++    mean life residual (the open deficiency).
++    """
++    d, c = pr["d"], pr["lnc"]
++    ep, x = c / math.log(10), d.lnN / math.log(10)
++    r = x - ep
++    sz = math.exp(p["lnsZ"]) / math.log(10)
++    out = {}
++    for part, msk in (("fit", d.fit & ~d.ro), ("held", ~d.fit & ~d.ro)):
++        out[part] = dict(
++            n=int(msk.sum()),
++            rms_logN=float(np.sqrt(np.mean(r[msk] ** 2))),
++            bias_logN=float(r[msk].mean()),
++            tilt_vs_Nexp=float(np.polyfit(x[msk], r[msk], 1)[0]),
++            tilt_vs_Npred=float(np.polyfit(ep[msk], r[msk], 1)[0]),
++            coverage80=float(np.mean(np.abs(r[msk]) <= Z90 * sz)),
++        )
++    if d.source == "YS2025":
++        u1, u3 = (d.g == "U_r1") & ~d.ro, (d.g == "U_r3") & ~d.ro
++        out["U1_minus_U3_logN"] = float(r[u1].mean() - r[u3].mean())
++    return out
++
++
++def run(name: str, par: dict | None = None) -> dict:
++    """Fit (unless par given) and score with the benchmark scorer. Returns everything needed for the README table."""
++    m = MODELS[name]
++    d = Data(m["source"])
++    res = fit(name, d) if par is None else dict(model=name, par=par)
++    pr = predict(name, res["par"], d)
++    rep = B.score(
++        pr["pred"],
++        "paper",
++        m["source"],
++        interval=pr["interval"],
++        pred_life=pr["pred_life"],
++    )
++    res.update(own=own_stats(pr, res["par"]), bench=rep)
++    if d.source == "YS2025":
++        a = [m["amap"](res["par"], v) for v in (d.dv[d.fit].max(), d.dv.max())]
++        res.update(
++            a_max_fit=a[0],
++            a_max_all=a[1],
++            wall_gap=fields(d.source)["b"] - L0 / 2 - a[1],
++        )
++    return res
+diff --git a/tests/test_crack_field.py b/tests/test_crack_field.py
+new file mode 100644
+index 0000000..964cad6
+--- /dev/null
++++ b/tests/test_crack_field.py
+@@ -0,0 +1,49 @@
++"""Crack-in-elastic-field model (models/crack_field): reproduce the headline numbers of expected.json from a clean clone."""
++
++import json
++from pathlib import Path
++
++import pytest
++
++from models.crack_field import model as M
++
++EXP = json.loads(
++    (
++        Path(__file__).resolve().parents[1] / "models" / "crack_field" / "expected.json"
++    ).read_text()
++)
++
++
++@pytest.mark.parametrize("name", list(M.MODELS))
++def test_stored_parameters_score(name):
++    """Stored optimum -> benchmark scorer: held/fit stress rms and life rms as published in the README."""
++    e = EXP[name]
++    r = M.run(name, par=e["par"])
++    assert r["bench"]["held"]["rms"] == pytest.approx(e["held_rms_logS"], abs=1e-4)
++    assert r["bench"]["fit"]["rms"] == pytest.approx(e["fit_rms_logS"], abs=1e-4)
++    assert r["own"]["held"]["rms_logN"] == pytest.approx(e["held_rms_logN"], abs=1e-4)
++    assert r["bench"]["held_vs_net_stress"]["verdict"] == "better"
++
++
++@pytest.mark.parametrize("name", ["es", "ys-lin", "ys-sat"])
++def test_refit_reaches_stored_optimum(name):
++    """Full maximum-likelihood refit on the FIT ids (each < 10 s) reproduces the AIC and stays off every bound."""
++    r = M.fit(name)
++    assert r["aic"] == pytest.approx(EXP[name]["aic"], abs=0.05)
++    assert not r["on_bound"]
++
++
++@pytest.mark.slow
++def test_refit_fitted_cap():
++    r = M.fit("ys-sat-fit")
++    assert r["aic"] == pytest.approx(EXP["ys-sat-fit"]["aic"], abs=0.05)
++    assert not r["on_bound"]
++
++
++def test_wall_and_saturation():
++    """Admissibility: a crack plus L0/2 reaching the 6 mm YS half-ligament is infinite F; the saturating map tends to a0 + a_cap."""
++    fd = M.fields("YS2025")
++    assert M.F_ys(fd, "V_r0.15", 5.8, 1.0, 0.0) == float("inf")
++    p = dict(a0=0.4, kap=4.46)
++    assert M.a_sat(M.A_CAP)(p, 50.0) == pytest.approx(0.4 + M.A_CAP)
++    assert M.a_sat(M.A_CAP)(p, 1e-4) == pytest.approx(0.4 + 4.46e-4, rel=1e-3)
+-- 
+2.43.0
+
