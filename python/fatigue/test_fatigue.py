@@ -194,3 +194,22 @@ def test_mhsv_reduces_to_point_method_when_volumes_match():
     assert abs(hsv.predict("mhsv", g, pl, "n", 4.0, Lf, Lg)[0] / a - 1) < 1e-12
     b = hsv.predict("hsv", g, pl, "n", 4.0, Lf, Lg)[0]
     assert abs(b - 2e6 * (3.0 * 4.0 / 5.0) ** -6.0) / b < 1e-12
+
+
+def test_hsv_fix_surface_weights_and_size_term():
+    """Trapezoid surface weights integrate the exact arc / side areas; e = 0 is the point method; eq. 10 in the life
+    domain equals the stress factor with e = 1/(k k_SN) on a power-law plain curve; Weibull MLE recovers k."""
+    from fatigue import hsv, hsv_fix
+    th, z, r, rho = np.linspace(0, 1.2, 31), np.linspace(0, 3, 21), np.linspace(0.5, 1.0, 17), 0.5
+    s = dict(th=th, z=z, r=r, dA_arc=rho * np.outer(np.gradient(th), np.gradient(z)),
+             s1_arc=np.ones((31, 21)), s1_side=np.zeros((31, 17)))
+    a, b = hsv.surface_weights(dict(s, dA_side=np.outer(np.gradient(th), r * np.gradient(r))))
+    assert abs(a.sum() - rho * 1.2 * 3) < 1e-12 and abs(b.sum() - 1.2 / 2 * (1.0 - 0.25)) < 1e-3
+    n = type("N", (), {"pm": lambda self, L: 1.7})()
+    assert hsv_fix.feff(n, 2.0, 0.0, 0.49, 100.0) == 1.7
+    k, ksn, ratio, sn = 0.9, 5.1, 300.0, 1.3                  # N_N = N_S(sigma_eff) ratio^(1/k), N_S = (S/s0)^-ksn
+    NN = (1.7 * sn) ** -ksn * ratio ** (1 / k)
+    f = hsv_fix.feff(n, 1.0, 1 / (k * ksn), 1.0, ratio)       # S_S L_FCI / (S_N L_CD) = ratio
+    assert abs((f * sn) ** -ksn / NN - 1) < 1e-12
+    x = np.random.default_rng(1).weibull(1.5, 4000)
+    assert abs(hsv_fix.k_weibull_mle(x) - 1.5) < 0.06

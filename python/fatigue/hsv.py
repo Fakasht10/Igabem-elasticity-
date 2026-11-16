@@ -45,13 +45,40 @@ W21 = math.log(math.log(10) / math.log(10 / 9))  # ln 21.85: Weibull life ratio 
 NAMES = {"blunt": "U r3 (blunt)", "intermediate": "U r1", "sharp": "V r0.15 (sharp)"}
 
 
+def _trapz(x):
+    w = np.zeros_like(x, dtype=float)
+    d = np.diff(x)
+    w[:-1] += d / 2
+    w[1:] += d / 2
+    return w
+
+
+def surface_weights(s):
+    """Trapezoid area weights (mm^2, quarter model) of the root_surface grids. The cached dA_arc / dA_side were built
+    with np.gradient, which gives the end nodes a full instead of a half spacing: arc area +4 %, side area +15 %
+    (S90 +2.6 % sharp V, +3.6 % U r1, +5.5 % U r3). The arc radius is recovered from the cached weights."""
+    gth, gz = np.gradient(s["th"]), np.gradient(s["z"])
+    rho = float(s["dA_arc"].sum() / (gth.sum() * gz.sum()))
+    tw = _trapz(s["th"])
+    return rho * np.outer(tw, _trapz(s["z"])), np.outer(tw, s["r"] * _trapz(s["r"]))
+
+
+def S90_surface(s, frac=0.9):
+    """Full-specimen area (mm^2) where surface sigma_1 >= frac x its peak. Quarter model (x >= 0, y >= 0, full
+    thickness): the arc patch is half of one notch face (x 2 notches x 2 halves = 4); the side patch is half of one
+    notch's z = 0 face (x 2 halves x 2 notches x 2 faces z = 0, T = 8)."""
+    sm = max(s["s1_arc"].max(), s["s1_side"].max())
+    a, b = surface_weights(s)
+    return 4 * (a * (s["s1_arc"] >= frac * sm)).sum() + 8 * (b * (s["s1_side"] >= frac * sm)).sum()
+
+
 def geometry(F, S):
     """Per notch: peak surface sigma_1 (unit net stress), S90 (mm^2), V90 (mm^3), sigma_1 at L_CD/2 on the bisector."""
     g = {}
     for k in F:
         s, f = S[k], F[k]
         sm = max(s["s1_arc"].max(), s["s1_side"].max())
-        S90 = 4 * (s["dA_arc"] * (s["s1_arc"] >= 0.9 * sm)).sum() + 8 * (s["dA_side"] * (s["s1_side"] >= 0.9 * sm)).sum()
+        S90 = S90_surface(s)
         V90 = 4 * f["w"][f["s1"] >= 0.9 * f["s1"].max()].sum()
         prof = f["s1_line"].mean(axis=0)                 # thickness-averaged bisector profile
         g[k] = dict(smax=float(sm), S90=float(S90), V90=float(V90), seff=float(np.interp(L_CD / 2, f["d"], prof)),
