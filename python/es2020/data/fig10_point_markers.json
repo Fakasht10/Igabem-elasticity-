@@ -1,0 +1,1104 @@
+{
+ "source": "Ezeh & Susmel 2020 IJF 136:105583, accepted manuscript (White Rose eprints 158161), Fig. 10 Point Method panel (page 30), vector marker centres; x = N_f, y = sigma_eff,max / sigma_UTS",
+ "points": [
+  {
+   "x": 1038040.7196634235,
+   "y": 0.2933979334877675,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 65436.42464833478,
+   "y": 0.48283316531859904,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 47718.5797976517,
+   "y": 0.46955908763721965,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 60817.044543887976,
+   "y": 0.5667461942362787,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 3236.6483950783822,
+   "y": 0.6335745464187034,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 3940.544975893512,
+   "y": 0.6183103501400423,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 1997174.912053826,
+   "y": 0.24393511748293334,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": true
+  },
+  {
+   "x": 1356.6941285418025,
+   "y": 0.5827596850594905,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 923.7277080386765,
+   "y": 0.5569583619442121,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 3514.5085867782996,
+   "y": 0.6140181308348516,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 1997174.912053826,
+   "y": 0.2552355112203938,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": true
+  },
+  {
+   "x": 1929.8109571793834,
+   "y": 0.6226320044106067,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 2153.825128439627,
+   "y": 0.6912290447429765,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 575227.8500151136,
+   "y": 0.48115810775897583,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 698.7229506759991,
+   "y": 0.8256048464946653,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 835.2475175444497,
+   "y": 0.8459865114993903,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 1765051.56468673,
+   "y": 0.5360277019538389,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 7078.526077745568,
+   "y": 0.6675683986822779,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 12715.396426472493,
+   "y": 0.715726986985274,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 70086.4730524329,
+   "y": 0.6335745464187034,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 33856.2227552082,
+   "y": 0.584787913906091,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 23584.224726680743,
+   "y": 0.448769650666118,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 25144.82227621277,
+   "y": 0.44410828204483144,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 225127.59665618092,
+   "y": 0.30274235130175675,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 235665.85306063952,
+   "y": 0.32121084219561263,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 5378.9858667879125,
+   "y": 0.5249347399201261,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 5138.349337767494,
+   "y": 0.5322993763851614,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 1997174.912053826,
+   "y": 0.24908610188458433,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": true
+  },
+  {
+   "x": 5185.599624869017,
+   "y": 0.6013199725080449,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 5091.532639227365,
+   "y": 0.5746969041934162,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 1640420.078543089,
+   "y": 0.43040086981675135,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 106.04498431050354,
+   "y": 0.8882733707123234,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 38132.951268955134,
+   "y": 0.6313765328815363,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 65436.42464833478,
+   "y": 0.6606253080959258,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 13806.997628012034,
+   "y": 0.7385228193868857,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 5579.3599607308,
+   "y": 0.7359499503762473,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 52052.88358501566,
+   "y": 0.6097557074833595,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 212119.37311311427,
+   "y": 0.49647568209348586,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 2296.300996588102,
+   "y": 0.8342833772718002,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 52772.51913772962,
+   "y": 0.36795144255025203,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 283005.52411684097,
+   "y": 0.3578406075015568,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 770962.5962864768,
+   "y": 0.2944236478729235,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 1410492.6484127438,
+   "y": 0.32914055797830566,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 27429.28235031484,
+   "y": 0.41278319450781026,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 39015.64639428236,
+   "y": 0.4289006531049961,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 8422.812695690202,
+   "y": 0.5827596850594905,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 6255.702132773319,
+   "y": 0.5909350434081505,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 2265.03215939836,
+   "y": 0.6076314378972875,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 3120.222120811882,
+   "y": 0.7359499503762473,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 184913.11279750106,
+   "y": 0.5971456978998145,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 179082.9445247207,
+   "y": 0.6013199725080449,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 5453.24292870936,
+   "y": 0.7462852855475083,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 4797.430845894281,
+   "y": 0.7359499503762473,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 1391257.5486881293,
+   "y": 0.4214934438369984,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 1997174.912053826,
+   "y": 0.4550719606967835,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": true
+  },
+  {
+   "x": 19460.6278508395,
+   "y": 0.5992338573899225,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 67256.92952633149,
+   "y": 0.638011639109449,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 158991.8522631808,
+   "y": 0.640233336833002,
+   "type": "blunt",
+   "marker": "diamond",
+   "runout": false
+  },
+  {
+   "x": 1153269.256461121,
+   "y": 0.22126680117374875,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 1997174.912053826,
+   "y": 0.22049897494511578,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": true
+  },
+  {
+   "x": 17516.58231687884,
+   "y": 0.33375827589839985,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 18169.445911486684,
+   "y": 0.34438812847369576,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 160456.86200657603,
+   "y": 0.1965537935618534,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 137334.07196265057,
+   "y": 0.25083120675120435,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 4357.804606508457,
+   "y": 0.4244456636843314,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 3781.4520613411887,
+   "y": 0.3823243510651765,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 227193.15303861446,
+   "y": 0.1776673898674019,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 138596.8602627449,
+   "y": 0.3578406075015568,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 142455.66290401598,
+   "y": 0.3590866876893585,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 4561.884332174188,
+   "y": 0.6652323811260121,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 3403.7008735755444,
+   "y": 0.6769341315971714,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 9315.062866069806,
+   "y": 0.5473390672506595,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 12035.885114671242,
+   "y": 0.5628119257002705,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 1997174.912053826,
+   "y": 0.35535718056002813,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": true
+  },
+  {
+   "x": 552014.9071481697,
+   "y": 0.3603420488867011,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 513046.60213351314,
+   "y": 0.35659917742220393,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 485629.37046111986,
+   "y": 0.20000504973780153,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 546995.8632410603,
+   "y": 0.24056058918499867,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 23910.27864392042,
+   "y": 0.35659917742220393,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 15694.41425337404,
+   "y": 0.31347675636651967,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 9021.182230815692,
+   "y": 0.38099798133649976,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 9662.25199082593,
+   "y": 0.3744177194883233,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 3326.693102302602,
+   "y": 0.4156679452947098,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 2873.5311246240985,
+   "y": 0.42592328799563156,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 62795.78062051351,
+   "y": 0.4744945296202077,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 77155.49188976291,
+   "y": 0.4712006585410937,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 10068.556184404039,
+   "y": 0.6140181308348516,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 12258.250267266661,
+   "y": 0.6183103501400423,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 1997174.912053826,
+   "y": 0.39864786810436653,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": true
+  },
+  {
+   "x": 839.0787856082004,
+   "y": 0.7593884935031173,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 812.623276638573,
+   "y": 0.7541183095041024,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 840988.5275357381,
+   "y": 0.3783479606188138,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 746668.6135585707,
+   "y": 0.41278319450781026,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 94798.77044161392,
+   "y": 0.31021642001676897,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 154688.27425798014,
+   "y": 0.2883306225763266,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 12715.396426472493,
+   "y": 0.5176724703079589,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 2940.048900921999,
+   "y": 0.41856749848247116,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 1997174.912053826,
+   "y": 0.19861700735650617,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": true
+  },
+  {
+   "x": 19910.705308393266,
+   "y": 0.3578406075015568,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 16131.36720335874,
+   "y": 0.3590866876893585,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 180726.03903886394,
+   "y": 0.26428521371168834,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 2254.6473557519466,
+   "y": 0.5249347399201261,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 964761.3111785557,
+   "y": 0.22751810068302836,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 733124.0148946374,
+   "y": 0.3890432135243668,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 1014555.3414586495,
+   "y": 0.4042466609833383,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 25030.017491080907,
+   "y": 0.5767065624705296,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 27304.04730860496,
+   "y": 0.5746969041934162,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 1012.2514588134616,
+   "y": 0.8001342390573711,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 203563.46165869987,
+   "y": 0.46306249543231054,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 214069.94140276377,
+   "y": 0.4379642152953214,
+   "type": "intermediate",
+   "marker": "circle",
+   "runout": false
+  },
+  {
+   "x": 13009.465126372193,
+   "y": 0.3603420488867011,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 11186.009706018065,
+   "y": 0.348008241636704,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 67876.65975567569,
+   "y": 0.2689301807665624,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 72700.15992079013,
+   "y": 0.24735720904206698,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 3134.595601670344,
+   "y": 0.451912918228044,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 3976.7020468716346,
+   "y": 0.42741269964008277,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 1019210.0083173071,
+   "y": 0.13076000537307186,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 925830.110773589,
+   "y": 0.16171777103015875,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 2770.2214303824426,
+   "y": 0.5930009426716911,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 2732.4991966618395,
+   "y": 0.5909350434081505,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 10637.004163142425,
+   "y": 0.47284796835004606,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 18252.816246416023,
+   "y": 0.4999462351606111,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 48823.16143566453,
+   "y": 0.4142198394988018,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 41407.46233518911,
+   "y": 0.4156679452947098,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 219025.32760071088,
+   "y": 0.35659917742220393,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 243338.11678814536,
+   "y": 0.35659917742220393,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 1851.935810996108,
+   "y": 0.4550719606967835,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 2658.4851430247736,
+   "y": 0.46145602680242637,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 909034.425507293,
+   "y": 0.15509843237592538,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 1122030.4657631824,
+   "y": 0.16398676031232112,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 15838.734059330296,
+   "y": 0.33492508938165905,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 13433.005252292294,
+   "y": 0.33492508938165905,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 125323.73683807821,
+   "y": 0.31021642001676897,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 65736.56086175251,
+   "y": 0.2726986818446386,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 15694.41425337404,
+   "y": 0.47284796835004606,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 527330.1721689731,
+   "y": 0.2954486260436092,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 14062.084404363452,
+   "y": 0.4778114261057789,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 443159.418159994,
+   "y": 0.36667493569511217,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 504.9014089541864,
+   "y": 0.7308517857256644,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 2744.98294268349,
+   "y": 0.6034227290239176,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 2658.4851430247736,
+   "y": 0.5909350434081505,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 61376.29472842557,
+   "y": 0.26336473652909304,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 56522.67796538259,
+   "y": 0.2679932806330039,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 355763.2554615952,
+   "y": 0.21147035097629707,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 591242.2343106424,
+   "y": 0.14874758465741397,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 8817.260235101005,
+   "y": 0.3653971778760002,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 6886.656794351888,
+   "y": 0.3757270212499602,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 6730.985313455595,
+   "y": 0.4410257510472336,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 3595.861838867012,
+   "y": 0.4896071325671277,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 377572.5202813714,
+   "y": 0.3200964890647591,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 513046.60213351314,
+   "y": 0.36795144255025203,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 1785.3910785740259,
+   "y": 0.6606253080959258,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 1777.203220497111,
+   "y": 0.6652323811260121,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 22222.37063163092,
+   "y": 0.5267703848267323,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 15409.7077106023,
+   "y": 0.5140788643294758,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 495.74203134147837,
+   "y": 0.7727344834807593,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  },
+  {
+   "x": 430.17666447299774,
+   "y": 0.7673709762133998,
+   "type": "sharp",
+   "marker": "triangle",
+   "runout": false
+  }
+ ]
+}

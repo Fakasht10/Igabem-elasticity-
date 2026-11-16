@@ -149,7 +149,7 @@ class BcModel {
   std::vector<int> rowsel;                // selected rows of 3 * rowpts
   std::vector<int> spring_dofs;           // displacement dofs touched by springs
   Eigen::MatrixXd free_modes;             // rigid motions left free (3 ndof x m)
-  bool from_cache = false;
+  bool from_cache = false, lu_from_cache = false;
   double t_assemble = 0.0, t_load = 0.0, t_springs = 0.0, t_factor = 0.0;
   // Bonded inclusions (multi_region.hpp), set before setupOn: the host rows are
   // condensed with each inclusion's Dirichlet-to-Neumann map, and the interface
@@ -197,7 +197,8 @@ class BcModel {
     rowpts.clear();
     rowsel.clear();
     t_free.clear();
-    std::vector<int> mainrows;
+    std::vector<int>& mainrows = mainrows_;
+    mainrows.clear();
     {
       std::vector<int> pt_of(mesh.ndof, -1);
       for (int k : u_free) {
@@ -225,6 +226,18 @@ class BcModel {
       for (int p = 0; p < np; ++p)
         if (regions->onInterface(p) && (dir[p][0] || dir[p][1] || dir[p][2]))
           throw std::runtime_error("BcModel: a support on an interface patch");
+    geometry_file_ = geometry_file;
+    cache_dir_ = cache_dir;
+    prepared_ = false;
+    if (!defer) prepare();
+  }
+
+  // Operators, springs, free rigid motions and the factorisation. setupOn runs it unless `defer` is set (a case
+  // file whose boundary solutions are on disk needs none of it; case_io.hpp CaseFile::solve).
+  bool defer = false;
+  bool prepared() const { return prepared_; }
+  void prepare() {
+    if (prepared_) return;
     hm_.reset();
     if (hsolver.on) {
       const auto th = std::chrono::steady_clock::now();
@@ -233,7 +246,7 @@ class BcModel {
       t_assemble = std::chrono::duration<double>(std::chrono::steady_clock::now() - th).count();
       t_load = 0.0;
     } else {
-      assembleRows(geometry_file, cache_dir, mainrows);
+      assembleRows(geometry_file_, cache_dir_, mainrows_);
     }
 
     // Springs: S (rows x spring dofs) = sum_s int_R U k N_B.
@@ -246,6 +259,7 @@ class BcModel {
     findFreeModes();
     factor();
     t_factor = std::chrono::duration<double>(std::chrono::steady_clock::now() - t2).count();
+    prepared_ = true;
   }
 
   int unknowns() const { return int(u_free.size() + t_free.size()); }
@@ -254,11 +268,38 @@ class BcModel {
   std::vector<Rbe2> rbe2;                 // rigid couplings (their supports are in `supports`)
 
   // Boundary solutions of the cases (any number; solved together, 8 at a time).
+  // `masters` (optional) receives the RBE2 master motions, case by case (rbe2.size() per case).
   std::vector<BoundarySolution> solutions(const std::vector<LoadCase>& cases,
-                                          std::vector<CaseReport>* reports = nullptr) const {
+                                          std::vector<CaseReport>* reports = nullptr,
+                                          std::vector<Vec6>* masters = nullptr) const {
+    if (!prepared_) throw std::logic_error("BcModel: prepare() before solutions() (setup was deferred)");
     std::vector<Vec6> q;
     const std::vector<LoadCase> fin = rbe2.empty() ? cases : withMasters(cases, q);
     std::vector<BoundarySolution> out = solveAll(fin);
+    if (masters) *masters = q;
+    reportAll(cases, fin, out, q, reports);
+    return out;
+  }
+
+  // Boundary solutions rebuilt from stored coefficients (U, T: one column per case; q: as `masters` above;
+  // F: the free rigid motions found when they were solved): region densities and reports as solutions()
+  // gives them, without operators or a factorisation. Valid only for the same case file (case_io.hpp key).
+  std::vector<BoundarySolution> restore(const std::vector<LoadCase>& cases, const Eigen::MatrixXd& U,
+                                        const Eigen::MatrixXd& T, const std::vector<Vec6>& q,
+                                        const Eigen::MatrixXd& F, std::vector<CaseReport>* reports = nullptr) {
+    free_modes = F;
+    std::vector<BoundarySolution> out;
+    for (size_t k = 0; k < cases.size(); ++k) {
+      out.push_back(BoundarySolution{&mesh, &ts, mat, U.col(k), T.col(k), {}});
+      attachRegions(out.back(), cases[k]);
+    }
+    reportAll(cases, cases, out, q, reports);
+    return out;
+  }
+
+  void reportAll(const std::vector<LoadCase>& cases, const std::vector<LoadCase>& fin,
+                 const std::vector<BoundarySolution>& out, const std::vector<Vec6>& q,
+                 std::vector<CaseReport>* reports) const {
     if (reports) {
       reports->clear();
       for (size_t k = 0; k < cases.size(); ++k) {
@@ -273,7 +314,6 @@ class BcModel {
         }
       }
     }
-    return out;
   }
 
   // Resultant of the boundary traction (traction-space part over the chosen
@@ -310,7 +350,10 @@ class BcModel {
   Eigen::MatrixXd H_, G_;   // selected rows, all columns
   Eigen::MatrixXd S_;       // selected rows x 3 spring_dofs
   std::vector<int> spring_col_;  // 3 ndof -> column of S_ (-1: none)
-  Eigen::PartialPivLU<Eigen::MatrixXd> lu_;
+  StoredLU lu_;
+  std::string geometry_file_, cache_dir_;
+  std::vector<int> mainrows_;
+  bool prepared_ = false;
   std::vector<int> ufree_col_;   // 3 ndof -> unknown index (-1: fixed)
   std::unique_ptr<HMixed> hm_;   // hierarchical backend
 
@@ -545,7 +588,22 @@ class BcModel {
       A.block(0, n, c0, m) = s * Cu;
       A.block(n, 0, m, c0) = s * Cu.transpose();
     }
+    // Cached next to the operators when they are (not with inclusions: their condensed rows carry data the
+    // operator key does not see). The key adds everything A depends on beyond the operators.
+    std::string path;
+    if (!cache_dir_.empty() && !(regions && !regions->empty())) {
+      std::uint64_t h = fnv1a(operatorKey(geometry_file_, "lu", mat, opt, popt));
+      h = fnvData(Eigen::Map<const Eigen::VectorXi>(u_free.data(), u_free.size()), h);
+      h = fnvData(Eigen::Map<const Eigen::VectorXi>(t_free.data(), t_free.size()), h);
+      h = fnvData(Eigen::Map<const Eigen::VectorXi>(spring_dofs.data(), spring_dofs.size()), h);
+      h = fnvData(S_, fnvData(free_modes, h));
+      char hex[17];
+      std::snprintf(hex, sizeof hex, "%016llx", static_cast<unsigned long long>(h));
+      path = cache_dir_ + "/lu_" + hex + ".bin";
+      if (lu_.load(path, n + m)) { lu_from_cache = true; return; }
+    }
     lu_.compute(A);
+    if (!path.empty()) lu_.save(path);
   }
 
   // Greville interpolation of a displacement field on one patch (as MixedModel).
@@ -647,25 +705,28 @@ class BcModel {
     for (int k = 0; k < K; ++k) {
       const Eigen::VectorXd u = UC.col(k), t = TC.col(k);
       BoundarySolution s{&mesh, &ts, mat, u, t, {}};
-      for (const auto& L : cases[c0 + k].loads) {
-        auto f = L.t;
-        s.region.push_back(std::make_shared<RegionDensity>(*L.region, 1, [f](const RPoint& p) {
-          return RegionBlock(f(p));
-        }));
-      }
-      for (const auto& sp : springs) {
-        auto kf = sp.k;
-        const Mesh* me = &mesh;
-        auto uu = std::make_shared<Eigen::VectorXd>(u);
-        s.region.push_back(std::make_shared<RegionDensity>(*sp.region, 1, [kf, me, uu](const RPoint& p) {
-          Vec3 v = Vec3::Zero();
-          for (int l = 0; l < p.n_loc; ++l) v += p.R[l] * uu->segment<3>(3 * me->l2g[p.patch][p.idx[l]]);
-          return RegionBlock(-kf(p.x, p.n) * v);
-        }));
-      }
+      attachRegions(s, cases[c0 + k]);
       out[k] = std::move(s);
     }
     return out;
+  }
+
+  // Region densities of a solution: the case's region loads, then the springs' -k u.
+  void attachRegions(BoundarySolution& s, const LoadCase& lc) const {
+    for (const auto& L : lc.loads) {
+      auto f = L.t;
+      s.region.push_back(std::make_shared<RegionDensity>(*L.region, 1, [f](const RPoint& p) { return RegionBlock(f(p)); }));
+    }
+    for (const auto& sp : springs) {
+      auto kf = sp.k;
+      const Mesh* me = &mesh;
+      auto uu = std::make_shared<Eigen::VectorXd>(s.u);
+      s.region.push_back(std::make_shared<RegionDensity>(*sp.region, 1, [kf, me, uu](const RPoint& p) {
+        Vec3 v = Vec3::Zero();
+        for (int l = 0; l < p.n_loc; ++l) v += p.R[l] * uu->segment<3>(3 * me->l2g[p.patch][p.idx[l]]);
+        return RegionBlock(-kf(p.x, p.n) * v);
+      }));
+    }
   }
 
   CaseReport report(const LoadCase& lc, const BoundarySolution& s) const {

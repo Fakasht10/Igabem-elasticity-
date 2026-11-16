@@ -38,6 +38,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PY = os.path.dirname(HERE)
 ROOT = os.path.dirname(PY)
 BC_CASE = os.environ.get("IGABEM_BC_CASE", os.path.join(ROOT, "build", "bc_case"))
+# Operators, LU factors and boundary solutions are stored here (bc_case keys them on the case and its files), so a
+# second Solve of the same case reads its solution back instead of assembling and factoring again.
+CACHE = os.environ.get("IGABEM_CACHE", os.path.join(ROOT, "cache"))
 GMSH_TET10_TO_ABAQUS = [0, 1, 2, 3, 4, 5, 6, 7, 9, 8]
 MIN_SPAN_JACOBIAN = 0.15      # step_auto check: below this an element's map nearly collapses (false stress spikes)
 
@@ -152,13 +155,15 @@ def igabem_geometry(step, workdir, h=3.0, curvature=6, degree=2, focus=(), retri
 # ------------------------------------------------------------------------------------------- the solve
 class Solve:
     """One IgBEM solve of a case kept alive in `bc_case --serve`: stress at any points without a new LU.
-    `case` is the bc_case JSON body without "geometry" and "material" (supports, cases or loads, solver options)."""
+    `case` is the bc_case JSON body without "geometry" and "material" (supports, cases or loads, solver options).
+    The solution is stored in CACHE: opening the same case again (any workdir) does no assembly and no LU;
+    `self.from_cache` says which happened. Pass "cache": "none" in `case` only to force a fresh solve."""
 
     def __init__(self, geometry, case, E, nu, workdir=None, log=print):
         self.dir = workdir or tempfile.mkdtemp(prefix="igabem_")
         os.makedirs(self.dir, exist_ok=True)
         body = dict(case, geometry=os.path.abspath(geometry), material={"E": float(E), "nu": float(nu)})
-        body.setdefault("cache", "none")
+        body.setdefault("cache", CACHE)
         self.case_path = os.path.join(self.dir, "case.json")
         with open(self.case_path, "w") as f:
             json.dump(body, f, indent=1)
@@ -168,8 +173,9 @@ class Solve:
         self.report = self._until_ready()
         self.seconds = time.perf_counter() - t
         self.cases = [ln.split()[1] for ln in self.report if ln.startswith("case ")]
+        self.from_cache = any("boundary solutions from cache" in ln for ln in self.report)
         self.n = 0
-        log(f"IgBEM solved in {self.seconds:.1f} s: " + next((ln[2:] for ln in self.report if "unknowns" in ln), ""))
+        log(f"IgBEM {'read from cache' if self.from_cache else 'solved'} in {self.seconds:.1f} s: " + next((ln[2:] for ln in self.report if "unknowns" in ln), ""))
 
     def _until_ready(self):
         lines = []

@@ -1,0 +1,923 @@
+{
+ "id": "ezeh-susmel-2020-specimens",
+ "source": "Ezeh & Susmel 2020, Int J Fatigue 136:105583, accepted manuscript (White Rose eprints 158161), Figs 5-7 (sharp, intermediate, blunt), page 25-27",
+ "method": "Vector extraction (PyMuPDF get_drawings): marker centres of the 3x3 pt filled circles inside each 181.3x116 pt plot frame, mapped with the printed axes (N 1e2-1e7, sigma_na 1-100 MPa, both log). Not a pixel digitisation. Run-outs = points at N > 1.8e6 (arrow glyph beside them). Check: refitting log N on log sigma per panel without run-outs reproduces Table 1 n, k and sigma_nA50 for all 18 series to the printed rounding (k within 0.05, sigma_nA50 within 0.04 MPa).",
+ "units": {
+  "sigma_na": "MPa, nominal net-section stress amplitude",
+  "N": "cycles to failure"
+ },
+ "plain_note": "The plain specimens are NOT in this paper per series: its Fig. 1 pools Refs 7, 8, 10 (other printers) in sigma_max/sigma_UTS with no print angle; per-series plain specimens need Ezeh & Susmel 2019 (eprints 146276).",
+ "series": [
+  {
+   "notch": "sharp",
+   "p": 45,
+   "R": -1,
+   "specimens": [
+    {
+     "sigma_na": 23.582,
+     "N": 3140,
+     "runout": false
+    },
+    {
+     "sigma_na": 21.756,
+     "N": 3980,
+     "runout": false
+    },
+    {
+     "sigma_na": 15.912,
+     "N": 11200,
+     "runout": false
+    },
+    {
+     "sigma_na": 16.025,
+     "N": 13000,
+     "runout": false
+    },
+    {
+     "sigma_na": 10.288,
+     "N": 68000,
+     "runout": false
+    },
+    {
+     "sigma_na": 10.635,
+     "N": 72800,
+     "runout": false
+    },
+    {
+     "sigma_na": 5.089,
+     "N": 925000,
+     "runout": false
+    },
+    {
+     "sigma_na": 4.785,
+     "N": 1021000,
+     "runout": false
+    }
+   ]
+  },
+  {
+   "notch": "sharp",
+   "p": 45,
+   "R": 0,
+   "specimens": [
+    {
+     "sigma_na": 15.283,
+     "N": 2730,
+     "runout": false
+    },
+    {
+     "sigma_na": 15.724,
+     "N": 2770,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.555,
+     "N": 10600,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.973,
+     "N": 18300,
+     "runout": false
+    },
+    {
+     "sigma_na": 8.674,
+     "N": 41300,
+     "runout": false
+    },
+    {
+     "sigma_na": 8.233,
+     "N": 48900,
+     "runout": false
+    },
+    {
+     "sigma_na": 6.036,
+     "N": 219100,
+     "runout": false
+    },
+    {
+     "sigma_na": 6.007,
+     "N": 243700,
+     "runout": false
+    }
+   ]
+  },
+  {
+   "notch": "sharp",
+   "p": 30,
+   "R": -1,
+   "specimens": [
+    {
+     "sigma_na": 24.962,
+     "N": 1850,
+     "runout": false
+    },
+    {
+     "sigma_na": 24.727,
+     "N": 2650,
+     "runout": false
+    },
+    {
+     "sigma_na": 14.925,
+     "N": 13400,
+     "runout": false
+    },
+    {
+     "sigma_na": 14.784,
+     "N": 15800,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.231,
+     "N": 65700,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.5,
+     "N": 125400,
+     "runout": false
+    },
+    {
+     "sigma_na": 5.065,
+     "N": 907600,
+     "runout": false
+    },
+    {
+     "sigma_na": 6.093,
+     "N": 1122800,
+     "runout": false
+    }
+   ]
+  },
+  {
+   "notch": "sharp",
+   "p": 30,
+   "R": 0,
+   "specimens": [
+    {
+     "sigma_na": 23.194,
+     "N": 500,
+     "runout": false
+    },
+    {
+     "sigma_na": 15.576,
+     "N": 2650,
+     "runout": false
+    },
+    {
+     "sigma_na": 15.429,
+     "N": 2740,
+     "runout": false
+    },
+    {
+     "sigma_na": 10.736,
+     "N": 14000,
+     "runout": false
+    },
+    {
+     "sigma_na": 10.485,
+     "N": 15700,
+     "runout": false
+    },
+    {
+     "sigma_na": 5.783,
+     "N": 442600,
+     "runout": false
+    },
+    {
+     "sigma_na": 4.981,
+     "N": 527100,
+     "runout": false
+    }
+   ]
+  },
+  {
+   "notch": "sharp",
+   "p": 0,
+   "R": -1,
+   "specimens": [
+    {
+     "sigma_na": 24.962,
+     "N": 3590,
+     "runout": false
+    },
+    {
+     "sigma_na": 20.897,
+     "N": 6720,
+     "runout": false
+    },
+    {
+     "sigma_na": 17.165,
+     "N": 6880,
+     "runout": false
+    },
+    {
+     "sigma_na": 17.329,
+     "N": 8840,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.555,
+     "N": 56400,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.748,
+     "N": 61400,
+     "runout": false
+    },
+    {
+     "sigma_na": 6.527,
+     "N": 356400,
+     "runout": false
+    },
+    {
+     "sigma_na": 6.284,
+     "N": 590800,
+     "runout": false
+    }
+   ]
+  },
+  {
+   "notch": "sharp",
+   "p": 0,
+   "R": 0,
+   "specimens": [
+    {
+     "sigma_na": 23.694,
+     "N": 430,
+     "runout": false
+    },
+    {
+     "sigma_na": 22.976,
+     "N": 490,
+     "runout": false
+    },
+    {
+     "sigma_na": 17.661,
+     "N": 1780,
+     "runout": false
+    },
+    {
+     "sigma_na": 17.871,
+     "N": 1780,
+     "runout": false
+    },
+    {
+     "sigma_na": 12.495,
+     "N": 15400,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.231,
+     "N": 22200,
+     "runout": false
+    },
+    {
+     "sigma_na": 5.729,
+     "N": 377300,
+     "runout": false
+    },
+    {
+     "sigma_na": 6.224,
+     "N": 513300,
+     "runout": false
+    }
+   ]
+  },
+  {
+   "notch": "intermediate",
+   "p": 45,
+   "R": -1,
+   "specimens": [
+    {
+     "sigma_na": 17.494,
+     "N": 3790,
+     "runout": false
+    },
+    {
+     "sigma_na": 19.695,
+     "N": 4360,
+     "runout": false
+    },
+    {
+     "sigma_na": 13.934,
+     "N": 17500,
+     "runout": false
+    },
+    {
+     "sigma_na": 13.64,
+     "N": 18200,
+     "runout": false
+    },
+    {
+     "sigma_na": 8.194,
+     "N": 137300,
+     "runout": false
+    },
+    {
+     "sigma_na": 7.815,
+     "N": 160500,
+     "runout": false
+    },
+    {
+     "sigma_na": 6.62,
+     "N": 226800,
+     "runout": false
+    },
+    {
+     "sigma_na": 5.581,
+     "N": 1153000,
+     "runout": false
+    },
+    {
+     "sigma_na": 5.979,
+     "N": 1992900,
+     "runout": true
+    }
+   ]
+  },
+  {
+   "notch": "intermediate",
+   "p": 45,
+   "R": 0,
+   "specimens": [
+    {
+     "sigma_na": 16.255,
+     "N": 3410,
+     "runout": false
+    },
+    {
+     "sigma_na": 15.465,
+     "N": 4550,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.582,
+     "N": 9320,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.364,
+     "N": 12000,
+     "runout": false
+    },
+    {
+     "sigma_na": 6.795,
+     "N": 138900,
+     "runout": false
+    },
+    {
+     "sigma_na": 7.125,
+     "N": 142600,
+     "runout": false
+    },
+    {
+     "sigma_na": 5.77,
+     "N": 513300,
+     "runout": false
+    },
+    {
+     "sigma_na": 6.18,
+     "N": 551700,
+     "runout": false
+    },
+    {
+     "sigma_na": 4.362,
+     "N": 1992800,
+     "runout": true
+    }
+   ]
+  },
+  {
+   "notch": "intermediate",
+   "p": 30,
+   "R": -1,
+   "specimens": [
+    {
+     "sigma_na": 19.555,
+     "N": 2870,
+     "runout": false
+    },
+    {
+     "sigma_na": 19.325,
+     "N": 3330,
+     "runout": false
+    },
+    {
+     "sigma_na": 16.487,
+     "N": 9010,
+     "runout": false
+    },
+    {
+     "sigma_na": 16.063,
+     "N": 9650,
+     "runout": false
+    },
+    {
+     "sigma_na": 12.524,
+     "N": 15700,
+     "runout": false
+    },
+    {
+     "sigma_na": 13.415,
+     "N": 23900,
+     "runout": false
+    },
+    {
+     "sigma_na": 6.86,
+     "N": 484900,
+     "runout": false
+    },
+    {
+     "sigma_na": 6.747,
+     "N": 547500,
+     "runout": false
+    }
+   ]
+  },
+  {
+   "notch": "intermediate",
+   "p": 30,
+   "R": 0,
+   "specimens": [
+    {
+     "sigma_na": 19.555,
+     "N": 810,
+     "runout": false
+    },
+    {
+     "sigma_na": 19.977,
+     "N": 840,
+     "runout": false
+    },
+    {
+     "sigma_na": 13.07,
+     "N": 10100,
+     "runout": false
+    },
+    {
+     "sigma_na": 12.644,
+     "N": 12300,
+     "runout": false
+    },
+    {
+     "sigma_na": 8.903,
+     "N": 63000,
+     "runout": false
+    },
+    {
+     "sigma_na": 7.815,
+     "N": 77400,
+     "runout": false
+    },
+    {
+     "sigma_na": 5.595,
+     "N": 744800,
+     "runout": false
+    },
+    {
+     "sigma_na": 5.866,
+     "N": 841100,
+     "runout": false
+    },
+    {
+     "sigma_na": 5.248,
+     "N": 1992800,
+     "runout": true
+    }
+   ]
+  },
+  {
+   "notch": "intermediate",
+   "p": 0,
+   "R": -1,
+   "specimens": [
+    {
+     "sigma_na": 25.082,
+     "N": 2260,
+     "runout": false
+    },
+    {
+     "sigma_na": 19.742,
+     "N": 2940,
+     "runout": false
+    },
+    {
+     "sigma_na": 21.449,
+     "N": 12700,
+     "runout": false
+    },
+    {
+     "sigma_na": 15.103,
+     "N": 16200,
+     "runout": false
+    },
+    {
+     "sigma_na": 14.961,
+     "N": 19900,
+     "runout": false
+    },
+    {
+     "sigma_na": 10.736,
+     "N": 95000,
+     "runout": false
+    },
+    {
+     "sigma_na": 9.928,
+     "N": 155100,
+     "runout": false
+    },
+    {
+     "sigma_na": 8.04,
+     "N": 180500,
+     "runout": false
+    },
+    {
+     "sigma_na": 6.05,
+     "N": 964500,
+     "runout": false
+    },
+    {
+     "sigma_na": 4.899,
+     "N": 1992900,
+     "runout": true
+    }
+   ]
+  },
+  {
+   "notch": "intermediate",
+   "p": 0,
+   "R": 0,
+   "specimens": [
+    {
+     "sigma_na": 21.449,
+     "N": 1010,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.473,
+     "N": 25000,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.284,
+     "N": 27200,
+     "runout": false
+    },
+    {
+     "sigma_na": 7.091,
+     "N": 203900,
+     "runout": false
+    },
+    {
+     "sigma_na": 7.488,
+     "N": 214200,
+     "runout": false
+    },
+    {
+     "sigma_na": 5.438,
+     "N": 733600,
+     "runout": false
+    },
+    {
+     "sigma_na": 4.762,
+     "N": 1013300,
+     "runout": false
+    }
+   ]
+  },
+  {
+   "notch": "blunt",
+   "p": 45,
+   "R": -1,
+   "specimens": [
+    {
+     "sigma_na": 25.622,
+     "N": 930,
+     "runout": false
+    },
+    {
+     "sigma_na": 25.622,
+     "N": 1360,
+     "runout": false
+    },
+    {
+     "sigma_na": 27.25,
+     "N": 1930,
+     "runout": false
+    },
+    {
+     "sigma_na": 30.174,
+     "N": 2150,
+     "runout": false
+    },
+    {
+     "sigma_na": 26.486,
+     "N": 3230,
+     "runout": false
+    },
+    {
+     "sigma_na": 25.683,
+     "N": 3520,
+     "runout": false
+    },
+    {
+     "sigma_na": 25.26,
+     "N": 3930,
+     "runout": false
+    },
+    {
+     "sigma_na": 16.883,
+     "N": 47800,
+     "runout": false
+    },
+    {
+     "sigma_na": 20.215,
+     "N": 60900,
+     "runout": false
+    },
+    {
+     "sigma_na": 17.125,
+     "N": 65500,
+     "runout": false
+    },
+    {
+     "sigma_na": 9.536,
+     "N": 1036700,
+     "runout": false
+    },
+    {
+     "sigma_na": 7.125,
+     "N": 1992900,
+     "runout": true
+    },
+    {
+     "sigma_na": 8.117,
+     "N": 1992900,
+     "runout": true
+    }
+   ]
+  },
+  {
+   "notch": "blunt",
+   "p": 45,
+   "R": 0,
+   "specimens": [
+    {
+     "sigma_na": 19.695,
+     "N": 700,
+     "runout": false
+    },
+    {
+     "sigma_na": 19.836,
+     "N": 830,
+     "runout": false
+    },
+    {
+     "sigma_na": 13.77,
+     "N": 7060,
+     "runout": false
+    },
+    {
+     "sigma_na": 14.033,
+     "N": 12700,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.046,
+     "N": 33800,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.776,
+     "N": 70100,
+     "runout": false
+    },
+    {
+     "sigma_na": 8.214,
+     "N": 575200,
+     "runout": false
+    },
+    {
+     "sigma_na": 8.861,
+     "N": 1771300,
+     "runout": false
+    }
+   ]
+  },
+  {
+   "notch": "blunt",
+   "p": 30,
+   "R": -1,
+   "specimens": [
+    {
+     "sigma_na": 25.081,
+     "N": 5090,
+     "runout": false
+    },
+    {
+     "sigma_na": 21.86,
+     "N": 5130,
+     "runout": false
+    },
+    {
+     "sigma_na": 24.552,
+     "N": 5170,
+     "runout": false
+    },
+    {
+     "sigma_na": 21.551,
+     "N": 5370,
+     "runout": false
+    },
+    {
+     "sigma_na": 16.527,
+     "N": 23600,
+     "runout": false
+    },
+    {
+     "sigma_na": 16.724,
+     "N": 25100,
+     "runout": false
+    },
+    {
+     "sigma_na": 10.635,
+     "N": 225100,
+     "runout": false
+    },
+    {
+     "sigma_na": 10.736,
+     "N": 235500,
+     "runout": false
+    },
+    {
+     "sigma_na": 7.142,
+     "N": 1992900,
+     "runout": true
+    }
+   ]
+  },
+  {
+   "notch": "blunt",
+   "p": 30,
+   "R": 0,
+   "specimens": [
+    {
+     "sigma_na": 23.582,
+     "N": 110,
+     "runout": false
+    },
+    {
+     "sigma_na": 18.65,
+     "N": 2290,
+     "runout": false
+    },
+    {
+     "sigma_na": 15.068,
+     "N": 5580,
+     "runout": false
+    },
+    {
+     "sigma_na": 14.033,
+     "N": 13800,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.5,
+     "N": 38000,
+     "runout": false
+    },
+    {
+     "sigma_na": 10.761,
+     "N": 52100,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.257,
+     "N": 65500,
+     "runout": false
+    },
+    {
+     "sigma_na": 8.272,
+     "N": 212600,
+     "runout": false
+    },
+    {
+     "sigma_na": 7.796,
+     "N": 1635500,
+     "runout": false
+    }
+   ]
+  },
+  {
+   "notch": "blunt",
+   "p": 0,
+   "R": -1,
+   "specimens": [
+    {
+     "sigma_na": 26.739,
+     "N": 2270,
+     "runout": false
+    },
+    {
+     "sigma_na": 31.267,
+     "N": 3120,
+     "runout": false
+    },
+    {
+     "sigma_na": 24.262,
+     "N": 6250,
+     "runout": false
+    },
+    {
+     "sigma_na": 23.526,
+     "N": 8410,
+     "runout": false
+    },
+    {
+     "sigma_na": 16.063,
+     "N": 27400,
+     "runout": false
+    },
+    {
+     "sigma_na": 16.178,
+     "N": 39000,
+     "runout": false
+    },
+    {
+     "sigma_na": 13.704,
+     "N": 52700,
+     "runout": false
+    },
+    {
+     "sigma_na": 12.231,
+     "N": 282700,
+     "runout": false
+    },
+    {
+     "sigma_na": 9.905,
+     "N": 773700,
+     "runout": false
+    },
+    {
+     "sigma_na": 10.736,
+     "N": 1415700,
+     "runout": false
+    }
+   ]
+  },
+  {
+   "notch": "blunt",
+   "p": 0,
+   "R": 0,
+   "specimens": [
+    {
+     "sigma_na": 16.102,
+     "N": 4790,
+     "runout": false
+    },
+    {
+     "sigma_na": 16.527,
+     "N": 5450,
+     "runout": false
+    },
+    {
+     "sigma_na": 12.614,
+     "N": 19500,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.61,
+     "N": 67200,
+     "runout": false
+    },
+    {
+     "sigma_na": 11.555,
+     "N": 159300,
+     "runout": false
+    },
+    {
+     "sigma_na": 9.976,
+     "N": 179200,
+     "runout": false
+    },
+    {
+     "sigma_na": 9.999,
+     "N": 184700,
+     "runout": false
+    },
+    {
+     "sigma_na": 7.506,
+     "N": 1394200,
+     "runout": false
+    },
+    {
+     "sigma_na": 8.04,
+     "N": 1992800,
+     "runout": true
+    }
+   ]
+  }
+ ]
+}

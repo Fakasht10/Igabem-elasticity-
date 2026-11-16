@@ -48,6 +48,7 @@
 #endif
 #include <cstdlib>
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -55,6 +56,7 @@
 #include <fstream>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -117,12 +119,24 @@ struct CaseFile {
   std::map<std::string, Json> names;  // "names": named regions
 
   // Builds the mesh, regions, supports and load cases into model and cases.
+  // Solution cache (solve()): the key hashes the canonical case text (all but "output", "cache" and the file paths), the bytes
+  // of every file it reads (geometry after grading, face map, field files), the material, quadrature and
+  // partition options, and the operator and solution format versions.
+  static constexpr int kSolutionVersion = 2;  // 2: key independent of file locations (content only)
+  std::string doc;                  // canonical case text
+  std::vector<std::string> inputs;  // files read
+  bool solution_from_cache = false;
+  double t_solution_io = 0.0;
+
   void load(const std::string& path, BcModel& model, std::vector<LoadCase>& cases) {
     const Json J = Json::load(path);
+    doc = J.dump({"output", "cache", "geometry", "faces"});  // file paths left out: the files are hashed by content
+    inputs.clear();
     const std::filesystem::path dir = std::filesystem::path(path).parent_path();
     auto resolve = [&](const std::string& f) {
-      if (std::filesystem::exists(f) || std::filesystem::path(f).is_absolute()) return f;
-      return (dir / f).string();
+      const std::string r = std::filesystem::exists(f) || std::filesystem::path(f).is_absolute() ? f : (dir / f).string();
+      inputs.push_back(r);
+      return r;
     };
     geometry = resolve(J["geometry"].asString());
     faces = J.has("faces") ? resolve(J["faces"].asString()) : faceMapPath(geometry);
@@ -308,8 +322,61 @@ struct CaseFile {
       model.supports = std::move(fixed);
       return;
     }
+    model.defer = true;  // solve() factors only when the solutions are not stored
     model.setupOn(geometry, std::move(fixed), std::move(springs), cache);
     model.rbe2 = std::move(masters);
+  }
+
+  std::string solutionKey(const BcModel& model) const {
+    std::ostringstream ss;
+    ss.precision(17);
+    ss << kSolutionVersion << '|' << kOperatorVersion << '|' << mat.lambda << ',' << mat.mu << '|' << opt.n_gauss << ','
+       << opt.near_refine << ',' << opt.near_max_depth << ',' << opt.far_tol << '|' << model.popt.enabled << ','
+       << model.popt.kappa_h << ',' << model.popt.aspect << ',' << model.popt.taper << ',' << model.popt.max_depth << '|'
+       << model.hsolver.on << ',' << model.hsolver.o.h.eps << ',' << model.hsolver.o.gtol << '|' << doc;
+    std::uint64_t h = fnv1a(ss.str());
+    std::vector<std::string> files = inputs;
+    files.push_back(geometry);
+    files.push_back(faces);
+    for (const auto& f : files) h = fnv1a('|' + (std::filesystem::exists(f) ? readFile(f) : std::string("-")), h);  // content, not path
+    char hex[17];
+    std::snprintf(hex, sizeof hex, "%016llx", static_cast<unsigned long long>(h));
+    return std::string("sol_") + hex;
+  }
+
+  // Boundary solutions of every case: read from the cache when this exact case was solved before (no operators,
+  // no factorisation), otherwise solved and stored. Without a cache directory it always solves.
+  std::vector<BoundarySolution> solve(BcModel& model, const std::vector<LoadCase>& cases, std::vector<CaseReport>* rep) {
+    const auto t0 = std::chrono::steady_clock::now();
+    const std::string path = cache.empty() ? "" : cache + "/" + solutionKey(model) + ".bin";
+    const int nm = int(model.rbe2.size()), K = int(cases.size());
+    Eigen::MatrixXd U, T, Q, F;
+    solution_from_cache = !path.empty() && loadMatrices(path, {&U, &T, &Q, &F}) && U.rows() == 3 * model.mesh.ndof &&
+                          U.cols() == K && T.rows() == 3 * model.ts.ndof && T.cols() == K && Q.rows() == 6 &&
+                          Q.cols() == K * nm && F.rows() == 3 * model.mesh.ndof;
+    if (solution_from_cache) {
+      std::vector<Vec6> q(size_t(K * nm));
+      for (int i = 0; i < K * nm; ++i) q[i] = Q.col(i);
+      auto out = model.restore(cases, U, T, q, F, rep);
+      t_solution_io = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+      return out;
+    }
+    model.prepare();
+    std::vector<Vec6> q;
+    auto out = model.solutions(cases, rep, &q);
+    if (!path.empty()) {
+      const auto t1 = std::chrono::steady_clock::now();
+      U.resize(3 * model.mesh.ndof, K);
+      T.resize(3 * model.ts.ndof, K);
+      Q.resize(6, K * nm);
+      for (int k = 0; k < K; ++k) { U.col(k) = out[k].u; T.col(k) = out[k].t; }
+      for (int i = 0; i < K * nm; ++i) Q.col(i) = q[i];
+      F = model.free_modes;
+      std::filesystem::create_directories(cache);
+      saveMatrices(path, {&U, &T, &Q, &F});
+      t_solution_io = std::chrono::duration<double>(std::chrono::steady_clock::now() - t1).count();
+    }
+    return out;
   }
 
   Region region(const Json& e, const std::string& label) const {
