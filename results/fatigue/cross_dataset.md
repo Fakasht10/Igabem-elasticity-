@@ -6,8 +6,8 @@ Cells: bias / rms log10(N_pred/N), count within x2 in life.
 |---|---|---|---|---|
 | kt | Ezeh-Susmel | - | -2.15 / 2.29, 0/18 | -1.83 / 1.83, 0/14 |
 | kt | Seifollahi | - | -1.83 / 1.83, 0/14 | -2.15 / 2.29, 0/18 |
-| hotspot | Ezeh-Susmel | l 1.21 | +0.04 / 0.43, 8/18 | +0.26 / 0.28, 8/14 |
-| hotspot | Seifollahi | l 0.832 | +0.00 / 0.09, 14/14 | -0.20 / 0.50, 10/18 |
+| hotspot | Ezeh-Susmel | l 0.879 | -0.24 / 0.58, 9/18 | +0.04 / 0.09, 14/14 |
+| hotspot | Seifollahi | l 0.832 | +0.00 / 0.09, 14/14 | -0.26 / 0.59, 10/18 |
 | tcd_point | Ezeh-Susmel | L 1.68 | +0.00 / 0.82, 4/18 | -0.13 / 0.15, 14/14 |
 | tcd_point | Seifollahi | L 1.91 | +0.00 / 0.05, 14/14 | +0.11 / 0.83, 2/18 |
 | tcd_line | Ezeh-Susmel | L 1.35 | +0.01 / 0.69, 4/18 | -0.02 / 0.06, 14/14 |

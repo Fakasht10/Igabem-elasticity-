@@ -123,3 +123,21 @@ How to read it (independent review, 2026-11-16):
 S–N slope (`## Slope` in the results md): the tests' notch curves are slightly SHALLOWER than the smooth one (edge −0.155, hole −0.141 against −0.161), so Kf falls a little with life (hole 1.17 at 10⁴, 1.12 at 10⁵). Every criterion with a life-independent factor (Weibull, supported Weibull, supported hot spot, constant-L TCD) reproduces the smooth slope −0.161. TCD with Susmel's L(N) = 16.4 N^−0.242 is STEEPER (point −0.25, line −0.23) because L shrinks with N, so the effective stress grows with N, the opposite of these data. With a constant L fitted on Ezeh–Susmel, TCD gets the right slope but the wrong level: point L 1.12 mm 0/14, line L 0.93 mm 8/14. A supported TCD (σ(L/2)/(1+√(l χ)), L and l fitted jointly on Ezeh–Susmel) drives L → 0. It becomes the supported hot spot: FKM / Siebel–Stieler gradient support with χ₀ from a quadratic fit of the bisector (`criteria.root_chi`, stable to 2–3 % between h 1.5 and 1.06). On Ezeh–Susmel its rms ln is 0.175 (11/18 within 20 %). Per notch: blunt −15 %, intermediate +17 %, sharp −3 %.
 
 Figures: `fig_sn_transfer_*_overview` and `fig_sn_transfer_*`. Solid lines are the Basquin fits of the tests (equal to the paper's Table 7 to 0.04 %). Broken lines are transferred predictions. Kt, failed criteria and in-sample references appear only in the table.
+
+## One master curve for both PLA data sets (`fatigue.master`, `fatigue.cross`)
+
+Master variable S* = f_eff σ_a,n (2/(1−R))^(1−γ) / σ_plain,ds(10⁵). It uses one slope, one level per data set, a fit in the log-stress direction, and outliers flagged. This design follows the independent review (`review_master_collapse.md`). The first version regressed life on stress across series, which halved the slope, and it normalised by UTS, which left a 1.3–1.4× gap between the two data sets.
+
+- **rms in log10 S, Seifollahi / Ezeh–Susmel:**
+  - net stress 0.030 / 0.095
+  - Kt 0.132 / 0.294
+  - supported hot spot (capped at Kf ≥ 1, l 1.03) 0.017 / 0.093
+  - TCD point (L 1.35) 0.025 / 0.091
+  - TCD line (L 1.05) 0.017 / 0.088
+  - Weibull (m 7.7) 0.055 / 0.104
+- **Floors.** The fitted γ comes out at 0.46–0.52 for every criterion, close to SWT. The plain-only floor is 0.007 / 0.098, so the Ezeh–Susmel residual is all plain-reference scatter (print angle and R).
+- **Ezeh–Susmel's blunt notch is flagged.** It is stronger than plain (Kf 0.74 in 5 of 6 matched p/R pairs), and no elastic criterion can produce that.
+- **Cross-dataset (`fatigue.cross`, hot spot capped):**
+  - l fitted on Ezeh–Susmel is 0.88 mm and predicts Seifollahi at +0.04 / 0.09 log10 life (14/14 within ×2).
+  - l fitted on Seifollahi is 0.83 mm.
+  - It is the only criterion whose length agrees between the two data sets. Predicting Ezeh–Susmel fails for every criterion, because of its plain reference and the blunt notch.
