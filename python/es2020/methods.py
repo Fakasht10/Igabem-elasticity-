@@ -60,7 +60,7 @@ def k_line(notch, L):
     p = _prof(notch)
     lig = p.d[-1]
     out = []
-    for l2 in np.atleast_1d(2 * np.asarray(L, float)):
+    for l2 in np.atleast_1d(np.minimum(2 * np.asarray(L, float), 2 * lig)):   # past 2 lig: the opposite notch
         x = np.linspace(0, l2, 400)
         xm = np.where(x <= lig, x, 2 * lig - np.minimum(x, 2 * lig))    # symmetric about the centre line
         out.append(np.mean(p(xm)))
@@ -120,9 +120,11 @@ def l_cd():
     return A * paper.N_REF ** B
 
 
-def calibrate(name, notch="sharp", curve=paper.SHARP_FIG8A):
+def calibrate(name, notch="sharp", curve=None):
     f, p0, _ = METHODS[name]
-    target = np.log10(paper.PLAIN(N_CAL) / curve(N_CAL))
+    b = basis(name)
+    curve = b["sharp"] if curve is None else curve
+    target = np.log10(b["plain"](N_CAL) / curve(N_CAL))
     if name == "area":                                     # the paper's way: area uses the point-method L_M(N)
         p, _ = calibrate("point", notch, curve)
         return p, math.sqrt(np.mean((np.log10(f(notch, N_CAL, p)) - target) ** 2))
@@ -144,16 +146,88 @@ def calibrate(name, notch="sharp", curve=paper.SHARP_FIG8A):
 
 
 def residuals(name, p, specs):
-    """log10(sigma_eq / plain P50 at the specimen's life), failures only."""
-    f = METHODS[name][0]
+    """log10(sigma_eq / plain P50 at the specimen's life), failures only, in the method's stress variable."""
+    f, b = METHODS[name][0], basis(name)
     out = {}
     for k in paper.NOTCHES:
-        S = np.array([(s.N, s.s_max) for s in specs if s.notch == k and not s.runout])
-        out[k] = (S[:, 0], np.log10(f(k, S[:, 0], p) * S[:, 1] / paper.PLAIN(S[:, 0])))
+        S = np.array([(s.N, b["var"](s)) for s in specs if s.notch == k and not s.runout])
+        out[k] = (S[:, 0], np.log10(f(k, S[:, 0], p) * S[:, 1] / b["plain"](S[:, 0])))
     return out
 
 
-def stats(N, r):
+def stats(N, r, T=paper.PLAIN.T):
+    """T: scatter ratio of the plain band the residuals refer to (its P10-P90 half-width is log10 sqrt T)."""
     slope = np.polyfit(np.log10(N), r, 1)[0]
     return dict(n=len(r), bias=float(np.mean(r)), rms=float(np.sqrt(np.mean(r ** 2))), slope=float(slope),
-                band=float(np.mean(np.abs(r) <= BAND)))
+                band=float(np.mean(np.abs(r) <= math.log10(math.sqrt(T)))))
+
+
+# ---------------------------------------------------------------- stress variable: sigma_max (paper) or SWT (departure)
+def _fit_curve(N, S, runout=None):
+    """Basquin P50 by the paper's regression (log N on log S, failures), T from the life scatter (log-normal)."""
+    f = np.ones(len(N), bool) if runout is None else ~np.asarray(runout, bool)
+    b, a = np.polyfit(np.log10(S[f]), np.log10(N[f]), 1)
+    sd = np.std(np.log10(N[f]) - a - b * np.log10(S[f]), ddof=2)
+    k = -b
+    return paper.Basquin(10 ** ((np.log10(paper.N_REF) - a) / b), k, 10 ** (2 * 1.2816 * sd / k), cap=np.inf)
+
+
+def swt(R):
+    """sigma_SWT / sigma_max = sqrt(sigma_a / sigma_max) = sqrt((1 - R) / 2)."""
+    return np.sqrt((1 - np.asarray(R, float)) / 2)
+
+
+@lru_cache(None)
+def swt_curves():
+    """SWT is NOT in the paper. Plain P50 refitted on the Fig. 1 points (R -1, -0.5, 0, 0.3) in sigma_SWT, and the
+    sharp curve refitted on the Fig. 8 sharp specimens in sigma_SWT; points at N >= 1.8e6 treated as run-outs."""
+    A = paper.fig1_plain()
+    plain = _fit_curve(A[:, 1], A[:, 2] * paper.UTS * swt(A[:, 0]), A[:, 1] >= 1.8e6)
+    plain = paper.Basquin(plain.s_ref, plain.k, plain.T, cap=paper.UTS)
+    sh = [s for s in paper.fig8_specimens() if s.notch == "sharp"]
+    sharp = _fit_curve(np.array([s.N for s in sh]), np.array([s.s_max * swt(s.R) for s in sh]), [s.runout for s in sh])
+    return plain, sharp
+
+
+def basis(name):
+    if name.startswith("swt"):
+        plain, sharp = swt_curves()
+        return dict(var=lambda s: s.s_max * float(swt(s.R)), plain=plain, sharp=sharp, label="sigma_SWT")
+    return dict(var=lambda s: s.s_max, plain=paper.PLAIN, sharp=paper.SHARP_FIG8A, label="sigma_max")
+
+
+# ---------------------------------------------------------------- stress gradient (Siebel-Stieler type support factor)
+@lru_cache(None)
+def chi(notch):
+    """Relative stress gradient at the root, chi = -(d sigma_1/dx)/sigma_1 (1/mm), quadratic fit of the bisector profile
+    over d <= rho/10."""
+    p = _prof(notch)
+    rho = {"sharp": 0.15, "intermediate": 1.0, "blunt": 3.0}[notch]
+    m = p.d <= rho / 10
+    c = np.polyfit(p.d[m], p.s[m], 2)
+    return float(-c[1] / p.s[0])            # c = (a2, a1, a0): a1 is the slope at the root
+
+
+def k_gradient(notch, c):
+    """K_eq = Kt / (1 + sqrt(c chi)), c = A N^B (mm)."""
+    return _prof(notch).s[0] / (1 + np.sqrt(np.asarray(c) * chi(notch)))
+
+
+# ---------------------------------------------------------------- averaged strain energy density (Lazzarin-Berto)
+def k_sed(notch, R0):
+    """sqrt(2 E W_bar) / sigma_n: W averaged over the crescent of outer radius R0 + r0 centred r0 behind the root
+    (r0 = rho (pi - 2a) / (2 pi - 2a)), thickness-mean, nu 0.35; plain uniaxial gives K = 1."""
+    g = fields()[notch]["sed"]
+    rc, q, w = np.asarray(g["rc"]), np.asarray(g["w2E"]), np.asarray(g["dA"])
+    out = []
+    for R in np.atleast_1d(R0):
+        m = rc <= R + g["r0"]
+        out.append(math.sqrt(np.sum((q * w)[m]) / np.sum(w[m])))
+    return np.array(out)
+
+
+METHODS.update({
+    "swt_point": (_ab(k_point), (16.4, -0.242), "SWT variable (not in paper); L_M = {:.3g} N^{:.3f} mm"),
+    "gradient": (_ab(k_gradient), (0.1, -0.2), "K_t / (1 + sqrt(c chi)), c = {:.3g} N^{:.3f} mm"),
+    "sed": (_ab(k_sed), (2.0, -0.2), "R0 = {:.3g} N^{:.3f} mm"),
+})

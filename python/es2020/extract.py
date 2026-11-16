@@ -59,6 +59,28 @@ def fig10(doc, panel=0):
     return out
 
 
+def fig1(doc):
+    """Fig. 1 unifying band (page 20): plain specimens of Refs 7, 8, 10 as sigma_max/UTS; marker = R (legend order:
+    triangle -1, circle -0.5, diamond 0, open triangle 0.3); the four legend markers sit at x < 200 pt."""
+    page = doc[19]
+    x0, x1, y0, y1 = 128.3377, 480.5148, 126.7274, 338.4612          # frame: N 1e1-1e7, y 10-0.01
+    out = []
+    for d in page.get_drawings():
+        r, f, it = d["rect"], d.get("fill"), tuple(i[0] for i in d["items"])
+        if not 4 < r.width < 8:
+            continue
+        R = {(("l", "l"), True): -1.0, (("c", "c", "c", "c"), True): -0.5, (("l", "l", "l", "l"), True): 0.0,
+             (("l", "l", "l"), False): 0.3}.get((it, f is not None))
+        if R is None or (R == 0.3 and abs(r.width - 6.2) > 0.2):
+            continue
+        cx, cy = (r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2
+        if cx < 200 and 230 < cy < 310:
+            continue                                              # legend
+        out.append({"R": R, "N": round(10 ** (1 + 6 * (cx - x0) / (x1 - x0)), 2),
+                    "smax_uts": round(10 ** (1 - 3 * (cy - y0) / (y1 - y0)), 5)})
+    return out
+
+
 def main(pdf):
     import pymupdf
     doc = pymupdf.open(pdf)
@@ -69,6 +91,9 @@ def main(pdf):
     json.dump({"source": src + ", Fig. 10 Point Method panel (page 30), vector marker centres; x = N_f, "
                "y = sigma_eff,max / sigma_UTS", "points": fig10(doc)},
               open(os.path.join(DATA, "fig10_point_markers.json"), "w"), indent=1)
+    json.dump({"source": src + ", Fig. 1 unifying scatter band (page 20, data of Refs 7, 8, 10), vector marker "
+               "centres; no run-out flag is drawn (16 points at N >= 1.8e6 are treated as run-outs)", "points": fig1(doc)},
+              open(os.path.join(DATA, "fig1_plain_markers.json"), "w"), indent=0)
     json.dump({"source": src + ", Fig. 10 Area Method panel (page 30), vector marker centres; 3 sharp markers "
                "(N 429-504) are absent from this panel in the PDF", "points": fig10(doc, 1)},
               open(os.path.join(DATA, "fig10_area_markers.json"), "w"), indent=1)

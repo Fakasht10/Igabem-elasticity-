@@ -18,4 +18,4 @@ Results (`python -m pytest python/es2020 -q`, < 1 s):
 Data caveat found in the paper: Fig. 8 (and therefore Fig. 10) plots sigma_n,max values that differ from
 Figs 5–7 converted with 2/(1 - R) for 73 of 157 specimens by more than 3 %, mostly at long life (worst -32 %).
 Regressing the Figs 5–7 stresses instead gives a sharp curve k 3.56, 4.78 MPa and L_M = 10.4 N^-0.183.
-The one departure from the paper's procedure: K(d) is the thickness-mean sigma_1 of a 3D IgBEM solve, the paper used 2D FE.
+Departures from the paper: K(d) is the thickness-mean sigma_1 of a 3D IgBEM solve (paper: 2D FE). The method comparison (compare.py) adds methods the paper did not use: line (refitted L, 2L capped at 6 mm), Weibull, modified HSV, stress gradient, averaged SED, and the point method in the SWT variable (plain band refitted on the Fig. 1 points). Each is labelled on the figures.

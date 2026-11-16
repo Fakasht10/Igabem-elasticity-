@@ -97,3 +97,9 @@ def pair(N1, v1, N2, v2, tol=0.004):
         g = np.concatenate([[0], np.cumsum(np.diff(np.log10(np.asarray(N)[o])) > tol)])
         return o[np.lexsort((np.asarray(v)[o], g))]
     return order(N1, v1), order(N2, v2)
+
+
+def fig1_plain():
+    """Plain specimens of the Fig. 1 band: array of (R, N, sigma_max / UTS)."""
+    js = json.load(open(os.path.join(DATA, "fig1_plain_markers.json")))
+    return np.array([(q["R"], q["N"], q["smax_uts"]) for q in js["points"]])
