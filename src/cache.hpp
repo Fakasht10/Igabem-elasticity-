@@ -5,6 +5,7 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <Eigen/LU>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -92,5 +93,34 @@ inline bool loadMatrices(const std::string& path, const std::vector<Eigen::Matri
   }
   return true;
 }
+
+// Hash of the bytes of a vector or matrix, chained onto h.
+template <class V>
+std::uint64_t fnvData(const V& v, std::uint64_t h) {
+  return fnv1a(std::string(reinterpret_cast<const char*>(v.data()), sizeof(*v.data()) * v.size()), h);
+}
+
+// Partial-pivoting LU that can be written to and read from the operator cache: a new load case on a stored
+// operator then costs two triangular solves, not a factorisation.
+struct StoredLU : Eigen::PartialPivLU<Eigen::MatrixXd> {
+  using Eigen::PartialPivLU<Eigen::MatrixXd>::PartialPivLU;
+  void save(const std::string& path) const {
+    Eigen::MatrixXd P(m_p.size(), 1), meta(2, 1);
+    for (Eigen::Index i = 0; i < m_p.size(); ++i) P(i) = m_p.indices()(i);
+    meta << m_l1_norm, m_det_p;
+    saveMatrices(path, {&m_lu, &P, &meta});
+  }
+  bool load(const std::string& path, Eigen::Index n) {
+    Eigen::MatrixXd P, meta;
+    if (!loadMatrices(path, {&m_lu, &P, &meta}) || m_lu.rows() != n || m_lu.cols() != n || P.size() != n) return false;
+    m_p.resize(n);
+    for (Eigen::Index i = 0; i < n; ++i) m_p.indices()(i) = int(P(i));
+    m_rowsTranspositions.resize(0);
+    m_l1_norm = meta(0);
+    m_det_p = static_cast<signed char>(meta(1));
+    m_isInitialized = true;
+    return true;
+  }
+};
 
 }  // namespace igabem

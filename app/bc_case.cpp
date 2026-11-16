@@ -99,12 +99,26 @@ int main(int argc, char** argv) {
   }
   if (!csv_arg.empty()) cf.csv = csv_arg;
   if (!vtu_arg.empty()) cf.vtu = vtu_arg;
-  const double t_setup = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+  const auto t1 = std::chrono::steady_clock::now();
+  std::vector<CaseReport> rep;
+  std::vector<BoundarySolution> sols;
+  try {
+    sols = cf.solve(model, cases, &rep);
+  } catch (const std::exception& e) {  // a field file without a value at an interpolation point
+    std::cerr << "error: " << e.what() << "\n";
+    return 2;
+  }
+  const double t_solve = std::chrono::duration<double>(std::chrono::steady_clock::now() - t1).count();
   const Mesh& mesh = model.mesh;
   std::printf("# %s: %zu patches, %zu elements, %d dofs, %d unknowns, %d free rigid motion(s)\n", argv[1],
               mesh.patches.size(), mesh.elements.size(), mesh.ndof, model.unknowns(), model.freeModes());
-  std::printf("# E %g nu %g; operators %.2f s%s, springs %.2f s, LU %.2f s, setup total %.2f s\n", cf.E, cf.nu,
-              model.t_assemble, model.from_cache ? " (from cache)" : "", model.t_springs, model.t_factor, t_setup);
+  if (cf.solution_from_cache)
+    std::printf("# E %g nu %g; boundary solutions from cache (no operators, no LU) in %.3f s\n", cf.E, cf.nu,
+                cf.t_solution_io);
+  else
+    std::printf("# E %g nu %g; operators %.2f s%s, springs %.2f s, LU %.2f s%s, %zu case(s) solved in "
+                "%.2f s\n", cf.E, cf.nu, model.t_assemble, model.from_cache ? " (from cache)" : "", model.t_springs,
+                model.t_factor, model.lu_from_cache ? " (from cache)" : "", cases.size(), t_solve);
   for (const auto& s : model.supports) {
     std::printf("#   support %-14s fix %c%c%c on %zu patch(es)\n", s.label.c_str(), s.fix[0] ? 'x' : '-',
                 s.fix[1] ? 'y' : '-', s.fix[2] ? 'z' : '-', s.patches.size());
@@ -112,17 +126,6 @@ int main(int argc, char** argv) {
   for (const auto& s : model.springs)
     std::printf("#   spring  %-14s area %.6g on %zu element(s)\n", s.label.c_str(), s.region->area, s.region->cells.size());
 
-  const auto t1 = std::chrono::steady_clock::now();
-  std::vector<CaseReport> rep;
-  std::vector<BoundarySolution> sols;
-  try {
-    sols = model.solutions(cases, &rep);
-  } catch (const std::exception& e) {  // a field file without a value at an interpolation point
-    std::cerr << "error: " << e.what() << "\n";
-    return 2;
-  }
-  const double t_solve = std::chrono::duration<double>(std::chrono::steady_clock::now() - t1).count();
-  std::printf("# %zu case(s) solved in %.2f s (region right-hand sides included)\n", cases.size(), t_solve);
   if (const HMixed* h = model.hmat()) {
     const auto& st = h->st;
     const auto& hs = h->op().stats();

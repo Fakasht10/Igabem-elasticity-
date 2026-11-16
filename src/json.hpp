@@ -1,9 +1,12 @@
 // Minimal JSON reader for case files (objects, arrays, numbers, strings, true,
-// false, null). Enough for app/bc_case's input; no writer, no unicode escapes
-// beyond \uXXXX in the ASCII range.
+// false, null). Enough for app/bc_case's input; no unicode escapes beyond \uXXXX
+// in the ASCII range. dump() is a canonical writer (sorted keys, %.17g numbers, no
+// whitespace): equal documents give equal text, which the solution cache hashes.
 #pragma once
 
+#include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <map>
@@ -78,6 +81,23 @@ class Json {
   double get(const std::string& k, double dflt) const { return has(k) ? (*this)[k].asNumber() : dflt; }
   std::string get(const std::string& k, const std::string& dflt) const {
     return has(k) ? (*this)[k].asString() : dflt;
+  }
+  // Canonical text; keys in `skip` are left out of the top-level object.
+  std::string dump(const std::vector<std::string>& skip = {}) const {
+    switch (type) {
+      case Null: return "null";
+      case Bool: return b ? "true" : "false";
+      case Number: { char c[32]; std::snprintf(c, sizeof c, "%.17g", num); return c; }
+      case String: return '"' + str + '"';
+      case Array: { std::string s = "["; for (const Json& x : arr) s += x.dump() + ','; return s + ']'; }
+      case Object: {
+        std::string s = "{";
+        for (const auto& [k, v] : obj)
+          if (std::find(skip.begin(), skip.end(), k) == skip.end()) s += '"' + k + "\":" + v.dump() + ',';
+        return s + '}';
+      }
+    }
+    return "";
   }
 
  private:
