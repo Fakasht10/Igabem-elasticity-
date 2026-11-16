@@ -69,6 +69,40 @@ def main(argv=None):
                 for c, mk in crit.items():
                     r[c] = life(mk(F[k]), s, A, B)
                 rows.append(r)
+    # fitted on smooth + one notch (every specimen of it), predicted on the other notch: L(N) = A_L N^b_L per TCD
+    # method (Susmel & Taylor's two-curve calibration) and the Weibull m
+    from scipy.optimize import minimize, minimize_scalar
+    notches = [k for k in raw if k != "smooth"]
+    spec = lambda k: [(s, n) for s, *ns in raw[k] for n in ns]
+    tcd = {"point": C.tcd_point, "line": C.tcd_line}
+    cross = {}
+    for cal in notches:
+        for meth, fn in tcd.items():
+            def err(th, k=cal, fn=fn):
+                LNc = lambda N: min(math.exp(th[0]) * N ** th[1], 0.95 * lig)
+                return float(np.mean([math.log10(life(lambda N: 1.0 / fn(F[k], 1.0, LNc(N)), s, A, B) / n) ** 2
+                                      for s, n in spec(k)]))
+            o = min((minimize(err, [math.log(L0), b0], method="Nelder-Mead") for L0 in (0.5, 2.0, 8.0)
+                     for b0 in (-0.3, 0.0)), key=lambda o: o.fun)
+            cross[(cal, f"TCD {meth}, L(N) fitted on {cal}")] = (
+                lambda f, th=o.x, fn=fn: (lambda N: 1.0 / fn(f, 1.0, min(math.exp(th[0]) * N ** th[1], 0.95 * lig))),
+                f"A_L {math.exp(o.x[0]):.3g} mm, b_L {o.x[1]:.3f}")
+        def errm(lm, k=cal):
+            return float(np.mean([math.log10(life(lambda N, w=1.0 / C.weibull(F[k], 1.0, math.exp(lm), V): w, s, A, B)
+                                              / n) ** 2 for s, n in spec(k)]))
+        mfit = math.exp(minimize_scalar(errm, bounds=(math.log(2), math.log(200)), method="bounded").x)
+        cross[(cal, f"Weibull m fitted on {cal}")] = (
+            lambda f, m=mfit: (lambda N, w=1.0 / C.weibull(f, 1.0, m, V): w), f"m {mfit:.2f}")
+    xlines = ["", "## Fitted on smooth + one notch, every specimen of both; scored on that notch (fit) and the other (predicted)",
+              "", "| criterion | parameters | fitted notch: bias / rms log10, within x2 | predicted notch: bias / rms log10, within x2 |",
+              "|---|---|---|---|"]
+    for (cal, c), (mk, par) in cross.items():
+        cells = []
+        for k in (cal, *[n for n in notches if n != cal]):
+            e = np.log10([life(mk(F[k]), s, A, B) / n for s, n in spec(k)])
+            cells.append(f"{k}: {e.mean():+.2f} / {np.sqrt(np.mean(e ** 2)):.2f}, "
+                         f"{int((abs(e) < math.log10(2)).sum())}/{len(e)}")
+        xlines.append(f"| {c} | {par} | {cells[0]} | {cells[1]} |")
     lines = [f"# S-N transfer, {d['id']}: smooth Basquin A {A:.3f}, B {B:.4f}; every notched specimen", "",
              "| criterion | n | mean log10(N_pred/N) | rms log10 | within x2 | within x3 |", "|---|---|---|---|---|---|"]
     sc = {}
@@ -81,6 +115,7 @@ def main(argv=None):
     lines += ["", "| notch | s_a (MPa) | N test | " + " | ".join(crit) + " |", "|---" * (3 + len(crit)) + "|"]
     for r in rows:
         lines.append(f"| {r['notch']} | {r['s_a']:.2f} | {r['N']:,.0f} | " + " | ".join(f"{r[c]:,.0f}" for c in crit) + " |")
+    lines += xlines
     os.makedirs(a.out, exist_ok=True)
     tag = f"sn_transfer_{d['id']}_h{a.h:g}"
     open(os.path.join(a.out, tag + ".md"), "w").write("\n".join(lines) + "\n")

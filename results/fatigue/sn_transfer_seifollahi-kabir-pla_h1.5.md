@@ -24,3 +24,14 @@
 | hole | 12.78 | 9,553 | 145 | 65,431 | 11,923 | 10,114 | 15,645 |
 | hole | 13.58 | 10,936 | 99 | 44,894 | 8,181 | 7,992 | 12,086 |
 | hole | 13.58 | 9,112 | 99 | 44,894 | 8,181 | 7,992 | 12,086 |
+
+## Fitted on smooth + one notch, every specimen of both; scored on that notch (fit) and the other (predicted)
+
+| criterion | parameters | fitted notch: bias / rms log10, within x2 | predicted notch: bias / rms log10, within x2 |
+|---|---|---|---|
+| TCD point, L(N) fitted on edge | A_L 1.67 mm, b_L 0.014 | edge: +0.00 / 0.03, 8/8 | hole: -0.02 / 0.08, 6/6 |
+| TCD line, L(N) fitted on edge | A_L 1.14 mm, b_L 0.019 | edge: +0.00 / 0.03, 8/8 | hole: -0.03 / 0.08, 6/6 |
+| Weibull m fitted on edge | m 13.03 | edge: -0.00 / 0.03, 8/8 | hole: -0.15 / 0.17, 6/6 |
+| TCD point, L(N) fitted on hole | A_L 3.66 mm, b_L -0.068 | hole: -0.00 / 0.07, 6/6 | edge: +0.01 / 0.07, 8/8 |
+| TCD line, L(N) fitted on hole | A_L 3.42 mm, b_L -0.093 | hole: +0.00 / 0.07, 6/6 | edge: +0.02 / 0.07, 8/8 |
+| Weibull m fitted on hole | m 11.77 | hole: -0.00 / 0.07, 6/6 | edge: +0.14 / 0.15, 8/8 |
