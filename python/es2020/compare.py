@@ -14,18 +14,20 @@ from . import methods as M
 from . import paper
 
 PANELS = {"paper": ("point", "area", "weibull", "mhsv"),          # fig_compare_methods: paper's TCD forms + size methods
-          "more": ("line", "gradient", "sed", "swt_point")}       # fig_compare_more: Aleksey's 2026-11-16 additions
+          "more": ("line", "gradient", "sed", "swt_point"),       # fig_compare_more: Aleksey's 2026-11-16 additions
+          "sed": ("net", "point", "sed_r0", "sed")}               # fig_compare_sed: SED vs TCD (Aleksey, 2026-11-16)
 TITLE = {"point": "TCD Point Method (Eq. 2)", "area": "TCD Area Method (Eq. 4)", "line": "TCD Line Method (Eq. 3)",
          "weibull": "Weibull weakest link (whole specimen volume)", "mhsv": "Modified HSV (Zhang et al. 2023)",
          "net": "Net stress, no method", "netfit": "Net stress x one constant fitted on sharp V",
-         "gradient": "Stress gradient (Siebel-Stieler support)", "sed": "Averaged SED (Lazzarin-Berto)",
+         "gradient": "Stress gradient (Siebel-Stieler support)", "sed": "Averaged SED (Lazzarin-Berto), R0 life-dependent",
+         "sed_r0": "Averaged SED (Lazzarin-Berto), constant R0",
          "swt_point": "TCD Point Method in SWT variable"}
 
 
 def run():
     specs = paper.fig8_specimens()
     out = {}
-    for name in M.METHODS:
+    for name in [n for n in M.METHODS if n in TITLE]:      # per-measure variants: es2020.measures
         p, c = M.calibrate(name)
         R = M.residuals(name, p, specs)
         T = M.basis(name)["plain"].T
@@ -87,13 +89,17 @@ def plot(out, path, show):
                 "weibull": "\nnotch factor vs sharp V: U r1 0.996, U r3 1.020 (acts like net stress)",
                 "line": "\nnot used in the paper: 2L > half net width below ~1e4 cycles (profile mirrored),\nL refitted (Eq. 3 would use the point L_M); 2L capped at 6 mm below ~800 cycles",
                 "gradient": "\nchi at root 12.2 / 1.85 / 0.59 1/mm (V, U r1, U r3); not in the paper",
-                "sed": "\nW from all 6 stress components, nu 0.35, crescent r0 = 0.45 rho (V), 0.5 rho (U); not in the paper",
+                "sed": "\nW: all 6 stress components, nu 0.35; crescent r0 0.45 rho (V), 0.5 rho (U)"
+                       "\nR0 > 3 mm (half net width) below ~900 cycles: control area extends past the centre plane",
+                "sed_r0": "\nW: all 6 stress components, nu 0.35; crescent r0 0.45 rho (V), 0.5 rho (U)"
+                          "\nK_eq " + " / ".join(f"{float(M.k_sed(k, o['p'][0])[0]):.2f}" for k in paper.NOTCHES if name == "sed_r0")
+                          + f" (V, U r1, U r3); calibration rms {o['cal']:.3f}",
                 "swt_point": f"\nDEPARTURE: plain P50 refit on Fig. 1 points in SWT (k {pl.k:.2f}, {pl.s_ref:.2f} MPa, T {pl.T:.2f}),"
                              f"\nsharp curve refit on Fig. 8 V in SWT; no design curve"}.get(name, "")
         ax.text(0.02, 0.02, f"{TITLE[name]}\n{o['const']}{note}\n"
                 f"fitted (sharp V): bias {s['bias']:+.3f}, rms {s['rms']:.3f}, slope {s['slope']:+.3f}\n"
                 f"held-out (U r1 + U r3, n {h['n']}): bias {h['bias']:+.3f}, rms {h['rms']:.3f},\n"
-                f"   slope {h['slope']:+.3f}, in P10-P90 band {100*h['band']:.0f}%   (log10 stress)",
+                f"   slope {h['slope']:+.3f}, in P10-P90 band {round(h['band']*h['n'])}/{h['n']} ({100*h['band']:.0f}%)   (log10 stress)",
                 transform=ax.transAxes, ha="left", va="bottom", fontsize=8.3, bbox=dict(fc="white", ec="0.6", lw=0.6))
         ax.set(xscale="log", yscale="log", xlim=(10, 1e7), ylim=(0.03, 3))
         ax.grid(alpha=0.3, which="both")
@@ -124,3 +130,4 @@ if __name__ == "__main__":
     open(os.path.join(d, "compare_methods.md"), "w").write(__doc__ + "\n" + t + "\n")
     plot(out, os.path.join(d, "fig_compare_methods"), PANELS["paper"])
     plot(out, os.path.join(d, "fig_compare_more"), PANELS["more"])
+    plot(out, os.path.join(d, "fig_compare_sed"), PANELS["sed"])

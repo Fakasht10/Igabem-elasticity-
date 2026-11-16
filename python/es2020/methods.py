@@ -229,7 +229,9 @@ def k_sed(notch, R0):
 METHODS.update({
     "swt_point": (_ab(k_point), (16.4, -0.242), "SWT variable (not in paper); L_M = {:.3g} N^{:.3f} mm"),
     "gradient": (_ab(k_gradient), (0.1, -0.2), "K_t / (1 + sqrt(c chi)), c = {:.3g} N^{:.3f} mm"),
-    "sed": (_ab(k_sed), (2.0, -0.2), "R0 = {:.3g} N^{:.3f} mm"),
+    "sed": (_ab(k_sed), (2.0, -0.2), "R0 = {:.3g} N^{:.3f} mm (life-dependent, as L_M)"),
+    # Lazzarin-Berto as published: one material control radius, independent of life
+    "sed_r0": (lambda n, N, p: np.full(np.shape(N), k_sed(n, p[0])[0]), (0.5,), "R0 = {:.3g} mm (constant)"),
 })
 
 
