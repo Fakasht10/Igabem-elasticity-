@@ -1,0 +1,71 @@
+From d99c70fd1cf889beea00ce5674a57d978364f77d Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 16 Nov 2026 21:54:13 +0000
+Subject: [PATCH 3/3] models/crack_field: expected.json gains the ys-net
+ reference (tests pass)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Xyo3tXioYkS4yA5vW8bxH1
+---
+ models/crack_field/expected.json | 45 ++++++++++++++++++++++++++++++++
+ 1 file changed, 45 insertions(+)
+
+diff --git a/models/crack_field/expected.json b/models/crack_field/expected.json
+index 99903db..c847ca6 100644
+--- a/models/crack_field/expected.json
++++ b/models/crack_field/expected.json
+@@ -184,5 +184,50 @@
+   },
+   "on_bound": [],
+   "wall_gap": 3.1141440138768344
++ },
++ "ys-net": {
++  "aic": 660.0395786493906,
++  "par": {
++   "lnsD": 3.9774316759727837,
++   "k": 4.150687891073756,
++   "gam": 0.37427894575062987,
++   "lnsZ": 0.07704229162710563,
++   "n": 0.634191516102889
++  },
++  "held_rms_logS": 0.09965472197394037,
++  "fit_rms_logS": 0.1010791762889662,
++  "held_net_stress_rms_logS": 0.19689221647457925,
++  "held_vs_net": {
++   "rms_model_minus_net": -0.09723749450063887,
++   "ci90": [
++    -0.13466474299760586,
++    -0.060079916175652684
++   ],
++   "n_series": 20,
++   "verdict": "better"
++  },
++  "held_rms_logN": 0.413635647785556,
++  "fit_rms_logN": 0.4195481130623214,
++  "own": {
++   "fit": {
++    "n": 208,
++    "rms_logN": 0.4195481130623214,
++    "bias_logN": -0.05054205358476392,
++    "tilt_vs_Nexp": 0.2771053215377064,
++    "tilt_vs_Npred": -0.09143232330068063,
++    "coverage80": 0.8317307692307693
++   },
++   "held": {
++    "n": 159,
++    "rms_logN": 0.413635647785556,
++    "bias_logN": -0.1697694179230228,
++    "tilt_vs_Nexp": 0.29773918119870224,
++    "tilt_vs_Npred": -0.0363021686888347,
++    "coverage80": 0.8490566037735849
++   },
++   "U1_minus_U3_logN": -0.2834925033121893
++  },
++  "on_bound": [],
++  "wall_gap": null
+  }
+ }
+\ No newline at end of file
+-- 
+2.43.0
+
