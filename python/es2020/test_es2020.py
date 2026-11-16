@@ -12,7 +12,7 @@ from es2020 import fig10, paper, point
 
 def _fit(specs):
     """Paper's regression: log N on log sigma, failures only; returns k and sigma at 2e6."""
-    S = np.array([(s.s_a, s.N) for s in specs if not s.runout])
+    S = np.array([(s.s_max * (1 - s.R) / 2, s.N) for s in specs if not s.runout])
     b, a = np.polyfit(np.log10(S[:, 0]), np.log10(S[:, 1]), 1)
     return -b, 10 ** ((np.log10(paper.N_REF) - a) / b), len(S)
 
@@ -34,8 +34,8 @@ def test_fig8_counts_and_curves():
     assert c == {key: v[0] for key, v in paper.TABLE1.items()}
     printed = {"sharp": (3.2, 3.9), "intermediate": (3.4, 4.6), "blunt": (5.1, 9.0)}   # Fig. 8a-c, sigma_n,max
     for notch, (k, s) in printed.items():
-        S = [paper.Specimen(x.notch, x.p, -1.0, x.s_max, x.N, x.runout) for x in f8 if x.notch == notch]
-        kk, s50, _ = _fit(S)                                     # R = -1 trick: s_a = s_max
+        S = [paper.Specimen(x.notch, x.p, -1.0, x.s_max, x.N, x.runout, "fig8") for x in f8 if x.notch == notch]
+        kk, s50, _ = _fit(S)                                     # fitted in sigma_n,max (R = -1 makes amplitude = max)
         assert abs(kk - k) < 0.06 and abs(s50 - s) < 0.06, (notch, kk, s50)
 
 

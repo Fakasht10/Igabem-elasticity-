@@ -45,6 +45,8 @@ def plot(C, out):
     for ps in (0.1, 0.9):
         ax.plot(N, paper.PLAIN(N, ps) / paper.UTS, "k--", lw=0.9)
     ax.plot(N, paper.DESIGN(N) / paper.UTS, color="0.6", lw=2.0)
+    ax.plot([2e6, 2e6], [0.01, 0.1], "k-.", lw=0.9)
+    ax.text(1.9e6, 0.035, "$\\sigma_{MAX,50\\%}/\\sigma_{UTS}$=0.16\n$T_\\sigma$=2.451\n$N_{Ref}=2\\cdot10^6$", ha="right", fontsize=8.5)
     mk = {"blunt": "D", "intermediate": "o", "sharp": "^"}
     for k in paper.NOTCHES:
         P = C[k]
@@ -61,13 +63,15 @@ def plot(C, out):
         [Line2D([], [], color="k", lw=1.4), Line2D([], [], color="k", ls="--", lw=0.9), Line2D([], [], color="0.6", lw=2)]
     lb = [f"Authors, extracted: {paper.LABEL[k]}" for k in paper.NOTCHES] + \
          [f"Ours (IgBEM): {paper.LABEL[k]}" for k in paper.NOTCHES] + \
-         ["Plain P50: 6.7 MPa (0.156 UTS) at 2e6, k 5.1 (Fig. 1)", "Plain P10 / P90: $T_\\sigma$ 2.451",
+         ["Plain P50: 6.7 MPa (0.156 UTS) at 2e6, k 5.1 (Sec. 6)", "Plain P10 / P90: $T_\\sigma$ 2.451",
           "Design curve 0.1 UTS, k 5.5"]
     ax.legend(h, lb, fontsize=7.8, loc="lower left", ncol=1, framealpha=0.95)
     ax.text(0.985, 0.985,
             f"Same inputs as the paper: $\\sigma_{{n,max}}$ of each specimen from Fig. 8,\n"
             f"$L_M$ = 16.4 $N_f^{{-0.242}}$ mm (Eq. 6), UTS 42.9 MPa, R = -1 and 0 pooled.\n"
             f"Departure: K(r) from 3D IgBEM (thickness-mean $\\sigma_1$), paper used 2D FE.\n"
+            f"Caveat (paper): Fig. 8 $\\sigma_{{n,max}}$ differs from Figs 5-7 $\\times 2/(1-R)$ by >3% for\n"
+            f"73 of 157 specimens, mostly past $10^5$ cycles (worst -32%); Fig. 10 follows Fig. 8.\n"
             f"Ours / authors, all {s['n']} markers: median {s['median']:.3f}, rms {100*(10**s['rms']-1):.1f}%,\n"
             f"max {100*(s['max']-1):.1f}%, within 2%: {100*s['w2']:.0f}%. Arrows: run-outs.",
             transform=ax.transAxes, ha="right", va="top", fontsize=8.2,
