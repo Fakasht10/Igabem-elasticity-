@@ -77,9 +77,9 @@ def specimens():
                      "figs5-7") for q in js["series"] for t in q["specimens"]]
 
 
-def fig10_markers():
-    """Authors' Fig. 10 Point Method markers (vector-extracted): list of (notch, N, sigma_eff,max/UTS, runout)."""
-    js = json.load(open(os.path.join(DATA, "fig10_point_markers.json")))
+def fig10_markers(panel="point"):
+    """Authors' Fig. 10 markers (vector-extracted), panel 'point' or 'area': list of (notch, N, sigma_eff,max/UTS, runout)."""
+    js = json.load(open(os.path.join(DATA, f"fig10_{panel}_markers.json")))
     return [(q["type"], q["x"], q["y"], q["runout"]) for q in js["points"]]
 
 

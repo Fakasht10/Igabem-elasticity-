@@ -64,3 +64,30 @@ def test_fig10_point_method_marker_by_marker():
     dn = np.concatenate([np.log10(C[k][:, 0] / C[k][:, 3]) for k in paper.NOTCHES])
     assert len(r) == 157 and np.abs(dn).max() < 0.005            # paired by N (within 1 %)
     assert np.abs(r).max() < np.log10(1.03) and np.sqrt(np.mean(r ** 2)) < np.log10(1.015)
+
+
+def test_area_method_matches_fig10_area_panel():
+    """Our area method (Eq. 4) with the paper's Eq. 6 and Fig. 8 stresses against the authors' Area panel."""
+    from scipy.optimize import linear_sum_assignment
+    from es2020 import methods
+    M = paper.fig10_markers("area")
+    r = []
+    for k in paper.NOTCHES:
+        S = [s for s in paper.fig8_specimens() if s.notch == k]
+        o = np.array([(s.N, methods.k_area(k, paper.lm_paper(s.N))[0] * s.s_max / paper.UTS) for s in S])
+        t = np.array([(n, y) for kk, n, y, _ in M if kk == k])
+        C = (np.log10(o[:, 0])[:, None] - np.log10(t[:, 0])[None]) ** 2 / 0.003 ** 2 + \
+            (np.log10(o[:, 1])[:, None] - np.log10(t[:, 1])[None]) ** 2 / 0.02 ** 2
+        i, j = linear_sum_assignment(C)
+        r += list(np.log10(o[i, 1] / t[j, 1]))
+    r = np.array(r)
+    assert len(r) == 154                                         # 3 sharp markers are missing from the PDF panel
+    assert np.mean(np.abs(r) < np.log10(1.035)) > 0.99           # one blunt outlier at N 106, where L_M = 5.3 mm
+    assert abs(np.median(r)) < np.log10(1.01)
+
+
+def test_methods_calibration():
+    from es2020 import methods
+    (A, B), _ = methods.calibrate("point")                       # least squares over N, close to Fig. 9e / Eq. 6
+    assert A == pytest.approx(16.4, rel=0.06) and B == pytest.approx(-0.242, abs=0.01)
+    assert methods.M_STRENGTH == pytest.approx(3.44, abs=0.01) and methods.K_LIFE == pytest.approx(0.675, abs=0.001)

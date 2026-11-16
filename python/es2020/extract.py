@@ -40,10 +40,11 @@ def fig8(doc):
     return out
 
 
-def fig10(doc):
+def fig10(doc, panel=0):
+    """panel 0 = Point Method (upper frame), 1 = Area Method (lower frame); N 1e1-1e7, y 10-0.01."""
     page = doc[29]
-    fr = [d["rect"] for d in page.get_drawings() if len(d["items"]) == 1 and d["items"][0][0] == "re"
-          and abs(d["rect"].width - 351.7) < 0.5][0]                  # upper frame = Point Method; N 1e1-1e7, 10-0.01
+    fr = sorted([d["rect"] for d in page.get_drawings() if len(d["items"]) == 1 and d["items"][0][0] == "re"
+                 and abs(d["rect"].width - 351.7) < 0.5], key=lambda r: r.y0)[panel]
     legend = [d["rect"] for d in page.get_drawings() if len(d["items"]) == 1 and d["items"][0][0] == "re"
               and abs(d["rect"].width - 88.6) < 0.5]
     kind = {("l", "l", "l", "l"): ("blunt", "diamond"), ("c", "c", "c", "c"): ("intermediate", "circle"),
@@ -68,6 +69,9 @@ def main(pdf):
     json.dump({"source": src + ", Fig. 10 Point Method panel (page 30), vector marker centres; x = N_f, "
                "y = sigma_eff,max / sigma_UTS", "points": fig10(doc)},
               open(os.path.join(DATA, "fig10_point_markers.json"), "w"), indent=1)
+    json.dump({"source": src + ", Fig. 10 Area Method panel (page 30), vector marker centres; 3 sharp markers "
+               "(N 429-504) are absent from this panel in the PDF", "points": fig10(doc, 1)},
+              open(os.path.join(DATA, "fig10_area_markers.json"), "w"), indent=1)
 
 
 if __name__ == "__main__":
