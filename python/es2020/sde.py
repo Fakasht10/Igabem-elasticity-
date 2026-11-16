@@ -626,3 +626,39 @@ class CrackWalker(WalkerTCD):
         se = S * self.keff_a(math.exp(la))
         lc = kk * (lsD - np.log(se) - g * np.log((1 - self.R) / 2))
         return lc, quantiles(math.exp(lsZ), np.exp(lc - ltau))
+
+
+# ----------------------------------------------------------------------------------------------- finite width
+def f_sent(al):
+    """Single-edge crack in a strip, tension, a/W = al (Tada 2.10; error < 0.5 % for al <= 0.6)."""
+    al = np.minimum(al, 0.9)
+    return 1.12 - 0.231 * al + 10.55 * al ** 2 - 21.72 * al ** 3 + 30.39 * al ** 4
+
+
+def f_dent(al):
+    """Symmetric double-edge cracks, crack depth a over half width b, al = a/b (Tada 2.6)."""
+    al = np.minimum(al, 0.95)
+    return (1.122 - 0.561 * al - 0.205 * al ** 2 + 0.471 * al ** 3 - 0.190 * al ** 4) / np.sqrt(1 - al)
+
+
+class CrackWalkerFW(CrackWalker):
+    """CrackWalker with a finite-width correction: sigma_eq = sigma_K(a) * F(a / l) / 1.12, F for uniform load.
+    l is the free path from the hot spot along the steepest-descent direction to the opposite free surface or to
+    the symmetry plane, read from the body (coupons: the bisector profile ends at the specimen centre line, l = 3 mm,
+    symmetric -> DENT). Plain gauge: uniform field, crack across the thinnest section t_plain (SENT, W = t_plain;
+    Ref. [10] gives t 3 or 5 mm, other Fig. 1 labs not stated -> an input, with sensitivity)."""
+
+    def __init__(self, rows, t_plain=3.0, l_notch=LIG):
+        super().__init__(rows)
+        self.t_plain, self.l_notch = t_plain, l_notch
+
+    def keff_a(self, a):
+        key = ("fw", round(a, 6))
+        if key not in self._cache:
+            k = np.full(len(self.s), float(f_sent(a / self.t_plain)) / 1.12)
+            for n in self.kinds:
+                if n != "plain":
+                    p = M._prof(n)
+                    k[self.notch == n] = crack_stress(lambda x: p(_refl(x)), a) * float(f_dent(a / self.l_notch)) / 1.122
+            self._cache = {key: k}
+        return self._cache[key]
