@@ -1,0 +1,45 @@
+From b0bafa4cc80d609217174b45042b08c86e1807b6 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 16 Nov 2026 21:54:34 +0000
+Subject: [PATCH] models/crack_field README: transfer-test table and verdict
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Xyo3tXioYkS4yA5vW8bxH1
+---
+ models/crack_field/README.md | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/models/crack_field/README.md b/models/crack_field/README.md
+index 979dd29..48b7726 100644
+--- a/models/crack_field/README.md
++++ b/models/crack_field/README.md
+@@ -117,6 +117,26 @@ No parameter is on a bound. The fitted constants:
+ - **Identifiability.** With only plain + V fitted, γ and any R or gradient driver only change how U is interpolated.
+ - **ES plain geometry** is assumed (33 mm gauge, 3 mm thick). The plain strip width used by f_sent (3 mm per side) is part of that assumption.
+ 
++## Leave-one-infill-level-out transfer (`python -m models.crack_field.transfer`, ~1 min)
++
++The model is calibrated on plain + V at four infill levels and predicts every specimen at the fifth. The table shows the stress rms on failures of the held level's U + V.
++
++The reference is `ys-net`: net stress + Walker + φ^(−n), with no notch or defect term. Its full-split held-out rms is 0.100.
++
++| held level | 100 % | 80 % | 60 % | 40 % | 20 % | mean |
++|---|---|---|---|---|---|---|
++| ys-net | 0.093 | 0.085 | 0.122 | 0.155 | 0.217 | 0.135 |
++| ys-lin | 0.139 | 0.077 | 0.071 | 0.115 | 0.165 | 0.113 |
++| ys-sat | 0.088 | 0.071 | 0.068 | 0.092 | 0.159 | 0.096 |
++
++What the table shows:
++- Holding out 20 % means extrapolating to d_V 1.6 mm from levels whose d_V is at most 0.84 mm. That fails for every model. The bias is −0.14 to −0.20, which is conservative.
++- With 20 % unseen, κ falls and n rises (n 0.64 against 0.40), so φ^(−n) over-weakens the 20 % level.
++- Without φ^(−n), the saturating law errs the other way at 20 % (+0.19).
++- When 100 % is held out, a0 sits on its physical bound 0.
++
++Saturation therefore helps interpolation between levels, but it is not confirmed as a law that transfers.
++
+ ## Provenance
+ 
+ The model was developed in IgBEM (`Fakasht10/Igabem-elasticity-`, branch `claude/project-thread-ramlnd`, `python/fatigue/ys2025_audit/`). That branch holds:
+-- 
+2.43.0
+
