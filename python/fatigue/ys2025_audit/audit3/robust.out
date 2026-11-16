@@ -1,0 +1,58 @@
+fit-set nll gain (base - sat21), total 11.13
+  infill 100 n  48 dNLL +3.27
+  infill  80 n  43 dNLL +0.38
+  infill  60 n  43 dNLL +0.72
+  infill  40 n  43 dNLL +4.19
+  infill  20 n  42 dNLL +2.56
+  R -1.0 n 129 dNLL +8.50
+  R  0.1 n  90 dNLL +2.63
+  plain dNLL +5.28
+  V dNLL +5.85
+held-out failures, rms/bias log10 N: base vs sat21
+  all        n 159  base 0.434/+0.024  sat21 0.385/+0.042  d_rms -0.049
+  infill 100 n  32  base 0.537/+0.501  sat21 0.449/+0.401  d_rms -0.088
+  infill 80  n  31  base 0.355/+0.277  sat21 0.340/+0.250  d_rms -0.015
+  infill 60  n  33  base 0.319/-0.069  sat21 0.316/-0.031  d_rms -0.002
+  infill 40  n  32  base 0.521/-0.405  sat21 0.448/-0.311  d_rms -0.073
+  infill 20  n  31  base 0.391/-0.178  sat21 0.350/-0.096  d_rms -0.041
+  R -1       n  79  base 0.475/-0.114  sat21 0.413/-0.096  d_rms -0.062
+  R 0.1      n  80  base 0.389/+0.161  sat21 0.355/+0.178  d_rms -0.034
+  U1         n  78  base 0.447/-0.103  sat21 0.377/-0.094  d_rms -0.070
+  U3         n  81  base 0.421/+0.147  sat21 0.392/+0.173  d_rms -0.029
+held rms, infill x R
+   100 ['R-1: 0.526->0.439', 'R0.1: 0.549->0.458']
+   80 ['R-1: 0.214->0.208', 'R0.1: 0.448->0.428']
+   60 ['R-1: 0.366->0.341', 'R0.1: 0.259->0.288']
+   40 ['R-1: 0.661->0.570', 'R0.1: 0.326->0.276']
+   20 ['R-1: 0.478->0.412', 'R0.1: 0.286->0.280']
+drop-one-subset refits (fit set only): dAIC = AIC_sat21 - AIC_base, and held rms
+  drop infill 100  dAIC -12.7   held rms base 0.467 sat21 0.363
+  drop infill 80   dAIC -23.7   held rms base 0.457 sat21 0.403
+  drop infill 60   dAIC -20.8   held rms base 0.442 sat21 0.394
+  drop infill 40   dAIC -10.4   held rms base 0.470 sat21 0.409
+  drop infill 20   dAIC +1.6   held rms base 0.450 sat21 0.431
+/usr/local/lib/python3.13/site-packages/numpy/lib/_polynomial_impl.py:676: RuntimeWarning: invalid value encountered in divide
+  lhs /= scale
+ ** On entry to DLASCL parameter number  4 had an illegal value
+ ** On entry to DLASCL parameter number  4 had an illegal value
+ ** On entry to DLASCL parameter number  4 had an illegal value
+ ** On entry to DLASCL parameter number  4 had an illegal value
+ ** On entry to DLASCL parameter number  5 had an illegal value
+ ** On entry to DLASCL parameter number  4 had an illegal value
+Traceback (most recent call last):
+  File "/tmp/claude-0/audit3/robust.py", line 26, in <module>
+    hb = M.stats('base', rb['p']); hs = M.stats('sat', rs['p'])
+  File "/tmp/claude-0/audit3/model.py", line 95, in stats
+    tilt_exp=float(np.polyfit(x, r, 1)[0]), tilt_pred=float(np.polyfit(ep[msk], r, 1)[0]),
+                                                            ~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/numpy/lib/_polynomial_impl.py", line 677, in polyfit
+    c, resids, rank, s = lstsq(lhs, rhs, rcond)
+                         ~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/numpy/linalg/_linalg.py", line 2539, in lstsq
+    x, resids, rank, s = _umath_linalg.lstsq(a, b, rcond,
+                         ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+                                             signature=signature)
+                                             ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/numpy/linalg/_linalg.py", line 156, in _raise_linalgerror_lstsq
+    raise LinAlgError("SVD did not converge in Linear Least Squares")
+numpy.linalg.LinAlgError: SVD did not converge in Linear Least Squares
