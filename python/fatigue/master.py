@@ -33,7 +33,7 @@ from .specimens import Specimen
 from .transfer import HERE, OUT
 
 V_REF = 1000.0                     # mm^3, reference volume of the Weibull effective stress (cancels in the collapse)
-N_EZ = np.geomspace(2e4, 2e6, 4)
+N_EZ = np.geomspace(1e3, 2e6, 6)      # plain series fits are sampled here (their specimens span ~1e2..2e6)
 
 
 def load(gauge_ezeh=30.0):
@@ -53,13 +53,17 @@ def load(gauge_ezeh=30.0):
     Ve = pe["W"] * pe["T"] * gauge_ezeh
     for k, v in E["specimens"].items():
         F[("E", k)] = field(Specimen.from_dict(v), h=1.5, log=lambda *_: None)
-    for i, q in enumerate(E["plain"] + E["notched"]):
-        g = q.get("notch", "plain")
-        out = g == "blunt" or (g == "plain" and q["p"] == 30 and q["R"] == -1)
-        s50 = q.get("sigma_nA50", q.get("sigma_A50"))
+    for i, q in enumerate(E["plain"]):         # plain: series fits only (2019 Table 1), sampled over the plotted range
+        out = q["p"] == 30 and q["R"] == -1
         for N in N_EZ:
-            rows.append(("Ezeh-Susmel", g, None if g == "plain" else ("E", g), s50 * (N / E["N_ref"]) ** (-1 / q["k"]),
-                         q["R"], N, q["n"] / len(N_EZ), Ve, out, (i, q["T"], s50, q["p"])))
+            rows.append(("Ezeh-Susmel", "plain", None, q["sigma_A50"] * (N / E["N_ref"]) ** (-1 / q["k"]), q["R"], N,
+                         q["n"] / len(N_EZ), Ve, out, dict(kind="series", series=i, T=q["T"], p=q["p"])))
+    sp = json.load(open(os.path.join(HERE, "data", "ezeh_susmel_2020_specimens.json")))
+    for i, q in enumerate(sp["series"]):      # notched: every specimen (vector-extracted from 2020 Figs 5-7)
+        for t in q["specimens"]:
+            rows.append(("Ezeh-Susmel", q["notch"], ("E", q["notch"]), t["sigma_na"], q["R"], t["N"], 1.0, Ve,
+                         q["notch"] == "blunt" or t["runout"],
+                         dict(kind="specimen", series=100 + i, runout=t["runout"], p=q["p"])))
     return rows, F
 
 
@@ -174,7 +178,7 @@ def figure(res, rows, path, best, ref="net"):
     lev = {"Seifollahi": cS, "Ezeh-Susmel": cE}
     col = {"Seifollahi": "#d62728", "Ezeh-Susmel": "#1f77b4"}
     mk = {"smooth": "o", "plain": "o", "edge": "^", "hole": "D", "intermediate": "s", "sharp": "v", "blunt": "P"}
-    Ns = np.geomspace(3e3, 3e6, 40)
+    Ns = np.geomspace(1e2, 3e6, 60)
     line = 10 ** (b * (np.log10(Ns) - math.log10(N_REF)))
     sd = math.sqrt(np.mean([v ** 2 for v in per.values()]))
     for a_ in (ax, axs):
@@ -188,15 +192,20 @@ def figure(res, rows, path, best, ref="net"):
                        linewidths=1.1, zorder=5)
     series = {}
     for i, row in enumerate(rows):
-        if row[0] == "Ezeh-Susmel":
-            series.setdefault(row[9][0], []).append(i)
+        if row[0] == "Ezeh-Susmel" and row[9]["kind"] == "series":
+            series.setdefault(row[9]["series"], []).append(i)
+    for i, row in enumerate(rows):            # Ezeh-Susmel notched specimens, each at its own life
+        if row[0] == "Ezeh-Susmel" and row[9]["kind"] == "specimen":
+            ro, c = row[9]["runout"], ("0.6" if row[1] == "blunt" else col["Ezeh-Susmel"])
+            ax.scatter(row[5], 10 ** (y[i] - lev["Ezeh-Susmel"]), marker=">" if ro else mk[row[1]], s=22 if ro else 18,
+                       color=c, alpha=0.8, linewidths=0, zorder=4)
     for idx in series.values():
         d, gname, key, *_, out, sid = rows[idx[0]]
         Nn = np.array([rows[i][5] for i in idx])
         yy = np.array([10 ** (y[i] - lev[d]) for i in idx])
         c = "0.6" if out else col[d]
         ax.plot(Nn, yy, color=c, lw=0.9, ls="--" if out else "-", alpha=0.75, zorder=3)
-        T = sid[1]
+        T = sid["T"]
         ax.errorbar(Nn[-1], yy[-1], yerr=[[yy[-1] * (1 - T ** -0.5)], [yy[-1] * (T ** 0.5 - 1)]], fmt=mk[gname],
                     ms=5, mfc="none" if key is None else c, mec=c, ecolor=c, elinewidth=0.5, capsize=0, zorder=4,
                     alpha=0.85)
@@ -205,33 +214,36 @@ def figure(res, rows, path, best, ref="net"):
     bs, cs = np.polyfit(np.log10(ks) - math.log10(N_REF), ys, 1)
     axs.plot(Ns, 10 ** (cs + bs * (np.log10(Ns) - math.log10(N_REF))), color=col["Seifollahi"], ls="--", lw=1.4)
     for a_ in (ax, axs):
-        a_.set(xscale="log", yscale="log", xlim=(3e3, 3e6), ylim=(0.3, 3.5), xlabel="cycles to failure $N_f$")
+        a_.set(xscale="log", yscale="log", xlim=(1e2, 3e6) if a_ is ax else (3e3, 3e6), ylim=(0.3, 3.5),
+               xlabel="cycles to failure $N_f$")
         a_.yaxis.set_major_locator(FixedLocator([0.3, 0.5, 0.7, 1, 1.5, 2, 3]))
         a_.yaxis.set_major_formatter(ScalarFormatter()); a_.yaxis.set_minor_formatter(NullFormatter())
         a_.grid(alpha=0.3, which="both")
     ax.set(ylabel=r"$S^* = f_{eff}\,\sigma_{a,n}(2/(1-R))^{1-\gamma}\,/\,\sigma_{plain}(10^5)$",
            title=f"(a) one master curve, {TITLE[best]}: slope {b:.3f}, $\\gamma$ {g:.2f}")
-    ax.text(0.98, 0.98, "Ezeh-Susmel: 30 SERIES FITS from their Table 1\n(sigma_A50 at 2e6, slope k, scatter T); each drawn as\n"
-            "its published curve over 2e4-2e6, marker at 2e6, bar = T.\nNo individual specimens are tabulated.\n"
-            "Seifollahi: 22 INDIVIDUAL SPECIMENS (Table 6).", transform=ax.transAxes, ha="right", va="top", fontsize=8,
+    ax.text(0.98, 0.98, "Seifollahi: 22 INDIVIDUAL SPECIMENS (Table 6).\n"
+            "Ezeh-Susmel notched: 157 INDIVIDUAL SPECIMENS, extracted from\nthe vector plots of their 2020 Figs 5-7 "
+            "(run-outs >, not fitted).\nEzeh-Susmel plain: 12 SERIES FITS (2019 Table 1; specimens not\n"
+            "available), curve drawn over 1e3-2e6, marker at 2e6, bar = T.", transform=ax.transAxes, ha="right", va="top", fontsize=8,
             bbox=dict(fc="white", ec="0.7"))
     axs.set(title=f"(b) Seifollahi alone: own fit slope {bs:.3f} (dashed)\nvs master {b:.3f} (solid)")
     axs.title.set_fontsize(9.5)
     h = [Line2D([], [], color="k", lw=1.6), Line2D([], [], color="0.92", lw=8),
          Line2D([], [], color=col["Seifollahi"], marker="o", mfc="none", ls=""),
          Line2D([], [], color=col["Seifollahi"], marker="^", ls=""), Line2D([], [], color=col["Seifollahi"], marker="D", ls=""),
-         Line2D([], [], color=col["Ezeh-Susmel"], marker="o", mfc="none"), Line2D([], [], color=col["Ezeh-Susmel"], marker="s"),
-         Line2D([], [], color=col["Ezeh-Susmel"], marker="v"), Line2D([], [], color="0.6", ls="--", marker="P")]
+         Line2D([], [], color=col["Ezeh-Susmel"], marker="o", mfc="none"),
+         Line2D([], [], color=col["Ezeh-Susmel"], marker="s", ls=""), Line2D([], [], color=col["Ezeh-Susmel"], marker="v", ls=""),
+         Line2D([], [], color="0.6", ls="--", marker="P")]
     lb = ["master curve", "±2 SD", "Seifollahi smooth (specimen)", "Seifollahi edge R2 (specimen)",
-          "Seifollahi hole R2 (specimen)", "Ezeh-Susmel plain (series fit)", "Ezeh-Susmel U r1 (series fit)",
-          "Ezeh-Susmel V r0.15 (series fit)", "flagged: Ezeh blunt U r3, plain p30 R-1"]
+          "Seifollahi hole R2 (specimen)", "Ezeh-Susmel plain (series fit)", "Ezeh-Susmel U r1 (specimen)",
+          "Ezeh-Susmel V r0.15 (specimen)", "flagged: Ezeh blunt U r3 (specimen), plain p30 R-1 (series)"]
     fig.legend(h, lb, loc="outside lower center", ncol=5, fontsize=8.5, frameon=False)
     for name, filled in ((ref, False), (best, True)):
         _, _, _, _, _, rr, _ = res[name]
         pts = {}
         for i, row in enumerate(rows):
-            if row[2] is not None:
-                pts.setdefault((row[0], row[1], row[8]), []).append(rr[i])
+            if row[2] is not None and not (row[9] or {}).get("runout", False):
+                pts.setdefault((row[0], row[1], row[1] == "blunt"), []).append(rr[i])
         for (d, gname, out), v in pts.items():
             kt, c = KT[(d, gname)], ("0.6" if out else col[d])
             axr.scatter(kt, np.mean(v), marker=mk[gname], s=40, edgecolors=c, facecolor=c if filled else "none", zorder=3)

@@ -5,9 +5,8 @@
 Each data set's own plain S-N data are always used (they are what a designer has); only the notch criterion's
 parameters cross over. Plain and notched share R within each data set, so the Walker term cancels and needs no gamma.
     Seifollahi & Kabir: life of each of the 14 notched specimens from the smooth Basquin curve (sn_transfer.life).
-    Ezeh & Susmel:      notched strength at 2e6 of each of the 18 series from the plain strength at the same R pooled
-                        over print angle (best plain reference, transfer.py 'weibullangle'); converted to a log10-life
-                        error with the series' own slope: dlog N = k dlog sigma.
+    Ezeh & Susmel:      life of each of the 149 failed notched specimens (vector-extracted from the 2020 Figs 5-7) from the
+                        plain curve at the same R pooled over print angle (2019 Table 1 series fits).
 Score: bias and rms of log10(N_pred / N), and the share within a factor 2 in life. Fit: least squares of the same.
 """
 import argparse
@@ -30,17 +29,24 @@ NAMES = ["kt", "hotspot", "tcd_point", "tcd_line", "weibull", "sweibull"]
 
 
 class Ezeh:
+    """Every notched specimen of Ezeh & Susmel 2020 (vector-extracted from Figs 5-7, run-outs left out); its life is
+    predicted from the plain curve at the same R pooled over print angle (2019 Table 1: geometric-mean sigma_A50 at 2e6,
+    mean k), N = 2e6 (f_eff s / s0_R)^(-k_R)."""
     name = "Ezeh-Susmel"
 
-    def __init__(self, gauge=30.0):
+    def __init__(self, gauge=30.0, blunt=True):
         self.E, self.V, self.F, self.s0, _ = ezeh_setup(gauge)
+        self.k = {R: float(np.mean([q["k"] for q in self.E["plain"] if q["R"] == R])) for R in self.s0}
+        sp = json.load(open(os.path.join(HERE, "data", "ezeh_susmel_2020_specimens.json")))
+        self.spec = [(q["notch"], q["R"], t["sigma_na"], t["N"]) for q in sp["series"] for t in q["specimens"]
+                     if not t["runout"] and (blunt or q["notch"] != "blunt")]
 
     def errors(self, crit, th):
-        """log10 life error of every notched series."""
         out = []
-        for r in self.E["notched"]:
-            f = factor(crit, self.F[r["notch"]], th, self.V) / factor(crit, None, th, self.V)
-            out.append(r["k"] * math.log10(self.s0[r["R"]] / f / r["sigma_nA50"]))
+        fs = {k: factor(crit, f, th, self.V) / factor(crit, None, th, self.V) for k, f in self.F.items()}
+        for notch, R, s, N in self.spec:
+            f = fs[notch]
+            out.append(math.log10(self.E["N_ref"] * (f * s / self.s0[R]) ** (-self.k[R]) / N))
         return np.array(out)
 
 
@@ -48,6 +54,7 @@ class Seif:
     name = "Seifollahi"
 
     def __init__(self):
+        self.spec = None
         S = json.load(open(os.path.join(HERE, "data", "seifollahi_kabir.json")))
         ps = S["plain_specimen"]
         self.V = ps["W"] * ps["T"] * 50.0
@@ -88,7 +95,8 @@ def floor(ds):
 
 def _free(ds, k, w):
     if isinstance(ds, Ezeh):
-        return np.array([r["k"] * math.log10(ds.s0[r["R"]] / w / r["sigma_nA50"]) for r in ds.E["notched"] if r["notch"] == k])
+        return np.array([math.log10(ds.E["N_ref"] * (w * s / ds.s0[R]) ** (-ds.k[R]) / N)
+                         for n, R, s, N in ds.spec if n == k])
     return np.array([math.log10(life(lambda N: w, s, ds.A, ds.B) / n) for s, *ns in ds.raw[k] for n in ns])
 
 
