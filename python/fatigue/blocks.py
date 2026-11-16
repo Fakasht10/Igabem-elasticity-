@@ -101,7 +101,48 @@ def layout(s, R=None, Y1=None):
         "T2": _quad((Kx, Y1), (Cp[0], Y1), (Cp[0], H), (Kx, H), p2),
         "T3": _quad((Cp[0], Y1), (s.WG / 2, Y1), (s.WG / 2, H), (Cp[0], H)),
     }
-    return B, dict(R=R, K=K, Cp=Cp, c=c, d=d, dp=dp, Y1=Y1)
+    return B, dict(R=R, K=K, Cp=Cp, c=c, d=d, dp=dp, Y1=Y1, C=C, b=(s.WN / 2, 0.0), sweep=t0 - t1,
+                   radial=("F2.top", np.subtract(Cp, c)),
+                   lig=("L1.top", (-1.0, 0.0), (Kx, 0.0), Kx),
+                   flank=("S1.top", np.subtract(d, c), c, float(np.hypot(d[0] - c[0], d[1] - c[1]))))
+
+
+def layout_hole(s, R=None, Y1=None):
+    """The 2D blocks of the central-hole quarter: O-grid fan around the hole quarter (root at (rho, 0), centre at the
+    origin), the ligament block out to the free edge x = W/2, and rows up to the grip.
+
+        T1 | T2
+        M1 | M2
+        F2 /
+         F1 | L1
+    """
+    rho, W2, H = s.rho, s.W / 2, s.L / 2
+    lig = W2 - rho
+    if R is None:
+        R = rho + min(max(2 * rho, 0.3 * lig), 0.75 * lig)
+    if Y1 is None:
+        Y1 = R + lig
+    if not (rho < R < W2 and Y1 < H):
+        raise ValueError(f"layout does not fit: R {R:.3g}, Y1 {Y1:.3g}")
+    C, K, Cp = (0.0, 0.0), (R, R), (0.0, R)
+    t0, tm, t1 = 0.0, 0.25 * math.pi, 0.5 * math.pi
+    a1, w1 = _arc(C, rho, t0, tm)
+    a2, w2 = _arc(C, rho, tm, t1)
+    l1 = math.tan(0.125 * math.pi)                             # the mid rays (pi/8, 3 pi/8) on the outer square
+    l2 = 1.0 - 1.0 / math.tan(0.375 * math.pi)
+    p1, p2 = (w1[1], l1), (w2[1], l2)
+    B = {
+        "F1": _ruled((a1, w1), _seg((R, 0.0), K, *p1)),
+        "F2": _ruled((a2, w2), _seg(K, Cp, *p2)),
+        "L1": _ruled(_seg((R, 0.0), K, *p1), _seg((W2, 0.0), (W2, R), *p1)),
+        "M1": _ruled(_seg(K, Cp, *p2), _seg((R, Y1), (0.0, Y1), *p2)),
+        "M2": _quad(K, (W2, R), (W2, Y1), (R, Y1)),
+        "T1": _quad((0.0, Y1), (R, Y1), (R, H), (0.0, H), (w2[1], 1.0 - l2)),
+        "T2": _quad((R, Y1), (W2, Y1), (W2, H), (R, H)),
+    }
+    return B, dict(R=R, K=K, Cp=Cp, Y1=Y1, C=C, b=(rho, 0.0), sweep=t1 - t0,
+                   radial=("F2.top", (0.0, 1.0)),
+                   lig=("L1.top", (1.0, 0.0), (R, 0.0), W2 - R), flank=None)
 
 
 def _ray_t(C, t, P, Q):
@@ -119,7 +160,7 @@ def _lift(Pw2, z):
 
 def surface(s, **kw):
     """Closed boundary of the quarter as single-span patches (top, bottom, walls), outward oriented."""
-    B, info = layout(s, **kw)
+    B, info = (layout_hole if s.shape == "hole" else layout)(s, **kw)
     out, names = [], []
     for n, Pw in B.items():
         for z, nz, tag in ((s.T, 1.0, "top"), (0.0, -1.0, "bot")):
@@ -206,8 +247,10 @@ def build(s, h=1.5, n_arc=None, h0=None, g=1.4, nz=12, hz0=None, coarsen=0, h_fa
     h0 = h0 or s.rho / 8
     hz0 = s.T / 60 if hz0 is None else hz0             # 0 = uniform nz spans through the thickness
     if n_arc is None:
-        n_arc = max(2, math.ceil(0.5 * s.rho * (0.5 * math.pi - 0.5 * math.radians(s.alpha_deg)) / h0 - 1e-9))
+        n_arc = None
     P, names, info = surface(s, **kw)
+    if n_arc is None:
+        n_arc = max(2, math.ceil(0.5 * s.rho * abs(info["sweep"]) / h0 - 1e-9))
     cls, _ = link(P)
     want = {}
     for k, Q in enumerate(P):                                        # 1. uniform, about h
@@ -217,9 +260,7 @@ def build(s, h=1.5, n_arc=None, h0=None, g=1.4, nz=12, hz0=None, coarsen=0, h_fa
             n = max(1, math.ceil(L / h - 1e-9))
             if len(want.get(root, [])) < n - 1:
                 want[root] = [i / n for i in range(1, n)]
-    c, Cp, d_ = map(np.asarray, (info["c"], info["Cp"], info["d"]))
-    C = np.array([s.WN / 2 + s.rho, 0.0])
-    b = np.array([s.WN / 2, 0.0])
+    C, b = np.asarray(info["C"]), np.asarray(info["b"])
     near = {}                                # graded classes: which end(s) of the class lie at the root
 
     def set_dir(name, along, root_pt, knots):
@@ -247,12 +288,13 @@ def build(s, h=1.5, n_arc=None, h0=None, g=1.4, nz=12, hz0=None, coarsen=0, h_fa
         if half == "F1.wall0":
             near[ra] = (0,) if (np.linalg.norm(e0 - b) < np.linalg.norm(e1 - b)) != fa else (1,)
     radial = graded(info["R"] - s.rho, h0, g, h)
-    set_dir("F2.top", Cp - c, C, radial)                                                   # 4. radial, from the root
+    set_dir(info["radial"][0], np.asarray(info["radial"][1]), C, radial)                     # 4. radial, from the root
     last = (info["R"] - s.rho) * (1 - (radial[-1] if radial else 0.0))     # the fan's outermost radial size: the
-    Kx = info["K"][0]                                                      # ligament block continues from it, so
-    set_dir("L1.top", np.array([-1.0, 0.0]), np.array([Kx, 0.0]),          # the size does not jump at the seam
-            graded(Kx, min(last * g, h), g, h))
-    set_dir("S1.top", d_ - c, c, graded(float(np.linalg.norm(d_ - c)), h0, g, h))          # 5. along the flank
+    name, along, start, L = info["lig"]                                    # ligament block continues from it, so
+    set_dir(name, np.asarray(along), np.asarray(start), graded(L, min(last * g, h), g, h))  # no size jump at the seam
+    if info["flank"]:
+        name, along, start, L = info["flank"]
+        set_dir(name, np.asarray(along), np.asarray(start), graded(L, h0, g, h))           # 5. along the flank
     Y1, H = info["Y1"], s.L / 2                                                            # 6. grip rows: from h
     set_dir("T1.top", np.array([0.0, 1.0]), np.array([0.0, Y1]),                         # at y = Y1, growing to
             graded(H - Y1, h, g, h_far or 4 * h))                                          # h_far at the grip

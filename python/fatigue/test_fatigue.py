@@ -100,8 +100,8 @@ def test_blocks_exact_closed_and_fast():
     from fatigue import blocks
     g, w = np.polynomial.legendre.leggauss(4)
     g, w = 0.5 * (g + 1), 0.5 * w
-    for v in DATA["specimens"].values():
-        s = Specimen.from_dict(v)
+    for s in [Specimen.from_dict(v) for v in DATA["specimens"].values()] + [Specimen("hole", T=3.2, rho=2.0, W=13.0,
+                                                                                        L=60.0)]:
         t = time.perf_counter()
         P, names, info = blocks.build(s)
         assert time.perf_counter() - t < 1.0

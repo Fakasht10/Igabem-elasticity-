@@ -35,7 +35,7 @@ def field(spec, h=1.5, work=WORK, volume=True, nd=200, hmat=False, coarsen=0, lo
     where the dense LU outgrows 15 GB); same cache file. coarsen: nested coarser level of the block mesh (convergence)."""
     if spec.shape == "plain":
         raise ValueError("a plain bar has the unit field everywhere; no solve")
-    designed = spec.shape == "edge"                    # exact block layout (fatigue.blocks); others still via STEP
+    designed = spec.shape in ("edge", "hole")          # exact block layout (fatigue.blocks)
     path = os.path.join(work, f"{spec.tag}_{'b' if designed else 'h'}{h:g}{f'_c{coarsen}' if coarsen else ''}"
                         f"{'' if volume else '_line'}.npz")
     if os.path.exists(path):
