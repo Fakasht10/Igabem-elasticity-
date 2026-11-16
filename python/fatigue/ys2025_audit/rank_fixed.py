@@ -131,7 +131,7 @@ def run(d, name, spec, verbose=True):
         for k, (lo, hi) in bnd.items():
             if not lo <= p[k] <= hi: return 1e12
         c = lnc(p)
-        if not np.all(np.isfinite(c)): return 1e12
+        if not np.all(np.isfinite(c[d.fit])): return 1e12
         z = (d.lnN - c) / math.exp(p["lnsZ"])
         ll = np.where(d.ro, norm.logsf(z), norm.logpdf(z) - p["lnsZ"])
         return -float(ll[d.fit].sum())
